@@ -34,7 +34,6 @@ async function fetchGame(id) {
     const aw = ts.find((t) => t.homeAway === "away");
     if (!ho || !aw) return null;
 
-    // Get players from leaders
     const players = [];
     (d.leaders || []).forEach((tl) => {
       const tm = tl.team?.abbreviation || "";
@@ -47,7 +46,6 @@ async function fetchGame(id) {
       });
     });
 
-    // Fallback to boxscore
     if (players.length < 4) {
       (d.boxscore?.players || []).forEach((team) => {
         const tm = team.team?.abbreviation || "";
@@ -61,39 +59,27 @@ async function fetchGame(id) {
       });
     }
 
-    // Add defenses
     const teams = new Set(players.map((p) => p.tm));
     teams.forEach((tm) => players.push({ name: `${tm} Defense`, tm }));
 
     const st = c.status?.type?.name || "STATUS_FINAL";
-
     return {
-      id,
-      status: st,
-      isPre: st === "STATUS_SCHEDULED",
-      isFinal: st === "STATUS_FINAL",
-      date: c.date,
-      venue: d.gameInfo?.venue?.fullName || "",
-      week: d.header?.week || 0,
-      season: d.header?.season?.year || 2024,
+      id, status: st,
+      isPre: st === "STATUS_SCHEDULED", isFinal: st === "STATUS_FINAL",
+      date: c.date, venue: d.gameInfo?.venue?.fullName || "",
+      week: d.header?.week || 0, season: d.header?.season?.year || 2024,
       net: c.broadcasts?.[0]?.names?.[0] || "",
       home: {
-        name: ho.team?.displayName || "",
-        abbr: ho.team?.abbreviation || "",
-        color: "#" + (ho.team?.color || "333"),
-        logo: ho.team?.logos?.[0]?.href || "",
-        record: ho.record?.[0]?.displayValue || "",
-        score: parseInt(ho.score) || 0,
+        name: ho.team?.displayName || "", abbr: ho.team?.abbreviation || "",
+        color: "#" + (ho.team?.color || "333"), logo: ho.team?.logos?.[0]?.href || "",
+        record: ho.record?.[0]?.displayValue || "", score: parseInt(ho.score) || 0,
         q: (ho.linescores || []).map((q) => q.displayValue),
         leaders: players.filter((p) => p.tm === ho.team?.abbreviation).slice(0, 3),
       },
       away: {
-        name: aw.team?.displayName || "",
-        abbr: aw.team?.abbreviation || "",
-        color: "#" + (aw.team?.color || "333"),
-        logo: aw.team?.logos?.[0]?.href || "",
-        record: aw.record?.[0]?.displayValue || "",
-        score: parseInt(aw.score) || 0,
+        name: aw.team?.displayName || "", abbr: aw.team?.abbreviation || "",
+        color: "#" + (aw.team?.color || "333"), logo: aw.team?.logos?.[0]?.href || "",
+        record: aw.record?.[0]?.displayValue || "", score: parseInt(aw.score) || 0,
         q: (aw.linescores || []).map((q) => q.displayValue),
         leaders: players.filter((p) => p.tm === aw.team?.abbreviation).slice(0, 3),
       },
@@ -101,34 +87,9 @@ async function fetchGame(id) {
       ot: (ho.linescores || []).length > 4,
       diff: Math.abs((parseInt(ho.score) || 0) - (parseInt(aw.score) || 0)),
       total: (parseInt(ho.score) || 0) + (parseInt(aw.score) || 0),
-      odds: d.pickcenter?.[0]?.details || "",
-      ou: d.pickcenter?.[0]?.overUnder || "",
+      odds: d.pickcenter?.[0]?.details || "", ou: d.pickcenter?.[0]?.overUnder || "",
     };
-  } catch (e) {
-    console.error("Failed to fetch game:", e);
-    return null;
-  }
-}
-
-function RatingSlider({ label, value, onChange }) {
-  return (
-    <div className="mb-5 p-4 rounded-xl bg-zinc-950">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-sm font-semibold text-white">{label}</span>
-        <span className="text-2xl font-extrabold" style={{ color: rc(value) }}>
-          {value}
-        </span>
-      </div>
-      <input
-        type="range" min="1" max="10" step="0.5" value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-        style={{
-          background: `linear-gradient(to right, ${rc(value)} ${((value - 1) / 9) * 100}%, #27272a ${((value - 1) / 9) * 100}%)`,
-        }}
-      />
-    </div>
-  );
+  } catch (e) { console.error(e); return null; }
 }
 
 export default function GamePage({ params }) {
@@ -137,8 +98,6 @@ export default function GamePage({ params }) {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("games");
   const [phase, setPhase] = useState("post");
-
-  // Rating state
   const [step, setStep] = useState(0);
   const [showWiz, setShowWiz] = useState(false);
   const [rating, setRating] = useState(7);
@@ -151,8 +110,6 @@ export default function GamePage({ params }) {
   const [review, setReview] = useState("");
   const [logged, setLogged] = useState(false);
   const [fav, setFav] = useState(false);
-
-  // Discussion
   const [chatFilter, setChatFilter] = useState("all");
   const [liveIn, setLiveIn] = useState("");
   const [liveChat, setLiveChat] = useState([]);
@@ -180,57 +137,24 @@ export default function GamePage({ params }) {
     setLiveIn("");
   };
 
-  const submitLog = () => {
-    setLogged(true);
-    setShowWiz(false);
-    setStep(0);
-  };
+  const submitLog = () => { setLogged(true); setShowWiz(false); setStep(0); };
 
-  const filteredChat =
-    chatFilter === "all"
-      ? liveChat
-      : liveChat.filter((m) =>
-          chatFilter === "neutral" ? !m.tm : m.tm === chatFilter
-        );
+  const filteredChat = chatFilter === "all" ? liveChat : liveChat.filter((m) => chatFilter === "neutral" ? !m.tm : m.tm === chatFilter);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-zinc-500">Loading game...</div>
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-zinc-500">Loading game...</div></div>;
+  if (!game) return <div className="min-h-screen flex flex-col items-center justify-center gap-4"><div className="text-4xl">😕</div><div className="text-zinc-500">Game not found</div><Link href="/" className="text-red-400 text-sm font-semibold">← Back to games</Link></div>;
 
-  if (!game) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-        <div className="text-4xl">😕</div>
-        <div className="text-zinc-500">Game not found</div>
-        <Link href="/" className="text-red-400 text-sm font-semibold">
-          ← Back to games
-        </Link>
-      </div>
-    );
-  }
-
-  const g = game;
-  const a = g.away;
-  const h = g.home;
+  const g = game, a = g.away, h = g.home;
   const moods = autoMoods(g);
   const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(`${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL`)}`;
   const steps = ["Rating", "Details", "MVP", "Extras"];
 
   return (
     <div className="min-h-screen pb-24">
-      {/* Header */}
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-zinc-400 hover:text-white text-sm font-medium">
-            ← Back
-          </Link>
-          <h1 className="text-sm font-bold text-white flex-1 text-center">
-            {a.abbr} vs {h.abbr} · Wk {g.week}
-          </h1>
+          <Link href="/" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
+          <h1 className="text-sm font-bold text-white flex-1 text-center">{a.abbr} vs {h.abbr} · Wk {g.week}</h1>
           <div className="w-12" />
         </div>
       </div>
@@ -244,32 +168,21 @@ export default function GamePage({ params }) {
               Week {g.week} · {g.net} · {new Date(g.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
             </div>
             {g.venue && <div className="text-center text-[10px] text-zinc-600 mb-4">{g.venue}</div>}
-
             <div className="flex items-center justify-center gap-4">
               <div className="text-center flex-1">
                 {a.logo && <img src={a.logo} className="w-14 h-14 object-contain mx-auto" />}
-                <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: a.score < h.score ? "#52525b" : "#fafafa" }}>
-                  {g.isPre ? "—" : a.score}
-                </div>
+                <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: a.score < h.score ? "#52525b" : "#fafafa" }}>{g.isPre ? "—" : a.score}</div>
                 <div className="text-xs font-semibold text-zinc-400 mt-1">{a.name}</div>
                 <div className="text-[10px] text-zinc-600">{a.record}</div>
               </div>
-
-              <div className="text-[10px] font-bold text-zinc-600 tracking-widest">
-                {g.isPre ? g.gameTime : `FINAL${g.ot ? "/OT" : ""}`}
-              </div>
-
+              <div className="text-[10px] font-bold text-zinc-600 tracking-widest">{g.isPre ? "" : `FINAL${g.ot ? "/OT" : ""}`}</div>
               <div className="text-center flex-1">
                 {h.logo && <img src={h.logo} className="w-14 h-14 object-contain mx-auto" />}
-                <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: h.score > a.score ? "#fafafa" : "#52525b" }}>
-                  {g.isPre ? "—" : h.score}
-                </div>
+                <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: h.score > a.score ? "#fafafa" : "#52525b" }}>{g.isPre ? "—" : h.score}</div>
                 <div className="text-xs font-semibold text-zinc-400 mt-1">{h.name}</div>
                 <div className="text-[10px] text-zinc-600">{h.record}</div>
               </div>
             </div>
-
-            {/* Quarter scores */}
             {h.q.length > 0 && (
               <div className="flex justify-center gap-0 mt-4 pt-3 border-t border-zinc-800">
                 {h.q.map((q, i) => (
@@ -291,147 +204,76 @@ export default function GamePage({ params }) {
 
         {/* Phase tabs */}
         <div className="flex gap-1 mb-4 bg-zinc-900 p-1 rounded-full">
-          {[
-            { id: "pre", label: "📋 Pre-Game" },
-            { id: "live", label: "💬 Discussion" },
-            { id: "post", label: "📊 Post-Game" },
-          ].map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPhase(p.id)}
-              className={`flex-1 py-2 rounded-full text-xs font-semibold transition-all ${
-                phase === p.id ? "bg-red-600 text-white" : "text-zinc-500"
-              }`}
-            >
-              {p.label}
-            </button>
+          {[{ id: "pre", l: "📋 Pre-Game" }, { id: "live", l: "💬 Discussion" }, { id: "post", l: "📊 Post-Game" }].map((p) => (
+            <button key={p.id} onClick={() => setPhase(p.id)} className={`flex-1 py-2 rounded-full text-xs font-semibold transition-all ${phase === p.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{p.l}</button>
           ))}
         </div>
 
         {/* Action buttons */}
         {phase !== "pre" && !showWiz && (
           <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => setShowWiz(true)}
-              className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${
-                logged
-                  ? "border-2 border-red-600 text-red-400"
-                  : "bg-red-600 text-white"
-              }`}
-            >
+            <button onClick={() => setShowWiz(true)} className={`flex-1 py-3 rounded-xl font-bold text-sm ${logged ? "border-2 border-red-600 text-red-400" : "bg-red-600 text-white"}`}>
               {logged ? "✓ Edit Rating" : "⭐ Rate Match"}
             </button>
-            <button
-              onClick={() => setFav(!fav)}
-              className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5"
-              style={{ backgroundColor: fav ? "rgba(239,68,68,0.1)" : "transparent" }}
-            >
+            <button onClick={() => setFav(!fav)} className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5" style={{ backgroundColor: fav ? "rgba(239,68,68,0.1)" : "transparent" }}>
               <span className="text-sm">{fav ? "❤️" : "🤍"}</span>
               <span className={`text-[8px] font-bold ${fav ? "text-red-400" : "text-zinc-600"}`}>Fave</span>
             </button>
             <button className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5">
-              <span className="text-sm">📌</span>
-              <span className="text-[8px] font-bold text-zinc-600">Pin</span>
+              <span className="text-sm">📌</span><span className="text-[8px] font-bold text-zinc-600">Pin</span>
             </button>
             <button className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5">
-              <span className="text-sm">📋</span>
-              <span className="text-[8px] font-bold text-zinc-600">List</span>
+              <span className="text-sm">📋</span><span className="text-[8px] font-bold text-zinc-600">List</span>
             </button>
           </div>
         )}
 
-        {/* ========== PRE-GAME ========== */}
+        {/* PRE-GAME */}
         {phase === "pre" && (
-          <div>
-            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
-              <h3 className="font-bold text-white text-sm mb-3">Matchup Preview</h3>
-              <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
-                {[a, h].map((t, i) => (
-                  <div key={t.abbr} className={i === 0 ? "" : ""}>
-                    <div className="text-center p-3 rounded-xl bg-zinc-950">
-                      {t.logo && <img src={t.logo} className="w-10 h-10 mx-auto" />}
-                      <div className="text-lg font-extrabold text-white mt-2">{t.record}</div>
-                      <div className="text-[10px] text-zinc-400">{t.name}</div>
-                    </div>
-                    {i === 0 && <div />}
-                  </div>
-                )).reduce((acc, el, i) => {
-                  if (i === 1) acc.push(<div key="vs" className="text-xs font-bold text-zinc-600 text-center">VS</div>);
-                  acc.push(el);
-                  return acc;
-                }, [])}
+          <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
+            <h3 className="font-bold text-white text-sm mb-3">Matchup Preview</h3>
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
+              <div className="text-center p-3 rounded-xl bg-zinc-950">
+                {a.logo && <img src={a.logo} className="w-10 h-10 mx-auto" />}
+                <div className="text-lg font-extrabold text-white mt-2">{a.record}</div>
+                <div className="text-[10px] text-zinc-400">{a.name}</div>
               </div>
-              {g.odds && (
-                <div className="mt-3 p-3 rounded-xl bg-zinc-950 flex justify-between">
-                  <div>
-                    <div className="text-[9px] font-bold text-zinc-600">SPREAD</div>
-                    <div className="text-sm font-bold text-white">{g.odds}</div>
-                  </div>
-                  {g.ou && (
-                    <div className="text-right">
-                      <div className="text-[9px] font-bold text-zinc-600">O/U</div>
-                      <div className="text-sm font-bold text-white">{g.ou}</div>
-                    </div>
-                  )}
-                </div>
-              )}
+              <div className="text-xs font-bold text-zinc-600">VS</div>
+              <div className="text-center p-3 rounded-xl bg-zinc-950">
+                {h.logo && <img src={h.logo} className="w-10 h-10 mx-auto" />}
+                <div className="text-lg font-extrabold text-white mt-2">{h.record}</div>
+                <div className="text-[10px] text-zinc-400">{h.name}</div>
+              </div>
             </div>
+            {g.odds && (
+              <div className="mt-3 p-3 rounded-xl bg-zinc-950 flex justify-between">
+                <div><div className="text-[9px] font-bold text-zinc-600">SPREAD</div><div className="text-sm font-bold text-white">{g.odds}</div></div>
+                {g.ou && <div className="text-right"><div className="text-[9px] font-bold text-zinc-600">O/U</div><div className="text-sm font-bold text-white">{g.ou}</div></div>}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ========== DISCUSSION ========== */}
+        {/* DISCUSSION */}
         {phase === "live" && (
           <div>
             <div className="flex gap-2 mb-3 overflow-x-auto">
-              {[
-                { id: "all", label: "All Fans" },
-                { id: a.abbr, label: `${a.abbr} Fans` },
-                { id: h.abbr, label: `${h.abbr} Fans` },
-                { id: "neutral", label: "Neutrals" },
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setChatFilter(f.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold shrink-0 border transition-all ${
-                    chatFilter === f.id
-                      ? "bg-red-600/10 text-red-400 border-red-600/30"
-                      : "text-zinc-500 border-zinc-800"
-                  }`}
-                >
-                  {f.label}
-                </button>
+              {[{ id: "all", l: "All Fans" }, { id: a.abbr, l: `${a.abbr} Fans` }, { id: h.abbr, l: `${h.abbr} Fans` }, { id: "neutral", l: "Neutrals" }].map((f) => (
+                <button key={f.id} onClick={() => setChatFilter(f.id)} className={`px-3.5 py-1.5 rounded-full text-xs font-semibold shrink-0 border ${chatFilter === f.id ? "bg-red-600/10 text-red-400 border-red-600/30" : "text-zinc-500 border-zinc-800"}`}>{f.l}</button>
               ))}
             </div>
             <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4">
               <div className="flex gap-2 mb-3">
-                <input
-                  value={liveIn}
-                  onChange={(e) => setLiveIn(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendMsg()}
-                  placeholder="Share your take..."
-                  className="flex-1 px-3 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-white text-sm outline-none focus:border-red-600"
-                />
-                <button onClick={sendMsg} className="px-4 rounded-xl bg-red-600 text-white font-bold">
-                  →
-                </button>
+                <input value={liveIn} onChange={(e) => setLiveIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMsg()} placeholder="Share your take..."
+                  className="flex-1 px-3 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-white text-sm outline-none focus:border-red-600" />
+                <button onClick={sendMsg} className="px-4 rounded-xl bg-red-600 text-white font-bold">→</button>
               </div>
               {filteredChat.map((m, i) => (
                 <div key={i} className="p-3 rounded-xl bg-zinc-950 mb-2">
                   <div className="flex items-center gap-2 mb-1">
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold"
-                      style={{ backgroundColor: m.c }}
-                    >
-                      {m.u[0]}
-                    </div>
-                    <span className={`text-xs font-bold ${m.u === "Isaac" ? "text-red-400" : "text-white"}`}>
-                      {m.u}
-                    </span>
-                    {m.tm && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500 font-semibold">
-                        {m.tm}
-                      </span>
-                    )}
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold" style={{ backgroundColor: m.c }}>{m.u[0]}</div>
+                    <span className={`text-xs font-bold ${m.u === "Isaac" ? "text-red-400" : "text-white"}`}>{m.u}</span>
+                    {m.tm && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500 font-semibold">{m.tm}</span>}
                     <span className="text-[10px] text-zinc-600 ml-auto">{m.ago}</span>
                   </div>
                   <div className="text-sm text-zinc-400 pl-7">{m.t}</div>
@@ -441,23 +283,16 @@ export default function GamePage({ params }) {
           </div>
         )}
 
-        {/* ========== POST-GAME ========== */}
+        {/* POST-GAME */}
         {phase === "post" && (
           <div>
-            {/* YouTube highlights */}
+            {/* YouTube Highlights */}
             {g.isFinal && (
-              <div
-                onClick={() => window.open(ytUrl, "_blank")}
-                className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 hover:-translate-y-0.5 transition-transform cursor-pointer"
-              >
-                <div className="w-12 h-9 rounded-lg bg-red-600 flex items-center justify-center text-xl shrink-0">
-                  ▶
-                </div>
+              <div onClick={() => window.open(ytUrl, "_blank")} className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 hover:-translate-y-0.5 transition-transform cursor-pointer">
+                <div className="w-12 h-9 rounded-lg bg-red-600 flex items-center justify-center text-xl shrink-0">▶</div>
                 <div>
                   <div className="text-sm font-bold text-white">Watch Highlights</div>
-                  <div className="text-[11px] text-zinc-500">
-                    {a.abbr} vs {h.abbr} Week {g.week} highlights on YouTube
-                  </div>
+                  <div className="text-[11px] text-zinc-500">{a.abbr} vs {h.abbr} Week {g.week} highlights on YouTube</div>
                 </div>
               </div>
             )}
@@ -468,20 +303,14 @@ export default function GamePage({ params }) {
               <div className="grid grid-cols-2 gap-4">
                 {[a, h].map((t) => (
                   <div key={t.abbr}>
-                    <div className="text-[9px] font-extrabold tracking-widest uppercase mb-2" style={{ color: t.color }}>
-                      {t.abbr}
-                    </div>
-                    {t.leaders
-                      .filter((l) => l.name && !l.name.includes("Defense"))
-                      .map((p, i) => (
-                        <div key={i} className="mb-2 p-2.5 rounded-lg bg-zinc-950">
-                          <div className="text-xs font-bold text-white">{p.name}</div>
-                          <div className="text-[10px] text-zinc-500">{p.stat}</div>
-                        </div>
-                      ))}
-                    {t.leaders.filter((l) => l.name && !l.name.includes("Defense")).length === 0 && (
-                      <div className="text-[11px] text-zinc-600 p-2">Loading...</div>
-                    )}
+                    <div className="text-[9px] font-extrabold tracking-widest uppercase mb-2" style={{ color: t.color }}>{t.abbr}</div>
+                    {t.leaders.filter((l) => l.name && !l.name.includes("Defense")).map((p, i) => (
+                      <div key={i} className="mb-2 p-2.5 rounded-lg bg-zinc-950">
+                        <div className="text-xs font-bold text-white">{p.name}</div>
+                        <div className="text-[10px] text-zinc-500">{p.stat}</div>
+                      </div>
+                    ))}
+                    {t.leaders.filter((l) => l.name && !l.name.includes("Defense")).length === 0 && <div className="text-[11px] text-zinc-600 p-2">No data</div>}
                   </div>
                 ))}
               </div>
@@ -493,123 +322,71 @@ export default function GamePage({ params }) {
               <div className="flex gap-1.5 flex-wrap">
                 {["🔥 Shootout", "💪 Comeback", "⏱️ OT", "🛡️ Defensive", "💨 Blowout", "🎯 Clutch", "🌟 Classic", "😤 Controversial"].map((m) => {
                   const active = moods.includes(m);
-                  return (
-                    <span
-                      key={m}
-                      className={`text-[11px] px-3 py-1.5 rounded-full font-semibold ${
-                        active
-                          ? "bg-red-600/10 text-red-400 border border-red-600/30"
-                          : "bg-zinc-950 text-zinc-600 border border-transparent"
-                      }`}
-                    >
-                      {m}
-                    </span>
-                  );
+                  return <span key={m} className={`text-[11px] px-3 py-1.5 rounded-full font-semibold ${active ? "bg-red-600/10 text-red-400 border border-red-600/30" : "bg-zinc-950 text-zinc-600 border border-transparent"}`}>{m}</span>;
                 })}
               </div>
             </div>
 
-            {/* ===== RATING WIZARD ===== */}
+            {/* Rating Wizard */}
             {showWiz && (
               <div className="rounded-2xl bg-zinc-900 border-2 border-red-600 p-5 mb-4">
-                {/* Step dots */}
                 <div className="flex items-center justify-center gap-3 mb-5">
                   {steps.map((s, i) => (
                     <div key={s} className="flex items-center gap-3">
                       <div className="flex flex-col items-center gap-1">
-                        <div
-                          className="rounded-full transition-all"
-                          style={{
-                            width: i === step ? 12 : 8,
-                            height: i === step ? 12 : 8,
-                            backgroundColor: i <= step ? "#dc2626" : "#27272a",
-                          }}
-                        />
-                        <span className={`text-[9px] font-semibold ${i <= step ? "text-red-400" : "text-zinc-600"}`}>
-                          {s}
-                        </span>
+                        <div className="rounded-full transition-all" style={{ width: i === step ? 12 : 8, height: i === step ? 12 : 8, backgroundColor: i <= step ? "#dc2626" : "#27272a" }} />
+                        <span className={`text-[9px] font-semibold ${i <= step ? "text-red-400" : "text-zinc-600"}`}>{s}</span>
                       </div>
-                      {i < steps.length - 1 && (
-                        <div className="w-6 h-0.5 rounded-full mb-4" style={{ backgroundColor: i < step ? "#dc2626" : "#27272a" }} />
-                      )}
+                      {i < steps.length - 1 && <div className="w-6 h-0.5 rounded-full mb-4" style={{ backgroundColor: i < step ? "#dc2626" : "#27272a" }} />}
                     </div>
                   ))}
                 </div>
 
-                {/* Step 0: Overall Rating */}
                 {step === 0 && (
                   <div>
                     <div className="text-center mb-4">
-                      <div className="text-6xl font-extrabold" style={{ color: rc(rating) }}>
-                        {rating}
-                      </div>
-                      <div className="text-sm font-bold mt-1" style={{ color: rc(rating) }}>
-                        {rating >= 9 ? "INSTANT CLASSIC" : rating >= 7 ? "GREAT GAME" : rating >= 5 ? "DECENT" : rating >= 3 ? "MEH" : "TERRIBLE"}
-                      </div>
+                      <div className="text-6xl font-extrabold" style={{ color: rc(rating) }}>{rating}</div>
+                      <div className="text-sm font-bold mt-1" style={{ color: rc(rating) }}>{rating >= 9 ? "INSTANT CLASSIC" : rating >= 7 ? "GREAT GAME" : rating >= 5 ? "DECENT" : rating >= 3 ? "MEH" : "TERRIBLE"}</div>
                     </div>
-                    <input
-                      type="range" min="1" max="10" step="0.5" value={rating}
-                      onChange={(e) => setRating(parseFloat(e.target.value))}
-                      className="w-full h-2 rounded-full appearance-none cursor-pointer"
-                      style={{
-                        background: `linear-gradient(to right, ${rc(rating)} ${((rating - 1) / 9) * 100}%, #27272a ${((rating - 1) / 9) * 100}%)`,
-                      }}
-                    />
-                    <div className="flex justify-between mt-1">
-                      <span className="text-[10px] text-zinc-600">1</span>
-                      <span className="text-[10px] text-zinc-600">10</span>
-                    </div>
+                    <input type="range" min="1" max="10" step="0.5" value={rating} onChange={(e) => setRating(parseFloat(e.target.value))}
+                      className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(rating)} ${((rating - 1) / 9) * 100}%, #27272a ${((rating - 1) / 9) * 100}%)` }} />
+                    <div className="flex justify-between mt-1"><span className="text-[10px] text-zinc-600">1</span><span className="text-[10px] text-zinc-600">10</span></div>
                     <div className="mt-5">
                       <div className="text-sm font-semibold text-white text-center mb-3">Was it worth watching?</div>
                       <div className="flex gap-2 justify-center">
-                        {[
-                          { v: "yes", l: "👍 Yes", c: "#22c55e" },
-                          { v: "no", l: "👎 No", c: "#ef4444" },
-                          { v: "meh", l: "😐 Meh", c: "#eab308" },
-                        ].map((o) => (
-                          <button
-                            key={o.v}
-                            onClick={() => setWorthIt(o.v)}
-                            className="px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
-                            style={{
-                              border: worthIt === o.v ? `2px solid ${o.c}` : "2px solid #27272a",
-                              backgroundColor: worthIt === o.v ? o.c + "15" : "transparent",
-                              color: worthIt === o.v ? o.c : "#71717a",
-                            }}
-                          >
-                            {o.l}
-                          </button>
+                        {[{ v: "yes", l: "👍 Yes", c: "#22c55e" }, { v: "no", l: "👎 No", c: "#ef4444" }, { v: "meh", l: "😐 Meh", c: "#eab308" }].map((o) => (
+                          <button key={o.v} onClick={() => setWorthIt(o.v)} className="px-5 py-2.5 rounded-xl text-sm font-bold"
+                            style={{ border: worthIt === o.v ? `2px solid ${o.c}` : "2px solid #27272a", backgroundColor: worthIt === o.v ? o.c + "15" : "transparent", color: worthIt === o.v ? o.c : "#71717a" }}>{o.l}</button>
                         ))}
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Step 1: Sub-ratings */}
                 {step === 1 && (
                   <div>
                     <div className="text-sm font-bold text-white text-center mb-4">How were the details?</div>
-                    <RatingSlider label="🏁 Ref Performance" value={refR} onChange={setRefR} />
-                    <RatingSlider label="🎬 Entertainment Value" value={entR} onChange={setEntR} />
+                    {[{ l: "🏁 Ref Performance", v: refR, s: setRefR }, { l: "🎬 Entertainment Value", v: entR, s: setEntR }].map(({ l, v, s }) => (
+                      <div key={l} className="mb-5 p-4 rounded-xl bg-zinc-950">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-semibold text-white">{l}</span>
+                          <span className="text-2xl font-extrabold" style={{ color: rc(v) }}>{v}</span>
+                        </div>
+                        <input type="range" min="1" max="10" step="0.5" value={v} onChange={(e) => s(parseFloat(e.target.value))}
+                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(v)} ${((v - 1) / 9) * 100}%, #27272a ${((v - 1) / 9) * 100}%)` }} />
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {/* Step 2: MVP & Letdown */}
                 {step === 2 && (
                   <div>
                     <div className="mb-5">
                       <div className="text-sm font-bold text-white mb-3">🌟 Game MVP</div>
                       <div className="flex gap-1.5 flex-wrap max-h-36 overflow-y-auto">
                         {g.players.map((p, i) => (
-                          <button
-                            key={p.name + i}
-                            onClick={() => setMvp(p.name)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border-2 ${
-                              mvp === p.name
-                                ? "bg-green-500/15 text-green-400 border-green-500/40"
-                                : "bg-zinc-950 text-zinc-500 border-transparent"
-                            }`}
-                          >
+                          <button key={p.name + i} onClick={() => setMvp(p.name)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${mvp === p.name ? "bg-green-500/15 text-green-400 border-green-500/40" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>
                             {p.name} <span className="text-[9px] opacity-50">{p.tm}</span>
                           </button>
                         ))}
@@ -619,15 +396,8 @@ export default function GamePage({ params }) {
                       <div className="text-sm font-bold text-white mb-3">😤 Biggest Letdown</div>
                       <div className="flex gap-1.5 flex-wrap max-h-36 overflow-y-auto">
                         {g.players.map((p, i) => (
-                          <button
-                            key={p.name + i + "l"}
-                            onClick={() => setLetdown(p.name)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border-2 ${
-                              letdown === p.name
-                                ? "bg-red-500/15 text-red-400 border-red-500/40"
-                                : "bg-zinc-950 text-zinc-500 border-transparent"
-                            }`}
-                          >
+                          <button key={p.name + i + "l"} onClick={() => setLetdown(p.name)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${letdown === p.name ? "bg-red-500/15 text-red-400 border-red-500/40" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>
                             {p.name} <span className="text-[9px] opacity-50">{p.tm}</span>
                           </button>
                         ))}
@@ -636,59 +406,29 @@ export default function GamePage({ params }) {
                   </div>
                 )}
 
-                {/* Step 3: Extras */}
                 {step === 3 && (
                   <div>
                     <div className="mb-4">
-                      <div className="text-sm font-semibold text-white mb-2">📺 How'd You Watch?</div>
+                      <div className="text-sm font-semibold text-white mb-2">📺 How did you watch?</div>
                       <div className="flex gap-1.5 flex-wrap">
                         {["🛋️ Couch", "🍺 Bar", "🏟️ Stadium", "📱 Phone", "📺 RedZone", "🎬 Highlights"].map((w) => (
-                          <button
-                            key={w}
-                            onClick={() => setWatchHow(w)}
-                            className={`px-3.5 py-2 rounded-full text-xs font-semibold transition-all border-2 ${
-                              watchHow === w
-                                ? "bg-red-600/10 text-red-400 border-red-600"
-                                : "bg-zinc-950 text-zinc-500 border-transparent"
-                            }`}
-                          >
-                            {w}
-                          </button>
+                          <button key={w} onClick={() => setWatchHow(w)}
+                            className={`px-3.5 py-2 rounded-full text-xs font-semibold border-2 ${watchHow === w ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{w}</button>
                         ))}
                       </div>
                     </div>
-                    <textarea
-                      value={review}
-                      onChange={(e) => setReview(e.target.value)}
-                      placeholder="Write your review..."
-                      rows={3}
-                      className="w-full p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-white text-sm outline-none resize-none focus:border-red-600"
-                    />
+                    <textarea value={review} onChange={(e) => setReview(e.target.value)} placeholder="Write your review..." rows={3}
+                      className="w-full p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-white text-sm outline-none resize-none focus:border-red-600" />
                   </div>
                 )}
 
-                {/* Nav buttons */}
                 <div className="flex gap-2 mt-5">
-                  {step > 0 && (
-                    <button onClick={() => setStep(step - 1)} className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">
-                      Back
-                    </button>
-                  )}
+                  {step > 0 && <button onClick={() => setStep(step - 1)} className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Back</button>}
                   <div className="flex-1" />
-                  {step < 3 && (
-                    <button onClick={() => setStep(step + 1)} className="px-6 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm">
-                      Next →
-                    </button>
-                  )}
-                  {step === 3 && (
-                    <button onClick={submitLog} className="px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold text-sm">
-                      {logged ? "Update ✓" : "Log Game ✓"}
-                    </button>
-                  )}
+                  {step < 3 && <button onClick={() => setStep(step + 1)} className="px-6 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm">Next →</button>}
+                  {step === 3 && <button onClick={submitLog} className="px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold text-sm">{logged ? "Update ✓" : "Log Game ✓"}</button>}
                 </div>
-                <button onClick={() => { setShowWiz(false); setStep(0); }} className="w-full mt-2 py-2 text-zinc-600 text-xs">
-                  Cancel
-                </button>
+                <button onClick={() => { setShowWiz(false); setStep(0); }} className="w-full mt-2 py-2 text-zinc-600 text-xs">Cancel</button>
               </div>
             )}
 
@@ -696,24 +436,14 @@ export default function GamePage({ params }) {
             {logged && !showWiz && (
               <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
                 <div className="grid grid-cols-3 gap-2 mb-3">
-                  {[
-                    { l: "Overall", v: rating },
-                    { l: "Refs", v: refR },
-                    { l: "Entertain", v: entR },
-                  ].map((x) => (
+                  {[{ l: "Overall", v: rating }, { l: "Refs", v: refR }, { l: "Entertain", v: entR }].map((x) => (
                     <div key={x.l} className="text-center p-2.5 rounded-xl bg-zinc-950">
                       <div className="text-[8px] text-zinc-600 font-bold">{x.l}</div>
-                      <div className="text-xl font-extrabold" style={{ color: rc(x.v) }}>
-                        {x.v}
-                      </div>
+                      <div className="text-xl font-extrabold" style={{ color: rc(x.v) }}>{x.v}</div>
                     </div>
                   ))}
                 </div>
-                {worthIt && (
-                  <div className="text-xs font-semibold mb-1" style={{ color: worthIt === "yes" ? "#22c55e" : worthIt === "no" ? "#ef4444" : "#eab308" }}>
-                    Worth watching: {worthIt === "yes" ? "👍 Yes" : worthIt === "no" ? "👎 No" : "😐 Meh"}
-                  </div>
-                )}
+                {worthIt && <div className="text-xs font-semibold mb-1" style={{ color: worthIt === "yes" ? "#22c55e" : worthIt === "no" ? "#ef4444" : "#eab308" }}>Worth watching: {worthIt === "yes" ? "👍 Yes" : worthIt === "no" ? "👎 No" : "😐 Meh"}</div>}
                 <div className="flex gap-2 flex-wrap text-[11px]">
                   {mvp && <span className="text-green-400">🌟 {mvp}</span>}
                   {letdown && <span className="text-red-400">😤 {letdown}</span>}
@@ -725,7 +455,6 @@ export default function GamePage({ params }) {
           </div>
         )}
       </div>
-
       <Nav tab={tab} setTab={setTab} />
     </div>
   );
