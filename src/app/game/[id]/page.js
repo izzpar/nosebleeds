@@ -2,6 +2,7 @@
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+import { supabase } from "@/lib/supabase";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
 
@@ -131,13 +132,58 @@ export default function GamePage({ params }) {
     load();
   }, [id]);
 
+  useEffect(() => {
+    async function loadRating() {
+      try {
+        const { data } = await supabase.from("ratings").select("*").eq("game_id", id).limit(1);
+        if (data && data.length > 0) {
+          const r = data[0];
+          setRating(r.rating || 7);
+          setRefR(r.ref_rating || 5);
+          setEntR(r.ent_rating || 7);
+          setMvp(r.mvp || "");
+          setLetdown(r.letdown || "");
+          setWatchHow(r.watch_how || "");
+          setWorthIt(r.worth_it || "");
+          setReview(r.review || "");
+          setLogged(true);
+        }
+      } catch (e) { console.error("Load error:", e); }
+    }
+    loadRating();
+  }, [id]);
+
+
   const sendMsg = () => {
     if (!liveIn.trim()) return;
     setLiveChat((p) => [{ u: "Isaac", t: liveIn, ago: "now", c: "#dc2626", tm: "" }, ...p]);
     setLiveIn("");
   };
 
-  const submitLog = () => { setLogged(true); setShowWiz(false); setStep(0); };
+  const submitLog = async () => {
+    const ratingData = {
+      game_id: id,
+      rating: rating,
+      ref_rating: refR,
+      ent_rating: entR,
+      mvp: mvp || null,
+      letdown: letdown || null,
+      watch_how: watchHow || null,
+      worth_it: worthIt || null,
+      review: review || null,
+      season: game?.season,
+      week: game?.week,
+    };
+    try {
+      const { data: existing } = await supabase.from("ratings").select("id").eq("game_id", id).limit(1);
+      if (existing && existing.length > 0) {
+        await supabase.from("ratings").update(ratingData).eq("id", existing[0].id);
+      } else {
+        await supabase.from("ratings").insert(ratingData);
+      }
+    } catch (e) { console.error("Save error:", e); }
+    setLogged(true); setShowWiz(false); setStep(0);
+  };
 
   const filteredChat = chatFilter === "all" ? liveChat : liveChat.filter((m) => chatFilter === "neutral" ? !m.tm : m.tm === chatFilter);
 
