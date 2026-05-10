@@ -2,6 +2,8 @@
 import { useState, useEffect, useMemo } from "react";
 import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
+import { useAuth } from "@/components/AuthProvider";
+import Link from "next/link";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
 const ALL_TEAMS = ["ARI","ATL","BAL","BUF","CAR","CHI","CIN","CLE","DAL","DEN","DET","GB","HOU","IND","JAX","KC","LAC","LAR","LV","MIA","MIN","NE","NO","NYG","NYJ","PHI","PIT","SEA","SF","TB","TEN","WSH"];
@@ -106,6 +108,7 @@ async function fetchWeek(year, week) {
 }
 
 export default function Home() {
+  const { user, signOut } = useAuth(); if (user) console.log("USER DATA:", JSON.stringify(user.user_metadata, null, 2));
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [week, setWeek] = useState(18);
@@ -356,13 +359,26 @@ export default function Home() {
         {/* ===== PROFILE TAB ===== */}
         {tab === "profile" && (
           <div>
+            {!user && (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-3">👤</div>
+                <div className="text-base font-bold text-white">Sign in to track your games</div>
+                <div className="text-xs text-zinc-500 mt-1">Rate games, build your diary, and earn badges</div>
+                <Link href="/login" className="inline-block mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Sign In →</Link>
+              </div>
+            )}
+            {user && <>
             {/* User card */}
             <div className="rounded-2xl p-5 bg-zinc-900 border border-zinc-800 mb-4">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-white text-lg font-extrabold">I</div>
+                {user?.user_metadata?.avatar_url ? (
+                  <img src={user.user_metadata.avatar_url} referrerPolicy="no-referrer" className="w-12 h-12 rounded-full" />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-white text-lg font-extrabold">{(user?.user_metadata?.full_name || "U")[0]}</div>
+                )}
                 <div>
-                  <div className="text-lg font-extrabold text-white">Isaac</div>
-                  <div className="text-xs text-zinc-500">@isaac</div>
+                  <div className="text-lg font-extrabold text-white">{user?.user_metadata?.full_name || "User"}</div>
+                  <div className="text-xs text-zinc-500">{user?.email || ""}</div>
                   {myTeams.length > 0 && <div className="text-[10px] text-red-400 mt-0.5">{myTeams.join(" · ")}</div>}
                 </div>
               </div>
@@ -378,6 +394,7 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+              <button onClick={signOut} className="w-full mt-3 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-semibold hover:bg-zinc-700 transition-all">Sign Out</button>
             </div>
 
             {/* Pinned */}
@@ -467,6 +484,7 @@ export default function Home() {
                 <RBars dist={Array(10).fill(0).map((_, i) => logs.filter((l) => Math.floor(l.rating) === i + 1).length)} />
               </div>
             )}
+            </>}
           </div>
         )}
       </div>
