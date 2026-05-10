@@ -3,6 +3,7 @@ import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/components/AuthProvider";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
 
@@ -95,6 +96,7 @@ async function fetchGame(id) {
 
 export default function GamePage({ params }) {
   const { id } = use(params);
+  const { user } = useAuth();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("games");
@@ -111,9 +113,15 @@ export default function GamePage({ params }) {
   const [review, setReview] = useState("");
   const [logged, setLogged] = useState(false);
   const [fav, setFav] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [userMoods, setUserMoods] = useState([]);
+  const [hasRow, setHasRow] = useState(false);
   const [chatFilter, setChatFilter] = useState("all");
   const [liveIn, setLiveIn] = useState("");
   const [liveChat, setLiveChat] = useState([]);
+  const [lists, setLists] = useState([]);
+  const [selectedLists, setSelectedLists] = useState([]);
+  const [newListInline, setNewListInline] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -133,9 +141,24 @@ export default function GamePage({ params }) {
   }, [id]);
 
   useEffect(() => {
+    async function loadLists() {
+      if (!user) { setLists([]); return; }
+      try {
+        const { data } = await supabase.from("lists").select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+        if (data) setLists(data);
+        // Also load which lists this game is in
+        const { data: links } = await supabase.from("list_games").select("list_id").eq("user_id", user.id).eq("game_id", id);
+        if (links) setSelectedLists(links.map(l => l.list_id));
+      } catch (e) { console.error("Load lists:", e); }
+    }
+    loadLists();
+  }, [user, id]);
+
+  useEffect(() => {
     async function loadRating() {
       try {
-        const { data } = await supabase.from("ratings").select("*").eq("game_id", id).limit(1);
+        if (!user) { setLogged(false); return; }
+        const { data } = await supabase.from("ratings").select("*").eq("game_id", id).eq("user_id", user.id).limit(1);
         if (data && data.length > 0) {
           const r = data[0];
           setRating(r.rating || 7);
@@ -146,12 +169,16 @@ export default function GamePage({ params }) {
           setWatchHow(r.watch_how || "");
           setWorthIt(r.worth_it || "");
           setReview(r.review || "");
-          setLogged(true);
+          setFav(r.favorited || false);
+          setPinned(r.pinned || false);
+          setUserMoods(r.moods || []);
+          setHasRow(true);
+          if (r.rating) setLogged(true);
         }
       } catch (e) { console.error("Load error:", e); }
     }
     loadRating();
-  }, [id]);
+  }, [id, user]);
 
 
   const sendMsg = () => {
@@ -161,8 +188,14 @@ export default function GamePage({ params }) {
   };
 
   const submitLog = async () => {
+    if (!user) { window.location.href = "/login"; return; }
     const ratingData = {
       game_id: id,
+      user_id: user.id,
+      away_team: game?.away?.abbr || "",
+      home_team: game?.home?.abbr || "",
+      away_score: game?.away?.score || 0,
+      home_score: game?.home?.score || 0,
       rating: rating,
       ref_rating: refR,
       ent_rating: entR,
@@ -175,14 +208,94 @@ export default function GamePage({ params }) {
       week: game?.week,
     };
     try {
-      const { data: existing } = await supabase.from("ratings").select("id").eq("game_id", id).limit(1);
+      const { data: existing } = await supabase.from("ratings").select("id").eq("game_id", id).eq("user_id", user.id).limit(1);
       if (existing && existing.length > 0) {
         await supabase.from("ratings").update(ratingData).eq("id", existing[0].id);
       } else {
         await supabase.from("ratings").insert(ratingData);
       }
+      // Save list assignments
+      // First remove any list_games for this game/user that aren't selected
+      const { data: existingLinks } = await supabase.from("list_games").select("list_id").eq("user_id", user.id).eq("game_id", id);
+      const existingIds = (existingLinks || []).map(l => l.list_id);
+      const toRemove = existingIds.filter(lid => !selectedLists.includes(lid));
+      const toAdd = selectedLists.filter(lid => !existingIds.includes(lid));
+      if (toRemove.length > 0) {
+        await supabase.from("list_games").delete().eq("user_id", user.id).eq("game_id", id).in("list_id", toRemove);
+      }
+      for (const listId of toAdd) {
+        await supabase.from("list_games").insert({
+          list_id: listId,
+          user_id: user.id,
+          game_id: id,
+          away_team: game?.away?.abbr || "",
+          home_team: game?.home?.abbr || "",
+          away_score: game?.away?.score || 0,
+          home_score: game?.home?.score || 0,
+          week: game?.week,
+          season: game?.season,
+        });
+      }
     } catch (e) { console.error("Save error:", e); }
     setLogged(true); setShowWiz(false); setStep(0);
+  };
+
+  const persistInteraction = async (updates) => {
+    if (!user) { window.location.href = "/login"; return; }
+    try {
+      const baseData = {
+        game_id: id,
+        user_id: user.id,
+        away_team: game?.away?.abbr || "",
+        home_team: game?.home?.abbr || "",
+        away_score: game?.away?.score || 0,
+        home_score: game?.home?.score || 0,
+        season: game?.season,
+        week: game?.week,
+        ...updates,
+      };
+      const { data: existing } = await supabase.from("ratings").select("id").eq("game_id", id).eq("user_id", user.id).limit(1);
+      if (existing && existing.length > 0) {
+        await supabase.from("ratings").update(updates).eq("id", existing[0].id);
+      } else {
+        await supabase.from("ratings").insert(baseData);
+        setHasRow(true);
+      }
+    } catch (e) { console.error("Persist:", e); }
+  };
+
+  const toggleFav = async () => {
+    const next = !fav;
+    setFav(next);
+    await persistInteraction({ favorited: next });
+  };
+
+  const togglePin = async () => {
+    const next = !pinned;
+    setPinned(next);
+    await persistInteraction({ pinned: next });
+  };
+
+  const toggleMood = async (mood) => {
+    const next = userMoods.includes(mood) ? userMoods.filter(m => m !== mood) : [...userMoods, mood];
+    setUserMoods(next);
+    await persistInteraction({ moods: next });
+  };
+
+  const createListInline = async () => {
+    if (!newListInline.trim() || !user) return;
+    try {
+      const { data, error } = await supabase.from("lists").insert({
+        user_id: user.id,
+        name: newListInline.trim(),
+        icon: "📋",
+      }).select().single();
+      if (data) {
+        setLists([...lists, data]);
+        setSelectedLists([...selectedLists, data.id]);
+        setNewListInline("");
+      }
+    } catch (e) { console.error("Create list:", e); }
   };
 
   const filteredChat = chatFilter === "all" ? liveChat : liveChat.filter((m) => chatFilter === "neutral" ? !m.tm : m.tm === chatFilter);
@@ -233,13 +346,13 @@ export default function GamePage({ params }) {
               <div className="flex justify-center gap-0 mt-4 pt-3 border-t border-zinc-800">
                 {h.q.map((q, i) => (
                   <div key={i} className="text-center px-2" style={{ borderRight: i < h.q.length - 1 ? "1px solid #27272a" : "none" }}>
-                    <div className="text-[8px] text-zinc-600 font-bold">{i < 4 ? `Q${i + 1}` : "OT"}</div>
+                    <div className="text-[10px] text-zinc-600 font-bold">{i < 4 ? `Q${i + 1}` : "OT"}</div>
                     <div className="text-[10px] font-semibold text-zinc-400">{a.q[i] ?? "-"}</div>
                     <div className="text-[10px] font-semibold text-zinc-400">{q ?? "-"}</div>
                   </div>
                 ))}
                 <div className="text-center px-2">
-                  <div className="text-[8px] text-zinc-600 font-bold">F</div>
+                  <div className="text-[10px] text-zinc-600 font-bold">F</div>
                   <div className="text-[10px] font-extrabold text-white">{a.score}</div>
                   <div className="text-[10px] font-extrabold text-white">{h.score}</div>
                 </div>
@@ -261,15 +374,15 @@ export default function GamePage({ params }) {
             <button onClick={() => setShowWiz(true)} className={`flex-1 py-3 rounded-xl font-bold text-sm ${logged ? "border-2 border-red-600 text-red-400" : "bg-red-600 text-white"}`}>
               {logged ? "✓ Edit Rating" : "⭐ Rate Match"}
             </button>
-            <button onClick={() => setFav(!fav)} className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5" style={{ backgroundColor: fav ? "rgba(239,68,68,0.1)" : "transparent" }}>
-              <span className="text-sm">{fav ? "❤️" : "🤍"}</span>
-              <span className={`text-[8px] font-bold ${fav ? "text-red-400" : "text-zinc-600"}`}>Fave</span>
+            <button onClick={toggleFav} className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5" style={{ backgroundColor: fav ? "rgba(239,68,68,0.1)" : "transparent" }}>
+              <span className="text-base">{fav ? "❤️" : "🤍"}</span>
+              <span className={`text-[10px] font-bold ${fav ? "text-red-400" : "text-zinc-600"}`}>Fave</span>
             </button>
-            <button className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5">
-              <span className="text-sm">📌</span><span className="text-[8px] font-bold text-zinc-600">Pin</span>
+            <button onClick={togglePin} className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5" style={{ backgroundColor: pinned ? "rgba(220,38,38,0.1)" : "transparent" }}>
+              <span className="text-base">📌</span><span className={`text-[10px] font-bold ${pinned ? "text-red-400" : "text-zinc-600"}`}>Pin</span>
             </button>
-            <button className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5">
-              <span className="text-sm">📋</span><span className="text-[8px] font-bold text-zinc-600">List</span>
+            <button onClick={() => setShowWiz(true)} className="px-4 py-3 rounded-xl border border-zinc-800 flex flex-col items-center gap-0.5">
+              <span className="text-base">📋</span><span className="text-[10px] font-bold text-zinc-600">List</span>
             </button>
           </div>
         )}
@@ -293,8 +406,8 @@ export default function GamePage({ params }) {
             </div>
             {g.odds && (
               <div className="mt-3 p-3 rounded-xl bg-zinc-950 flex justify-between">
-                <div><div className="text-[9px] font-bold text-zinc-600">SPREAD</div><div className="text-sm font-bold text-white">{g.odds}</div></div>
-                {g.ou && <div className="text-right"><div className="text-[9px] font-bold text-zinc-600">O/U</div><div className="text-sm font-bold text-white">{g.ou}</div></div>}
+                <div><div className="text-[10px] font-bold text-zinc-600">SPREAD</div><div className="text-sm font-bold text-white">{g.odds}</div></div>
+                {g.ou && <div className="text-right"><div className="text-[10px] font-bold text-zinc-600">O/U</div><div className="text-sm font-bold text-white">{g.ou}</div></div>}
               </div>
             )}
           </div>
@@ -317,9 +430,9 @@ export default function GamePage({ params }) {
               {filteredChat.map((m, i) => (
                 <div key={i} className="p-3 rounded-xl bg-zinc-950 mb-2">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold" style={{ backgroundColor: m.c }}>{m.u[0]}</div>
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: m.c }}>{m.u[0]}</div>
                     <span className={`text-xs font-bold ${m.u === "Isaac" ? "text-red-400" : "text-white"}`}>{m.u}</span>
-                    {m.tm && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500 font-semibold">{m.tm}</span>}
+                    {m.tm && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500 font-semibold">{m.tm}</span>}
                     <span className="text-[10px] text-zinc-600 ml-auto">{m.ago}</span>
                   </div>
                   <div className="text-sm text-zinc-400 pl-7">{m.t}</div>
@@ -349,7 +462,7 @@ export default function GamePage({ params }) {
               <div className="grid grid-cols-2 gap-4">
                 {[a, h].map((t) => (
                   <div key={t.abbr}>
-                    <div className="text-[9px] font-extrabold tracking-widest uppercase mb-2" style={{ color: t.color }}>{t.abbr}</div>
+                    <div className="text-[10px] font-extrabold tracking-widest uppercase mb-2" style={{ color: t.color }}>{t.abbr}</div>
                     {t.leaders.filter((l) => l.name && !l.name.includes("Defense")).map((p, i) => (
                       <div key={i} className="mb-2 p-2.5 rounded-lg bg-zinc-950">
                         <div className="text-xs font-bold text-white">{p.name}</div>
@@ -364,127 +477,33 @@ export default function GamePage({ params }) {
 
             {/* Game Mood */}
             <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
-              <h3 className="font-bold text-white text-sm mb-2">🎭 Game Mood</h3>
+              <h3 className="font-bold text-white text-base mb-1">🎭 Game Mood</h3>
+              <p className="text-xs text-zinc-500 mb-3">{user ? "Tap to tag this game's vibe" : "Auto-detected from box score"}</p>
               <div className="flex gap-1.5 flex-wrap">
                 {["🔥 Shootout", "💪 Comeback", "⏱️ OT", "🛡️ Defensive", "💨 Blowout", "🎯 Clutch", "🌟 Classic", "😤 Controversial"].map((m) => {
-                  const active = moods.includes(m);
-                  return <span key={m} className={`text-[11px] px-3 py-1.5 rounded-full font-semibold ${active ? "bg-red-600/10 text-red-400 border border-red-600/30" : "bg-zinc-950 text-zinc-600 border border-transparent"}`}>{m}</span>;
+                  const userSelected = userMoods.includes(m);
+                  const auto = moods.includes(m);
+                  const active = userSelected || (auto && userMoods.length === 0);
+                  return (
+                    <button key={m} onClick={() => user && toggleMood(m)} disabled={!user}
+                      className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all ${active ? "bg-red-600/10 text-red-400 border border-red-600/30" : "bg-zinc-950 text-zinc-500 border border-transparent hover:border-zinc-700"}`}>
+                      {m}{userSelected && " ✓"}
+                    </button>
+                  );
                 })}
               </div>
             </div>
 
-            {/* Rating Wizard */}
-            {showWiz && (
-              <div className="rounded-2xl bg-zinc-900 border-2 border-red-600 p-5 mb-4">
-                <div className="flex items-center justify-center gap-3 mb-5">
-                  {steps.map((s, i) => (
-                    <div key={s} className="flex items-center gap-3">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className="rounded-full transition-all" style={{ width: i === step ? 12 : 8, height: i === step ? 12 : 8, backgroundColor: i <= step ? "#dc2626" : "#27272a" }} />
-                        <span className={`text-[9px] font-semibold ${i <= step ? "text-red-400" : "text-zinc-600"}`}>{s}</span>
-                      </div>
-                      {i < steps.length - 1 && <div className="w-6 h-0.5 rounded-full mb-4" style={{ backgroundColor: i < step ? "#dc2626" : "#27272a" }} />}
-                    </div>
-                  ))}
-                </div>
 
-                {step === 0 && (
-                  <div>
-                    <div className="text-center mb-4">
-                      <div className="text-6xl font-extrabold" style={{ color: rc(rating) }}>{rating}</div>
-                      <div className="text-sm font-bold mt-1" style={{ color: rc(rating) }}>{rating >= 9 ? "INSTANT CLASSIC" : rating >= 7 ? "GREAT GAME" : rating >= 5 ? "DECENT" : rating >= 3 ? "MEH" : "TERRIBLE"}</div>
-                    </div>
-                    <input type="range" min="1" max="10" step="0.5" value={rating} onChange={(e) => setRating(parseFloat(e.target.value))}
-                      className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(rating)} ${((rating - 1) / 9) * 100}%, #27272a ${((rating - 1) / 9) * 100}%)` }} />
-                    <div className="flex justify-between mt-1"><span className="text-[10px] text-zinc-600">1</span><span className="text-[10px] text-zinc-600">10</span></div>
-                    <div className="mt-5">
-                      <div className="text-sm font-semibold text-white text-center mb-3">Was it worth watching?</div>
-                      <div className="flex gap-2 justify-center">
-                        {[{ v: "yes", l: "👍 Yes", c: "#22c55e" }, { v: "no", l: "👎 No", c: "#ef4444" }, { v: "meh", l: "😐 Meh", c: "#eab308" }].map((o) => (
-                          <button key={o.v} onClick={() => setWorthIt(o.v)} className="px-5 py-2.5 rounded-xl text-sm font-bold"
-                            style={{ border: worthIt === o.v ? `2px solid ${o.c}` : "2px solid #27272a", backgroundColor: worthIt === o.v ? o.c + "15" : "transparent", color: worthIt === o.v ? o.c : "#71717a" }}>{o.l}</button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 1 && (
-                  <div>
-                    <div className="text-sm font-bold text-white text-center mb-4">How were the details?</div>
-                    {[{ l: "🏁 Ref Performance", v: refR, s: setRefR }, { l: "🎬 Entertainment Value", v: entR, s: setEntR }].map(({ l, v, s }) => (
-                      <div key={l} className="mb-5 p-4 rounded-xl bg-zinc-950">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-semibold text-white">{l}</span>
-                          <span className="text-2xl font-extrabold" style={{ color: rc(v) }}>{v}</span>
-                        </div>
-                        <input type="range" min="1" max="10" step="0.5" value={v} onChange={(e) => s(parseFloat(e.target.value))}
-                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(v)} ${((v - 1) / 9) * 100}%, #27272a ${((v - 1) / 9) * 100}%)` }} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {step === 2 && (
-                  <div>
-                    <div className="mb-5">
-                      <div className="text-sm font-bold text-white mb-3">🌟 Game MVP</div>
-                      <div className="flex gap-1.5 flex-wrap max-h-36 overflow-y-auto">
-                        {g.players.map((p, i) => (
-                          <button key={p.name + i} onClick={() => setMvp(p.name)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${mvp === p.name ? "bg-green-500/15 text-green-400 border-green-500/40" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>
-                            {p.name} <span className="text-[9px] opacity-50">{p.tm}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-white mb-3">😤 Biggest Letdown</div>
-                      <div className="flex gap-1.5 flex-wrap max-h-36 overflow-y-auto">
-                        {g.players.map((p, i) => (
-                          <button key={p.name + i + "l"} onClick={() => setLetdown(p.name)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${letdown === p.name ? "bg-red-500/15 text-red-400 border-red-500/40" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>
-                            {p.name} <span className="text-[9px] opacity-50">{p.tm}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 3 && (
-                  <div>
-                    <div className="mb-4">
-                      <div className="text-sm font-semibold text-white mb-2">📺 How did you watch?</div>
-                      <div className="flex gap-1.5 flex-wrap">
-                        {["🛋️ Couch", "🍺 Bar", "🏟️ Stadium", "📱 Phone", "📺 RedZone", "🎬 Highlights"].map((w) => (
-                          <button key={w} onClick={() => setWatchHow(w)}
-                            className={`px-3.5 py-2 rounded-full text-xs font-semibold border-2 ${watchHow === w ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{w}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <textarea value={review} onChange={(e) => setReview(e.target.value)} placeholder="Write your review..." rows={3}
-                      className="w-full p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-white text-sm outline-none resize-none focus:border-red-600" />
-                  </div>
-                )}
-
-                <div className="flex gap-2 mt-5">
-                  {step > 0 && <button onClick={() => setStep(step - 1)} className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Back</button>}
-                  <div className="flex-1" />
-                  {step < 3 && <button onClick={() => setStep(step + 1)} className="px-6 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm">Next →</button>}
-                  {step === 3 && <button onClick={submitLog} className="px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold text-sm">{logged ? "Update ✓" : "Log Game ✓"}</button>}
-                </div>
-                <button onClick={() => { setShowWiz(false); setStep(0); }} className="w-full mt-2 py-2 text-zinc-600 text-xs">Cancel</button>
-              </div>
-            )}
 
             {/* Logged summary */}
             {logged && !showWiz && (
-              <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
+              <div onClick={() => setShowWiz(true)} className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 cursor-pointer hover:border-red-600/40 transition-all">
+                <div className="text-[10px] font-bold tracking-widest uppercase text-red-400 mb-2">Tap to edit ✏️</div>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[{ l: "Overall", v: rating }, { l: "Refs", v: refR }, { l: "Entertain", v: entR }].map((x) => (
                     <div key={x.l} className="text-center p-2.5 rounded-xl bg-zinc-950">
-                      <div className="text-[8px] text-zinc-600 font-bold">{x.l}</div>
+                      <div className="text-[10px] text-zinc-600 font-bold">{x.l}</div>
                       <div className="text-xl font-extrabold" style={{ color: rc(x.v) }}>{x.v}</div>
                     </div>
                   ))}
@@ -501,7 +520,148 @@ export default function GamePage({ params }) {
           </div>
         )}
       </div>
-      <Nav tab={tab} setTab={setTab} />
+      {/* Rating Modal */}
+      {showWiz && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto" onClick={() => { setShowWiz(false); setStep(0); }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[90vh] overflow-y-auto">
+            {/* Modal header */}
+            <div className="sticky top-0 z-10 bg-zinc-950 px-5 pt-4 pb-3 border-b border-zinc-800 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Rating</div>
+                <div className="text-sm font-bold text-white">{a.abbr} vs {h.abbr} · Wk {g.week}</div>
+              </div>
+              <button onClick={() => { setShowWiz(false); setStep(0); }} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
+            </div>
+            <div className="p-5">
+            {/* Step indicators */}
+            <div className="flex items-center justify-center gap-3 mb-5">
+              {steps.map((s, i) => (
+                <div key={s} className="flex items-center gap-3">
+                  <button onClick={() => setStep(i)} className="flex flex-col items-center gap-1 cursor-pointer">
+                    <div className="rounded-full transition-all" style={{ width: i === step ? 14 : 10, height: i === step ? 14 : 10, backgroundColor: i === step ? "#dc2626" : i < step ? "#dc262680" : "#3f3f46" }} />
+                    <span className={`text-[10px] font-semibold ${i === step ? "text-red-400" : i < step ? "text-red-400/60" : "text-zinc-500"}`}>{s}</span>
+                  </button>
+                  {i < steps.length - 1 && <div className="w-6 h-0.5 rounded-full mb-4" style={{ backgroundColor: i < step ? "#dc2626" : "#27272a" }} />}
+                </div>
+              ))}
+            </div>
+
+            {step === 0 && (
+              <div>
+                <div className="text-center mb-4">
+                  <div className="text-6xl font-extrabold" style={{ color: rc(rating) }}>{rating}</div>
+                  <div className="text-sm font-bold mt-1" style={{ color: rc(rating) }}>{rating >= 9 ? "INSTANT CLASSIC" : rating >= 7 ? "GREAT GAME" : rating >= 5 ? "DECENT" : rating >= 3 ? "MEH" : "TERRIBLE"}</div>
+                </div>
+                <input type="range" min="1" max="10" step="0.5" value={rating} onChange={(e) => setRating(parseFloat(e.target.value))}
+                  className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(rating)} ${((rating - 1) / 9) * 100}%, #27272a ${((rating - 1) / 9) * 100}%)` }} />
+                <div className="flex justify-between mt-1"><span className="text-[10px] text-zinc-600">1</span><span className="text-[10px] text-zinc-600">10</span></div>
+                <div className="mt-5">
+                  <div className="text-sm font-semibold text-white text-center mb-3">Was it worth watching?</div>
+                  <div className="flex gap-2 justify-center">
+                    {[{ v: "yes", l: "👍 Yes", c: "#22c55e" }, { v: "no", l: "👎 No", c: "#ef4444" }, { v: "meh", l: "😐 Meh", c: "#eab308" }].map((o) => (
+                      <button key={o.v} onClick={() => setWorthIt(o.v)} className="px-5 py-2.5 rounded-xl text-sm font-bold"
+                        style={{ border: worthIt === o.v ? `2px solid ${o.c}` : "2px solid #27272a", backgroundColor: worthIt === o.v ? o.c + "15" : "transparent", color: worthIt === o.v ? o.c : "#71717a" }}>{o.l}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step === 1 && (
+              <div>
+                <div className="text-sm font-bold text-white text-center mb-4">How were the details?</div>
+                {[{ l: "🏁 Ref Performance", v: refR, s: setRefR }, { l: "🎬 Entertainment Value", v: entR, s: setEntR }].map(({ l, v, s }) => (
+                  <div key={l} className="mb-5 p-4 rounded-xl bg-zinc-900">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-semibold text-white">{l}</span>
+                      <span className="text-2xl font-extrabold" style={{ color: rc(v) }}>{v}</span>
+                    </div>
+                    <input type="range" min="1" max="10" step="0.5" value={v} onChange={(e) => s(parseFloat(e.target.value))}
+                      className="w-full h-1.5 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(v)} ${((v - 1) / 9) * 100}%, #27272a ${((v - 1) / 9) * 100}%)` }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {step === 2 && (
+              <div>
+                <div className="mb-5">
+                  <div className="text-sm font-bold text-white mb-3">🌟 Game MVP</div>
+                  <div className="flex gap-1.5 flex-wrap max-h-36 overflow-y-auto">
+                    {g.players.map((p, i) => (
+                      <button key={p.name + i} onClick={() => setMvp(p.name)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${mvp === p.name ? "bg-green-500/15 text-green-400 border-green-500/40" : "bg-zinc-900 text-zinc-500 border-transparent"}`}>
+                        {p.name} <span className="text-[10px] opacity-50">{p.tm}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-white mb-3">😤 Biggest Letdown</div>
+                  <div className="flex gap-1.5 flex-wrap max-h-36 overflow-y-auto">
+                    {g.players.map((p, i) => (
+                      <button key={p.name + i + "l"} onClick={() => setLetdown(p.name)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${letdown === p.name ? "bg-red-500/15 text-red-400 border-red-500/40" : "bg-zinc-900 text-zinc-500 border-transparent"}`}>
+                        {p.name} <span className="text-[10px] opacity-50">{p.tm}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step === 3 && (
+              <div>
+                <div className="mb-4">
+                  <div className="text-sm font-semibold text-white mb-2">📺 How did you watch?</div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {["🛋️ Couch", "🍺 Bar", "🏟️ Stadium", "📱 Phone", "📺 RedZone", "🎬 Highlights"].map((w) => (
+                      <button key={w} onClick={() => setWatchHow(w)}
+                        className={`px-3.5 py-2 rounded-full text-xs font-semibold border-2 ${watchHow === w ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-900 text-zinc-500 border-transparent"}`}>{w}</button>
+                    ))}
+                  </div>
+                </div>
+                <textarea value={review} onChange={(e) => setReview(e.target.value)} placeholder="Write your review..." rows={3}
+                  className="w-full p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none resize-none focus:border-red-600 mb-4" />
+
+                {/* Add to Lists */}
+                <div className="p-3 rounded-xl bg-zinc-900">
+                  <div className="text-sm font-semibold text-white mb-2">📋 Add to Lists</div>
+                  {lists.length === 0 ? (
+                    <div className="text-[11px] text-zinc-500 mb-2">No lists yet. Create one below.</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {lists.map(list => {
+                        const sel = selectedLists.includes(list.id);
+                        return (
+                          <button key={list.id} onClick={() => setSelectedLists(sel ? selectedLists.filter(id => id !== list.id) : [...selectedLists, list.id])}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${sel ? "bg-red-600/15 text-red-400 border-red-600/40" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>
+                            {list.icon} {list.name} {sel && "✓"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input value={newListInline} onChange={(e) => setNewListInline(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createListInline()} placeholder="New list name..."
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white text-xs outline-none" />
+                    <button onClick={createListInline} className="px-3 py-1.5 rounded-lg bg-red-600/20 text-red-400 text-xs font-bold">+ Create</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-5">
+              {step > 0 && <button onClick={() => setStep(step - 1)} className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Back</button>}
+              <div className="flex-1" />
+              {step < 3 && <button onClick={() => setStep(step + 1)} className="px-6 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm">Next →</button>}
+              {step === 3 && <button onClick={submitLog} className="px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold text-sm">{logged ? "Update ✓" : "Log Game ✓"}</button>}
+            </div>
+            </div>
+          </div>
+        </div>
+      )}
+            <Nav tab={tab} setTab={setTab} />
     </div>
   );
 }

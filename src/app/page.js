@@ -1,8 +1,10 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
 import { useAuth } from "@/components/AuthProvider";
+import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
@@ -62,7 +64,7 @@ function RBars({ dist }) {
               opacity: c > 0 ? 1 : 0.12,
             }}
           />
-          <span className="text-[8px] text-zinc-600 font-semibold">{i + 1}</span>
+          <span className="text-[10px] text-zinc-600 font-semibold">{i + 1}</span>
         </div>
       ))}
     </div>
@@ -107,23 +109,31 @@ async function fetchWeek(year, week) {
   } catch (e) { console.error(e); return []; }
 }
 
-export default function Home() {
-  const { user, signOut } = useAuth(); if (user) console.log("USER DATA:", JSON.stringify(user.user_metadata, null, 2));
+function HomeContent() {
+  const { user, signOut } = useAuth();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [week, setWeek] = useState(18);
   const [year, setYear] = useState(2024);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
-  const [tab, setTab] = useState("games");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") || "games";
+  const [tab, setTabInternal] = useState(initialTab);
+  const setTab = (newTab) => {
+    setTabInternal(newTab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", newTab);
+    window.history.replaceState({}, "", url.toString());
+  };
   const [myTeams, setMyTeams] = useState([]);
   const [showTeams, setShowTeams] = useState(false);
   const [logs, setLogs] = useState([]);
   const [pinned, setPinned] = useState([]);
-  const [lists, setLists] = useState([
-    { name: "Best Games Ever", icon: "🏆", games: [] },
-    { name: "Heartbreakers", icon: "💔", games: [] },
-  ]);
+  const [lists, setLists] = useState([]);
+  const [listGames, setListGames] = useState({});
+  const [selectedListId, setSelectedListId] = useState(null);
   const [showNewList, setShowNewList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [followed, setFollowed] = useState([]);
@@ -141,6 +151,73 @@ export default function Home() {
     load();
   }, [week, year]);
 
+  useEffect(() => {
+    const urlTab = searchParams.get("tab");
+    if (urlTab && urlTab !== tab) setTab(urlTab);
+  }, [searchParams]);
+
+  // If user lands on profile tab without being logged in, redirect to /login
+  useEffect(() => {
+    if (tab === "profile" && user === null) {
+      router.push("/login");
+    }
+  }, [tab, user]);
+
+  // Load all of the user's ratings from Supabase whenever user changes OR tab is visited
+  useEffect(() => {
+    async function loadRatings() {
+      if (!user) { setLogs([]); return; }
+      try {
+        const { data, error } = await supabase
+          .from("ratings")
+          .select("*")
+          .eq("user_id", user.id);
+        if (error) { console.error("Load ratings error:", error); return; }
+        if (data) {
+          const mapped = data.map(r => ({
+            gameId: r.game_id,
+            awayTeam: r.away_team || "",
+            homeTeam: r.home_team || "",
+            awayScore: r.away_score || 0,
+            homeScore: r.home_score || 0,
+            favorited: r.favorited || false,
+            pinned: r.pinned || false,
+            rating: parseFloat(r.rating) || 0,
+            refRating: parseFloat(r.ref_rating) || 5,
+            entRating: parseFloat(r.ent_rating) || 7,
+            mvp: r.mvp || "",
+            letdown: r.letdown || "",
+            watchHow: r.watch_how || "",
+            worthIt: r.worth_it || "",
+            review: r.review || "",
+            week: r.week || 0,
+            season: r.season || 0,
+          }));
+          setLogs(mapped);
+          setPinned(mapped.filter(l => l.pinned).map(l => l.gameId));
+        }
+      } catch (e) { console.error("Load ratings exception:", e); }
+    }
+    async function loadLists() {
+      if (!user) { setLists([]); setListGames({}); return; }
+      try {
+        const { data: listData } = await supabase.from("lists").select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+        if (listData) setLists(listData);
+        const { data: gameData } = await supabase.from("list_games").select("*").eq("user_id", user.id);
+        if (gameData) {
+          const byList = {};
+          gameData.forEach(lg => {
+            if (!byList[lg.list_id]) byList[lg.list_id] = [];
+            byList[lg.list_id].push(lg);
+          });
+          setListGames(byList);
+        }
+      } catch (e) { console.error("Load lists:", e); }
+    }
+    loadRatings();
+    loadLists();
+  }, [user, tab]);
+
   const filtered = useMemo(() => {
     let g = games.filter((g) => g.week === week && g.season === year);
     if (search) {
@@ -153,8 +230,11 @@ export default function Home() {
     return g;
   }, [games, week, year, search, sort, myTeams]);
 
-  const earned = BADGES.filter((b) => b.ck(logs));
+  const ratedLogs = logs.filter(l => l.rating > 0);
+  const earned = BADGES.filter((b) => b.ck(ratedLogs));
   const gl = (id) => logs.find((l) => l.gameId === id);
+  // For diary: show all rated games even if not in current games list
+  const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
 
   return (
     <div className="min-h-screen pb-24">
@@ -278,7 +358,7 @@ export default function Home() {
                     {g.home.logo && <img src={g.home.logo} className="w-5 h-5 object-contain" />}
                     <div className="flex-1">
                       <div className="text-xs font-semibold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
-                      <div className="text-[9px] text-zinc-600">Wk {g.week}</div>
+                      <div className="text-[10px] text-zinc-600">Wk {g.week}</div>
                     </div>
                     <span className="text-sm font-extrabold" style={{ color: sec.c }}>{sec.v(g)}</span>
                   </div>
@@ -330,19 +410,28 @@ export default function Home() {
               <div className="text-center py-16">
                 <div className="text-5xl mb-3">📓</div>
                 <div className="text-base font-bold text-white">Start logging games</div>
-                <div className="text-xs text-zinc-500 mt-1">Rate games to build your football memory book</div>
+                <div className="text-sm text-zinc-500 mt-1">Rate games to build your football memory book</div>
                 <button onClick={() => setTab("games")} className="mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
               </div>
             )}
-            {[...logs].sort((a, b) => (b.week || 0) - (a.week || 0)).map((l) => {
+            {[...logs].filter(l => l.rating > 0).sort((a, b) => (b.week || 0) - (a.week || 0)).map((l) => {
               const g = games.find((x) => x.id === l.gameId);
-              if (!g) return null;
               return (
-                <div key={l.gameId} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
+                <Link key={l.gameId} href={`/game/${l.gameId}`} className="block">
+                <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
                   <Bdg r={l.rating} />
                   <div className="flex-1">
-                    <div className="text-sm font-bold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
-                    <div className="text-[10px] text-zinc-600">Wk {g.week} · {g.shortDate}</div>
+                    {g ? (
+                      <>
+                        <div className="text-sm font-bold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
+                        <div className="text-[10px] text-zinc-600">Wk {g.week} · {g.shortDate}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-bold text-white">{l.awayTeam && l.homeTeam ? `${l.awayTeam} ${l.awayScore} — ${l.homeTeam} ${l.homeScore}` : "Game rated"}</div>
+                        <div className="text-[10px] text-zinc-600">Wk {l.week || "?"} · {l.season || ""}</div>
+                      </>
+                    )}
                     <div className="flex gap-2 mt-1 flex-wrap">
                       {l.mvp && <span className="text-[10px] text-green-400">🌟 {l.mvp}</span>}
                       {l.watchHow && <span className="text-[10px] text-zinc-500">{l.watchHow}</span>}
@@ -351,6 +440,7 @@ export default function Home() {
                     {l.review && <div className="text-[11px] text-zinc-400 italic mt-1">&quot;{l.review}&quot;</div>}
                   </div>
                 </div>
+                </Link>
               );
             })}
           </div>
@@ -372,7 +462,7 @@ export default function Home() {
             <div className="rounded-2xl p-5 bg-zinc-900 border border-zinc-800 mb-4">
               <div className="flex items-center gap-3 mb-4">
                 {user?.user_metadata?.avatar_url ? (
-                  <img src={user.user_metadata.avatar_url} referrerPolicy="no-referrer" className="w-12 h-12 rounded-full" />
+                  <img src={user.user_metadata.avatar_url} className="w-12 h-12 rounded-full" />
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-white text-lg font-extrabold">{(user?.user_metadata?.full_name || "U")[0]}</div>
                 )}
@@ -384,17 +474,17 @@ export default function Home() {
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
                 {[
-                  { v: logs.length, l: "GAMES" },
-                  { v: logs.filter((l) => l.review).length, l: "REVIEWS" },
-                  { v: logs.length ? (logs.reduce((s, l) => s + l.rating, 0) / logs.length).toFixed(1) : "—", l: "AVG" },
+                  { v: logs.filter(l => l.rating > 0).length, l: "GAMES", action: () => setTab("diary") },
+                  { v: logs.filter((l) => l.review).length, l: "REVIEWS", action: () => setTab("diary") },
+                  { v: logs.filter(l => l.rating > 0).length ? (logs.filter(l => l.rating > 0).reduce((s, l) => s + l.rating, 0) / logs.filter(l => l.rating > 0).length).toFixed(1) : "—", l: "AVG", action: () => { document.getElementById("rating-dist")?.scrollIntoView({ behavior: "smooth" }); } },
                 ].map((s) => (
-                  <div key={s.l} className="p-2 rounded-lg bg-zinc-950">
-                    <div className="text-xl font-extrabold text-white">{s.v}</div>
-                    <div className="text-[8px] text-zinc-600 font-bold">{s.l}</div>
-                  </div>
+                  <button key={s.l} onClick={s.action} className="p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors cursor-pointer text-center">
+                    <div className="text-2xl font-extrabold text-white">{s.v}</div>
+                    <div className="text-[10px] text-zinc-500 font-bold">{s.l}</div>
+                  </button>
                 ))}
               </div>
-              <button onClick={signOut} className="w-full mt-3 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-semibold hover:bg-zinc-700 transition-all">Sign Out</button>
+              <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-3 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-sm font-semibold hover:bg-zinc-700 transition-all">Sign Out</button>
             </div>
 
             {/* Pinned */}
@@ -424,14 +514,44 @@ export default function Home() {
                 <h3 className="text-sm font-bold text-white">📋 Your Lists</h3>
                 <button onClick={() => setShowNewList(true)} className="text-[11px] text-red-400 font-semibold">+ New List</button>
               </div>
-              {lists.map((l, i) => (
-                <div key={i} className="p-2.5 rounded-lg bg-zinc-950 mb-2">
-                  <div className="flex justify-between items-center">
-                    <div className="text-sm font-bold text-white">{l.icon} {l.name}</div>
-                    <span className="text-[11px] text-zinc-600">{l.games.length} games</span>
+              {lists.length === 0 && <div className="text-[11px] text-zinc-500 text-center py-4">No lists yet. Create one above or while rating a game.</div>}
+              {lists.map((l) => {
+                const games = listGames[l.id] || [];
+                return (
+                  <div key={l.id} onClick={() => setSelectedListId(selectedListId === l.id ? null : l.id)} className="p-2.5 rounded-lg bg-zinc-950 mb-2 cursor-pointer hover:bg-zinc-900 transition-colors">
+                    <div className="flex justify-between items-center">
+                      <div className="text-sm font-bold text-white">{l.icon} {l.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-zinc-600">{games.length} games</span>
+                        <span className="text-zinc-600 text-xs">{selectedListId === l.id ? "▼" : "▶"}</span>
+                      </div>
+                    </div>
+                    {selectedListId === l.id && (
+                      <div className="mt-2 pt-2 border-t border-zinc-800">
+                        {games.length === 0 && <div className="text-[11px] text-zinc-500 py-2">No games in this list yet.</div>}
+                        {games.map((gm) => (
+                          <Link key={gm.id} href={`/game/${gm.game_id}`} className="block">
+                            <div className="flex items-center justify-between p-2 rounded-lg hover:bg-zinc-800 transition-colors">
+                              <div>
+                                <div className="text-xs font-bold text-white">{gm.away_team} {gm.away_score} — {gm.home_team} {gm.home_score}</div>
+                                <div className="text-[10px] text-zinc-600">Wk {gm.week || "?"} · {gm.season}</div>
+                              </div>
+                              <button onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await supabase.from("list_games").delete().eq("id", gm.id);
+                                  setListGames(prev => ({ ...prev, [l.id]: (prev[l.id] || []).filter(x => x.id !== gm.id) }));
+                                } catch (err) { console.error(err); }
+                              }} className="text-[10px] text-zinc-600 hover:text-red-400">remove</button>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Badges */}
@@ -446,7 +566,7 @@ export default function Home() {
                         <span className="text-lg">{b.i}</span>
                         <div>
                           <div className="text-[11px] font-bold text-white">{b.n}</div>
-                          <div className="text-[9px] text-zinc-500">{b.d}</div>
+                          <div className="text-[10px] text-zinc-500">{b.d}</div>
                         </div>
                       </div>
                     </div>
@@ -459,7 +579,7 @@ export default function Home() {
             {logs.length >= 3 && (
               <div className="rounded-2xl p-5 mb-4 bg-gradient-to-br from-red-600 via-red-800 to-red-950 text-white relative overflow-hidden">
                 <div className="absolute -top-5 -right-5 text-8xl opacity-5">🏈</div>
-                <div className="text-[9px] font-bold opacity-80 tracking-widest uppercase">Season Wrapped</div>
+                <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">Season Wrapped</div>
                 <div className="text-lg font-extrabold mt-1 mb-3">Your {year} Season</div>
                 <div className="grid grid-cols-2 gap-2">
                   {[
@@ -470,7 +590,7 @@ export default function Home() {
                   ].map((s, i) => (
                     <div key={i} className="bg-white/10 rounded-lg p-2">
                       <div className="text-xl font-extrabold">{s.v}</div>
-                      <div className="text-[9px] opacity-80">{s.l}</div>
+                      <div className="text-[10px] opacity-80">{s.l}</div>
                     </div>
                   ))}
                 </div>
@@ -479,8 +599,8 @@ export default function Home() {
 
             {/* Rating Distribution */}
             {logs.length > 0 && (
-              <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800">
-                <h3 className="text-sm font-bold text-white mb-3">Rating Distribution</h3>
+              <div id="rating-dist" className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 scroll-mt-20">
+                <h3 className="text-base font-bold text-white mb-3">Rating Distribution</h3>
                 <RBars dist={Array(10).fill(0).map((_, i) => logs.filter((l) => Math.floor(l.rating) === i + 1).length)} />
               </div>
             )}
@@ -497,7 +617,15 @@ export default function Home() {
             <input value={newListName} onChange={(e) => setNewListName(e.target.value)} placeholder="List name..." autoFocus
               className="w-full p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-white text-sm outline-none mb-3" />
             <div className="flex gap-2">
-              <button onClick={() => { if (newListName.trim()) { setLists((p) => [...p, { name: newListName, icon: "📋", games: [] }]); setNewListName(""); setShowNewList(false); } }}
+              <button onClick={async () => {
+                if (!newListName.trim() || !user) return;
+                try {
+                  const { data } = await supabase.from("lists").insert({ user_id: user.id, name: newListName.trim(), icon: "📋" }).select().single();
+                  if (data) setLists([...lists, data]);
+                } catch (e) { console.error("Create list:", e); }
+                setNewListName("");
+                setShowNewList(false);
+              }}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-bold text-sm">Create</button>
               <button onClick={() => setShowNewList(false)} className="px-4 py-2.5 bg-zinc-800 text-zinc-400 rounded-xl font-semibold text-sm">Cancel</button>
             </div>
@@ -507,5 +635,14 @@ export default function Home() {
 
       <Nav tab={tab} setTab={setTab} />
     </div>
+  );
+}
+
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#09090b]" />}>
+      <HomeContent />
+    </Suspense>
   );
 }
