@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
+import { emotesFor } from "@/lib/drops";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -477,7 +478,7 @@ async function fetchGameForSport(id, sport) {
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "😂", "😡"];
 
-function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply, teamEmoji = "🏈" }) {
+function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply, teamEmoji = "🏈", reactionEmojis = REACTION_EMOJIS }) {
   const c = comment;
   const [showPicker, setShowPicker] = useState(false);
   // Group reactions by emoji
@@ -551,8 +552,8 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
                 {showPicker ? "×" : "+ 😀"}
               </button>
               {showPicker && (
-                <div className="absolute bottom-full left-0 mb-1 flex bg-zinc-800 border border-zinc-700 rounded-full px-2 py-1.5 gap-1 z-20 shadow-xl">
-                  {REACTION_EMOJIS.map(emoji => (
+                <div className="absolute bottom-full left-0 mb-1 flex flex-wrap max-w-[240px] bg-zinc-800 border border-zinc-700 rounded-2xl px-2 py-1.5 gap-1 z-20 shadow-xl">
+                  {reactionEmojis.map(emoji => (
                     <button key={emoji} onClick={(e) => { e.stopPropagation(); pickReaction(emoji); }} className="text-lg hover:scale-125 transition-transform px-1">{emoji}</button>
                   ))}
                 </div>
@@ -608,6 +609,7 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
               submitting={submitting}
               isReply={true}
               teamEmoji={teamEmoji}
+              reactionEmojis={reactionEmojis}
             />
           ))}
         </div>
@@ -700,6 +702,12 @@ export default function GamePage({ params }) {
   const [savingHype, setSavingHype] = useState(false);
   const [communityHype, setCommunityHype] = useState([]); // array of anticipation values
 
+  // Rooting poll ("who are you rooting for?"). rootingReady=false hides the
+  // feature gracefully when the `rooting_for` column hasn't been added yet.
+  const [rootingFor, setRootingFor] = useState("");       // this user's pick (team abbr)
+  const [rootingCounts, setRootingCounts] = useState({}); // { abbr: count }
+  const [rootingReady, setRootingReady] = useState(false);
+
   // Lists
   const [lists, setLists] = useState([]);
   const [selectedLists, setSelectedLists] = useState([]);
@@ -764,6 +772,7 @@ export default function GamePage({ params }) {
           setFav(rData.favorited || false);
           setPinned(rData.pinned || false);
           setUserMoods(rData.moods || []);
+          if (rData.rooting_for) setRootingFor(rData.rooting_for);
           if (rData.anticipation != null) {
             setHype(parseFloat(rData.anticipation));
             setHypeDraft(parseFloat(rData.anticipation));
@@ -824,6 +833,19 @@ export default function GamePage({ params }) {
           setComments(cData.map(c => ({ ...c, profile: null })));
         }
       } catch (e) {}
+    })();
+    // Rooting poll counts — dormant until the `rooting_for` column is added
+    (async () => {
+      try {
+        const res = await sbFetch(`ratings?game_id=eq.${id}&public=eq.true&rooting_for=not.is.null&select=rooting_for`);
+        if (!res.ok) { if (!cancelled) setRootingReady(false); return; }
+        const rows = await sbJson(res);
+        if (cancelled) return;
+        const counts = {};
+        rows.forEach(r => { if (r.rooting_for) counts[r.rooting_for] = (counts[r.rooting_for] || 0) + 1; });
+        setRootingCounts(counts);
+        setRootingReady(true);
+      } catch (e) { if (!cancelled) setRootingReady(false); }
     })();
     return () => { cancelled = true; };
   }, [id]);
@@ -1038,6 +1060,8 @@ export default function GamePage({ params }) {
   );
 
   const g = game, a = g.away, h = g.home;
+  // Default reactions + any emote packs this user has unlocked with Drops
+  const reactionPalette = [...new Set([...REACTION_EMOJIS, ...emotesFor(profile?.unlocked)])];
 
   // Fandom filter: filter community ratings by selected lens
   const filterByFandom = (items) => {
@@ -1110,6 +1134,20 @@ export default function GamePage({ params }) {
     } catch (e) {
       setSaveStatus(`Error: ${e.message}`);
     }
+  };
+
+  const pickRooting = async (abbr) => {
+    if (!requireAuth()) return;
+    const prev = rootingFor;
+    const next = rootingFor === abbr ? "" : abbr; // tap your team again to clear
+    setRootingFor(next);
+    setRootingCounts((c) => {
+      const n = { ...c };
+      if (prev) n[prev] = Math.max(0, (n[prev] || 0) - 1);
+      if (next) n[next] = (n[next] || 0) + 1;
+      return n;
+    });
+    await upsertRating({ rooting_for: next || null }, next ? "Rooting locked in 🙌" : "Cleared");
   };
 
   const toggleFav = async () => { const next = !fav; setFav(next); await upsertRating({ favorited: next }, next ? "Favorited" : "Unfavorited"); };
@@ -1384,6 +1422,54 @@ export default function GamePage({ params }) {
             <span className="text-[11px] text-zinc-500">⏳ This game hasn't happened yet — rate your <span className="text-orange-400 font-bold">anticipation</span> now, then come back to rate the game after.</span>
           </div>
         )}
+
+        {/* Rooting poll — who's pulling for who */}
+        {rootingReady && (() => {
+          const awayRoot = rootingCounts[a.abbr] || 0;
+          const homeRoot = rootingCounts[h.abbr] || 0;
+          const totalRoot = awayRoot + homeRoot;
+          const awayPct = totalRoot > 0 ? Math.round((awayRoot / totalRoot) * 100) : 50;
+          const homePct = 100 - awayPct;
+          const canPick = !g.isFinal;
+          return (
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4">
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {g.isFinal ? "Who fans rooted for" : "Who are you rooting for?"}</div>
+                <div className="text-[10px] text-zinc-600">{totalRoot} {totalRoot === 1 ? "fan" : "fans"}</div>
+              </div>
+              {/* Split bar */}
+              <div className="flex h-2.5 rounded-full overflow-hidden bg-zinc-950 mb-2">
+                {totalRoot > 0 ? (
+                  <>
+                    <div style={{ width: `${awayPct}%`, backgroundColor: a.color }} />
+                    <div style={{ width: `${homePct}%`, backgroundColor: h.color }} />
+                  </>
+                ) : <div className="w-full bg-zinc-800/40" />}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[{ team: a, count: awayRoot, pct: awayPct }, { team: h, count: homeRoot, pct: homePct }].map(({ team, count, pct }) => {
+                  const mine = rootingFor === team.abbr;
+                  return (
+                    <button
+                      key={team.abbr}
+                      onClick={() => canPick && pickRooting(team.abbr)}
+                      disabled={!canPick}
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 transition-all ${mine ? "border-red-600 bg-red-600/10" : "border-zinc-800 bg-zinc-950"} ${canPick ? "hover:border-zinc-600" : "cursor-default"}`}
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        {team.logo && <img src={team.logo} alt="" className="w-5 h-5 object-contain shrink-0" />}
+                        <span className="text-sm font-bold text-white truncate">{team.abbr}</span>
+                        {mine && <span className="text-[10px] text-red-400 font-bold shrink-0">✓</span>}
+                      </span>
+                      <span className="text-xs font-extrabold shrink-0" style={{ color: team.color === "#333" ? "#a1a1aa" : team.color }}>{totalRoot > 0 ? `${pct}%` : "—"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {!user && <div className="text-[10px] text-zinc-600 text-center mt-2">Sign in to pick your side</div>}
+            </div>
+          );
+        })()}
 
         {/* Community rating distribution with embedded fandom filter */}
         <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4">
@@ -1790,6 +1876,7 @@ export default function GamePage({ params }) {
                       onReact={toggleReaction}
                       submitting={commentSubmitting}
                       teamEmoji={sportTeamEmoji}
+                      reactionEmojis={reactionPalette}
                     />
                   );
                 })}

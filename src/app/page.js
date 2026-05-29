@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
 import { useAuth } from "@/components/AuthProvider";
+import { DROPS, EMOTE_PACKS, dropsEarned, dropsSpent } from "@/lib/drops";
 import Link from "next/link";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
@@ -316,6 +317,8 @@ function HomeContent() {
   const [logs, setLogs] = useState([]);
   const [pinned, setPinned] = useState([]);
   const [myPredictions, setMyPredictions] = useState([]);
+  const [likesReceived, setLikesReceived] = useState(0); // reactions on this user's comments (for Drops)
+  const [buyingDrops, setBuyingDrops] = useState(null);  // pack id currently being purchased
   const [lists, setLists] = useState([]);
   const [listGames, setListGames] = useState({});
   const [selectedListId, setSelectedListId] = useState(null);
@@ -446,6 +449,24 @@ function HomeContent() {
         const data = await sbJson(res);
         if (!cancelled) setMyPredictions(data);
       } catch (e) { console.error("Profile predictions:", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [tab, user]);
+
+  // Count reactions other people left on this user's comments (Drops earnings)
+  useEffect(() => {
+    if (tab !== "profile" || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cRes = await sbFetch(`comments?user_id=eq.${user.id}&select=id`);
+        const myComments = await sbJson(cRes);
+        const ids = myComments.map((c) => c.id);
+        if (ids.length === 0) { if (!cancelled) setLikesReceived(0); return; }
+        const rRes = await sbFetch(`comment_reactions?comment_id=in.(${ids.join(",")})&select=user_id`);
+        const reacts = await sbJson(rRes);
+        if (!cancelled) setLikesReceived(reacts.filter((r) => r.user_id !== user.id).length);
+      } catch (e) { /* leave at 0 */ }
     })();
     return () => { cancelled = true; };
   }, [tab, user]);
@@ -928,6 +949,28 @@ function HomeContent() {
   const gl = (id) => logs.find((l) => l.gameId === id);
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
+
+  // 🩸 Drops currency — earned from activity, spent on unlocked emote packs.
+  // `unlocked` only exists once the migration has run; absence = store dormant.
+  const dropsUnlocked = profile?.unlocked || [];
+  const dropsStoreReady = !!profile && "unlocked" in profile;
+  const reviewCount = logs.filter((l) => l.review).length;
+  const dropsEarnedTotal = dropsEarned({ ratings: ratedLogs.length, reviews: reviewCount, likes: likesReceived });
+  const dropsBalance = dropsEarnedTotal - dropsSpent(dropsUnlocked);
+
+  const buyPack = async (pack) => {
+    if (!user) { router.push("/login"); return; }
+    if (!dropsStoreReady || dropsUnlocked.includes(pack.id) || dropsBalance < pack.cost) return;
+    setBuyingDrops(pack.id);
+    try {
+      const res = await sbFetch(`profiles?user_id=eq.${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ unlocked: [...dropsUnlocked, pack.id] }),
+      });
+      if (res.ok) await refreshProfile();
+    } catch (e) { console.error("buyPack:", e); }
+    setBuyingDrops(null);
+  };
 
   return (
     <div className="min-h-screen pb-24">
@@ -1635,6 +1678,58 @@ function HomeContent() {
                 </div>
               );
             })()}
+
+            {/* 🩸 Drops — currency + emote store */}
+            <div className="rounded-2xl p-4 bg-gradient-to-br from-red-950/40 via-zinc-900 to-zinc-900 border border-zinc-800 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-white">🩸 Drops</h3>
+                <div className="text-right">
+                  <div className="text-2xl font-extrabold text-white leading-none">{dropsBalance.toLocaleString()}</div>
+                  <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Balance</div>
+                </div>
+              </div>
+              {/* Earning breakdown */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {[
+                  { v: ratedLogs.length, l: "Ratings", sub: `+${DROPS.perRating} ea` },
+                  { v: reviewCount, l: "Reviews", sub: `+${DROPS.perReview} ea` },
+                  { v: likesReceived, l: "Likes", sub: `+${DROPS.perLike} ea` },
+                ].map((s) => (
+                  <div key={s.l} className="rounded-xl bg-zinc-950 p-2.5 text-center">
+                    <div className="text-lg font-extrabold text-white">{s.v}</div>
+                    <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
+                    <div className="text-[9px] text-red-400/80 font-semibold">{s.sub}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Emote Store</div>
+              <div className="space-y-2">
+                {EMOTE_PACKS.map((pack) => {
+                  const owned = dropsUnlocked.includes(pack.id);
+                  const affordable = dropsBalance >= pack.cost;
+                  return (
+                    <div key={pack.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-zinc-950">
+                      <div className="text-xl shrink-0">{pack.emoji}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold text-white">{pack.name}</div>
+                        <div className="text-sm tracking-wide">{pack.emotes.join(" ")}</div>
+                      </div>
+                      <button
+                        onClick={() => buyPack(pack)}
+                        disabled={owned || !dropsStoreReady || !affordable || buyingDrops === pack.id}
+                        className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${owned ? "bg-green-600/15 text-green-400" : affordable && dropsStoreReady ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-800 text-zinc-500"}`}
+                      >
+                        {owned ? "✓ Owned" : buyingDrops === pack.id ? "…" : `🩸 ${pack.cost}`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Unlocked emotes become extra reactions on game comments.</div>
+              {!dropsStoreReady && (
+                <div className="text-[10px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
+              )}
+            </div>
 
             {/* Pinned */}
             {pinned.length > 0 && (
