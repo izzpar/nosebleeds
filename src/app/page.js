@@ -352,6 +352,7 @@ function HomeContent() {
   const [topRaters, setTopRaters] = useState([]);
   const [hotGames, setHotGames] = useState([]);
   const [topRatedGames, setTopRatedGames] = useState([]);
+  const [divisiveGames, setDivisiveGames] = useState([]);
   const [communityLists, setCommunityLists] = useState([]);
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [playersList, setPlayersList] = useState([]);
@@ -685,16 +686,27 @@ function HomeContent() {
             game_id: gid, count: d.count, avg: (d.sum / d.count).toFixed(1), sample: d.sample,
           })).sort((a, b) => b.count - a.count).slice(0, 5));
 
-          // Highest Rated Of All Time
+          // Highest Rated Of All Time + Most Divisive (rating spread)
           const byGameAll = {};
           allRatings.forEach(r => {
-            if (!byGameAll[r.game_id]) byGameAll[r.game_id] = { count: 0, sum: 0, sample: r };
+            if (!byGameAll[r.game_id]) byGameAll[r.game_id] = { count: 0, sum: 0, vals: [], sample: r };
             byGameAll[r.game_id].count++;
             byGameAll[r.game_id].sum += parseFloat(r.rating);
+            byGameAll[r.game_id].vals.push(parseFloat(r.rating));
           });
           setTopRatedGames(Object.entries(byGameAll).map(([gid, d]) => ({
             game_id: gid, count: d.count, avg: (d.sum / d.count).toFixed(1), sample: d.sample,
           })).sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg)).slice(0, 5));
+
+          // Most Divisive — highest standard deviation among games with 3+ raters
+          const stdev = (vals, mean) => Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length);
+          setDivisiveGames(Object.entries(byGameAll)
+            .filter(([, d]) => d.count >= 3)
+            .map(([gid, d]) => { const avg = d.sum / d.count; return { game_id: gid, count: d.count, avg: avg.toFixed(1), spread: stdev(d.vals, avg), sample: d.sample }; })
+            .sort((a, b) => b.spread - a.spread)
+            .slice(0, 5));
+        } else {
+          setDivisiveGames([]);
         }
 
         // Community Lists
@@ -1235,6 +1247,29 @@ function HomeContent() {
                         <div className="text-[10px] text-zinc-500">Wk {g.sample.week || "?"} · {g.count} {g.count === 1 ? "rater" : "raters"}</div>
                       </div>
                       <div className="w-11 h-11 flex items-center justify-center font-bold rounded-xl text-base text-white" style={{ backgroundColor: parseFloat(g.avg) >= 9 ? "#22c55e" : parseFloat(g.avg) >= 7.5 ? "#84cc16" : parseFloat(g.avg) >= 6 ? "#eab308" : parseFloat(g.avg) >= 4 ? "#f97316" : parseFloat(g.avg) >= 2 ? "#ef4444" : "#991b1b" }}>{g.avg}</div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {/* Most Divisive */}
+            {divisiveGames.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-base font-bold text-white mb-1">⚔️ Most Divisive</h3>
+                <p className="text-xs text-zinc-500 mb-3">Games the community can't agree on</p>
+                {divisiveGames.map((g, i) => (
+                  <Link key={g.game_id} href={gh(g.game_id, g.sample?.sport)} className="block">
+                    <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                      <span className="text-base font-extrabold w-5 text-center" style={{ color: i === 0 ? "#a855f7" : "#52525b" }}>{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-white">{g.sample.away_team} {g.sample.away_score} — {g.sample.home_team} {g.sample.home_score}</div>
+                        <div className="text-[10px] text-zinc-500">{g.count} {g.count === 1 ? "rater" : "raters"} · avg {g.avg} · ±{g.spread.toFixed(1)} spread</div>
+                      </div>
+                      <div className="w-11 h-11 flex flex-col items-center justify-center font-bold rounded-xl text-purple-300 bg-purple-500/15 border border-purple-500/30 shrink-0">
+                        <span className="text-sm leading-none">±{g.spread.toFixed(1)}</span>
+                        <span className="text-[8px] text-purple-400/70 leading-none mt-0.5">SPLIT</span>
+                      </div>
                     </div>
                   </Link>
                 ))}
