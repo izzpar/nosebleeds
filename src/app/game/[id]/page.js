@@ -1578,7 +1578,7 @@ export default function GamePage({ params }) {
             )}
 
             {/* Injury Reports - NFL only for now */}
-            {sport === "nfl" && (g.injuries?.away.length > 0 || g.injuries?.home.length > 0) && (() => {
+            {(g.injuries?.away.length > 0 || g.injuries?.home.length > 0) && (() => {
               const statusColor = (status) => {
                 if (status === "Out" || status === "IR") return { bg: "#dc2626", text: "#fecaca" };
                 if (status === "Doubtful") return { bg: "#ea580c", text: "#fed7aa" };

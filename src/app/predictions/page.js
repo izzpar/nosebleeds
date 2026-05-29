@@ -5,7 +5,17 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
-const SPORT_PATHS = { nfl: "football/nfl", mlb: "baseball/mlb" };
+const SPORT_PATHS = { nfl: "football/nfl", mlb: "baseball/mlb", nba: "basketball/nba", nhl: "hockey/nhl" };
+const SPORTS = [
+  { id: "nfl", emoji: "🏈", label: "NFL" },
+  { id: "mlb", emoji: "⚾", label: "MLB" },
+  { id: "nba", emoji: "🏀", label: "NBA" },
+  { id: "nhl", emoji: "🏒", label: "NHL" },
+];
+const VALID_SPORTS = SPORTS.map((s) => s.id);
+const sportEmoji = (s) => SPORTS.find((x) => x.id === s)?.emoji || "🏈";
+const sportLabel = (s) => SPORTS.find((x) => x.id === s)?.label || "NFL";
+const gameHref = (id, s) => (s && s !== "nfl" ? `/game/${id}?sport=${s}` : `/game/${id}`);
 
 // ---- helpers ----
 function fmtGameTime(iso) {
@@ -17,7 +27,7 @@ function fmtGameTime(iso) {
 
 // Sport-aware term for when a game starts / a pick locks
 function startTerm(sport) {
-  return sport === "mlb" ? "first pitch" : "kickoff";
+  return sport === "mlb" ? "first pitch" : sport === "nba" ? "tip-off" : sport === "nhl" ? "puck drop" : "kickoff";
 }
 
 export default function PredictionsPage() {
@@ -38,7 +48,7 @@ export default function PredictionsPage() {
   useEffect(() => {
     try {
       const s = localStorage.getItem("nb_sport");
-      if (s === "mlb" || s === "nfl") setSport(s);
+      if (VALID_SPORTS.includes(s)) setSport(s);
       const vm = localStorage.getItem("nb_predict_view");
       if (vm === "fun" || vm === "units") setViewMode(vm);
     } catch (e) {}
@@ -90,25 +100,25 @@ export default function PredictionsPage() {
     async function loadGames() {
       setLoading(true);
       try {
-        // NFL: current week's scoreboard. MLB: today + next 2 days.
+        // NFL: current week's scoreboard. MLB/NBA/NHL: today + next 2 days.
         let events = [];
-        if (sport === "mlb") {
+        if (sport === "nfl") {
+          const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.nfl}/scoreboard`);
+          if (r.ok) {
+            const d2 = await r.json();
+            events = d2.events || [];
+          }
+        } else {
           const base = new Date();
           for (let i = 0; i < 3; i++) {
             const d = new Date(base);
             d.setDate(d.getDate() + i);
             const ds = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-            const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.mlb}/scoreboard?dates=${ds}`);
+            const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS[sport]}/scoreboard?dates=${ds}`);
             if (r.ok) {
               const d2 = await r.json();
               events.push(...(d2.events || []));
             }
-          }
-        } else {
-          const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.nfl}/scoreboard`);
-          if (r.ok) {
-            const d2 = await r.json();
-            events = d2.events || [];
           }
         }
         if (cancelled) return;
@@ -391,8 +401,9 @@ export default function PredictionsPage() {
           <h1 className="text-sm font-bold text-white flex-1 text-center">🔮 Predictions</h1>
           {/* Sport switcher */}
           <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-            <button onClick={() => setSport("nfl")} className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${sport === "nfl" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏈</button>
-            <button onClick={() => setSport("mlb")} className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${sport === "mlb" ? "bg-red-600 text-white" : "text-zinc-500"}`}>⚾</button>
+            {SPORTS.map((s) => (
+              <button key={s.id} onClick={() => setSport(s.id)} className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}</button>
+            ))}
           </div>
         </div>
       </div>
@@ -480,14 +491,14 @@ export default function PredictionsPage() {
               <div className="text-center py-16">
                 <div className="text-5xl mb-3">🗓️</div>
                 <div className="text-base font-bold text-white">No upcoming games</div>
-                <div className="text-sm text-zinc-500 mt-1">No scheduled {sport === "mlb" ? "MLB" : "NFL"} games to predict right now.</div>
+                <div className="text-sm text-zinc-500 mt-1">No scheduled {sportLabel(sport)} games to predict right now.</div>
               </div>
             )}
 
             {!loading && games.map(g => {
               const pick = pickByGame[g.id];
               const isSaving = saving === g.id;
-              const gameHref = g.sport === "mlb" ? `/game/${g.id}?sport=mlb` : `/game/${g.id}`;
+              const href = gameHref(g.id, g.sport);
               return (
                 <div key={g.id} className="rounded-2xl bg-zinc-900 border border-zinc-800 mb-3 overflow-hidden">
                   <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${g.away.color} 50%, ${g.home.color} 50%)` }} />
@@ -498,7 +509,7 @@ export default function PredictionsPage() {
                     </div>
 
                     {/* Teams — tap to open the game page */}
-                    <Link href={gameHref} className="flex items-center justify-between mb-3 hover:opacity-80 transition-opacity">
+                    <Link href={href} className="flex items-center justify-between mb-3 hover:opacity-80 transition-opacity">
                       {[g.away, g.home].map((t, i) => (
                         <div key={i} className={`flex items-center gap-2 ${i === 0 ? "" : "flex-row-reverse"}`}>
                           {t.logo
@@ -588,13 +599,13 @@ export default function PredictionsPage() {
               <>
                 <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">⏳ Pending ({pendingPicks.length})</div>
                 {pendingPicks.map(p => {
-                  const href = p.sport === "mlb" ? `/game/${p.game_id}?sport=mlb` : `/game/${p.game_id}`;
+                  const href = gameHref(p.game_id, p.sport);
                   return (
                     <Link key={p.id} href={href} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-colors">
                       <div className="flex-1">
                         <div className="text-sm font-bold text-white">{p.pick_label}</div>
                         <div className="text-[10px] text-zinc-500">
-                          {p.sport === "mlb" ? "⚾" : "🏈"} {p.pick_type === "ats" ? "Against the spread" : "Moneyline"}
+                          {sportEmoji(p.sport)} {p.pick_type === "ats" ? "Against the spread" : "Moneyline"}
                           {p.locks_at && ` · locks ${fmtGameTime(p.locks_at)}`}
                         </div>
                       </div>
@@ -612,7 +623,7 @@ export default function PredictionsPage() {
                   const c = p.status === "won" ? { bg: "bg-green-500/15", tx: "text-green-400", lbl: "WON", icon: "✓" }
                     : p.status === "lost" ? { bg: "bg-red-500/15", tx: "text-red-400", lbl: "LOST", icon: "✗" }
                     : { bg: "bg-zinc-800", tx: "text-zinc-400", lbl: p.status === "push" ? "PUSH" : "VOID", icon: "–" };
-                  const href = p.sport === "mlb" ? `/game/${p.game_id}?sport=mlb` : `/game/${p.game_id}`;
+                  const href = gameHref(p.game_id, p.sport);
                   const score = (p.result_away && p.result_home) ? `${p.result_away} — ${p.result_home}` : null;
                   return (
                     <Link key={p.id} href={href} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-colors">
@@ -622,7 +633,7 @@ export default function PredictionsPage() {
                         <div className="text-[10px] text-zinc-500">
                           {score
                             ? <span className="text-zinc-400 font-semibold">Final: {score}</span>
-                            : <>{p.sport === "mlb" ? "⚾" : "🏈"} {p.pick_type === "ats" ? "Against the spread" : "Moneyline"}</>}
+                            : <>{sportEmoji(p.sport)} {p.pick_type === "ats" ? "Against the spread" : "Moneyline"}</>}
                         </div>
                       </div>
                       {p.units != null && (

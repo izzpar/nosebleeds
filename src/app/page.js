@@ -46,10 +46,13 @@ const TEAM_NAMES = {
 };
 const teamName = (sport, abbr) => TEAM_NAMES[sport]?.[abbr] || abbr;
 
-// ESPN team IDs (stable) — used to fetch full league rosters for the Players tab
+// ESPN team IDs (stable) — used to fetch full league rosters for the Players tab.
+// The league /teams list endpoint is CORS-blocked in the browser, so IDs are hardcoded.
 const ESPN_TEAM_IDS = {
   nfl: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","33","34"],
   mlb: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"],
+  nba: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"],
+  nhl: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","25","26","27","28","29","30","37","124292","129764"],
 };
 
 // Module-level roster cache so the Players tab only fetches once per session
@@ -58,16 +61,7 @@ const rosterCache = { nfl: null, mlb: null, nba: null, nhl: null };
 async function loadFullRoster(sport, onProgress) {
   if (rosterCache[sport]) return rosterCache[sport];
   const sportPath = SPORT_PATHS[sport] || SPORT_PATHS.nfl;
-  // Use the hardcoded ID list when we have one (NFL/MLB); otherwise derive the
-  // team IDs from the league's teams endpoint (NBA/NHL change rosters/relocate).
-  let ids = ESPN_TEAM_IDS[sport];
-  if (!ids) {
-    try {
-      const tr = await fetch(`${ESPN_BASE}/${sportPath}/teams?limit=50`);
-      const td = await tr.json();
-      ids = (td?.sports?.[0]?.leagues?.[0]?.teams || []).map((t) => t.team?.id).filter(Boolean);
-    } catch (e) { ids = []; }
-  }
+  const ids = ESPN_TEAM_IDS[sport] || [];
   const players = [];
   const seen = new Set();
   let done = 0;
@@ -77,18 +71,22 @@ async function loadFullRoster(sport, onProgress) {
       if (r.ok) {
         const d = await r.json();
         const abbr = d.team?.abbreviation || "";
-        (d.athletes || []).forEach((group) => {
-          (group.items || []).forEach((p) => {
-            const name = p.displayName;
-            if (!name || seen.has(name)) return;
-            seen.add(name);
-            players.push({
-              id: p.id || "",
-              name,
-              team: abbr,
-              position: p.position?.abbreviation || "",
-              headshot: p.headshot?.href || "",
-            });
+        // Grouped (NFL/MLB/NHL) vs flat (NBA) roster shapes — flatten both.
+        const athletes = [];
+        (d.athletes || []).forEach((entry) => {
+          if (entry && Array.isArray(entry.items)) athletes.push(...entry.items);
+          else if (entry && entry.displayName) athletes.push(entry);
+        });
+        athletes.forEach((p) => {
+          const name = p.displayName;
+          if (!name || seen.has(name)) return;
+          seen.add(name);
+          players.push({
+            id: p.id || "",
+            name,
+            team: abbr,
+            position: p.position?.abbreviation || "",
+            headshot: p.headshot?.href || "",
           });
         });
       }
