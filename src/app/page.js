@@ -982,16 +982,16 @@ function HomeContent() {
           </Link>
         )}
 
-        {/* MLB Daily Recap banner — links to yesterday's recap */}
-        {tab === "games" && sport === "mlb" && (() => {
+        {/* Daily Recap banner — date-based sports link to yesterday's recap */}
+        {tab === "games" && isDateSport(sport) && (() => {
           const d = new Date();
           d.setDate(d.getDate() - 1);
           const yday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
           const ydayLabel = d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
           return (
-            <Link href={`/recap/mlb/${yday}`} className="block mb-3">
+            <Link href={`/recap/${sport}/${yday}`} className="block mb-3">
               <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
-                <div className="text-2xl">⚾</div>
+                <div className="text-2xl">{sportEmoji(sport)}</div>
                 <div className="flex-1">
                   <div className="text-sm font-bold text-white">Yesterday's Recap</div>
                   <div className="text-[10px] text-zinc-500">{ydayLabel} — best games, top MVPs, biggest letdowns</div>
