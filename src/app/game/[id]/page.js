@@ -2307,7 +2307,7 @@ export default function GamePage({ params }) {
                   <div className="mb-4">
                     <div className="text-sm font-semibold text-white mb-2">📺 How did you watch?</div>
                     <div className="flex gap-1.5 flex-wrap">
-                      {["🛋️ Couch", "🍺 Bar", "🏟️ Stadium", "📱 Phone", "📺 RedZone", "🎬 Highlights"].map((w) => (
+                      {["🛋️ Couch", "🍺 Bar", "🏟️ Stadium", "📱 Phone", ...(sport === "nfl" ? ["📺 RedZone"] : []), "🎬 Highlights"].map((w) => (
                         <button key={w} onClick={() => setWatchHow(watchHow === w ? "" : w)}
                           className={`px-3.5 py-2 rounded-full text-xs font-semibold border-2 ${watchHow === w ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-900 text-zinc-500 border-transparent"}`}>{w}</button>
                       ))}
