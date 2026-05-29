@@ -464,17 +464,19 @@ export default function PredictionsPage() {
           </Link>
         </div>
 
-        {/* Beat the Streak entry */}
-        <Link href="/streak" className="block mb-4">
-          <div className="rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-orange-900/50 via-zinc-900 to-zinc-900 border border-orange-600/30 hover:border-orange-600 transition-all">
-            <div className="text-3xl">🔥</div>
-            <div className="flex-1">
-              <div className="text-sm font-bold text-white">Beat the Streak</div>
-              <div className="text-[10px] text-zinc-400">One pick a day. How long can you keep it alive?</div>
+        {/* Beat the Streak entry — MLB only (DiMaggio-style hitting streak) */}
+        {sport === "mlb" && (
+          <Link href="/streak" className="block mb-4">
+            <div className="rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-orange-900/50 via-zinc-900 to-zinc-900 border border-orange-600/30 hover:border-orange-600 transition-all">
+              <div className="text-3xl">🔥</div>
+              <div className="flex-1">
+                <div className="text-sm font-bold text-white">Beat the Streak</div>
+                <div className="text-[10px] text-zinc-400">One pick a day. How long can you keep it alive?</div>
+              </div>
+              <span className="text-orange-400 text-sm font-bold">Play →</span>
             </div>
-            <span className="text-orange-400 text-sm font-bold">Play →</span>
-          </div>
-        </Link>
+          </Link>
+        )}
 
         {/* Sub-tabs */}
         <div className="flex gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800 mb-4">

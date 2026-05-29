@@ -477,7 +477,7 @@ async function fetchGameForSport(id, sport) {
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "😂", "😡"];
 
-function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply }) {
+function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply, teamEmoji = "🏈" }) {
   const c = comment;
   const [showPicker, setShowPicker] = useState(false);
   // Group reactions by emoji
@@ -522,7 +522,7 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
               {c.profile?.display_name || (c.profile?.handle ? `@${c.profile.handle}` : "Anonymous")}
             </Link>
             {c.profile?.favorite_team && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-600/20 text-red-300 border border-red-600/30">🏈 {c.profile.favorite_team}</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-600/20 text-red-300 border border-red-600/30">{teamEmoji} {c.profile.favorite_team}</span>
             )}
             <span className="text-[10px] text-zinc-600">
               {new Date(c.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -607,6 +607,7 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
               onReact={onReact}
               submitting={submitting}
               isReply={true}
+              teamEmoji={teamEmoji}
             />
           ))}
         </div>
@@ -620,6 +621,11 @@ export default function GamePage({ params }) {
   const searchParams = useSearchParams();
   const sportParam = searchParams.get("sport");
   const sport = ALL_SPORTS.includes(sportParam) ? sportParam : "nfl";
+  // Fandom filters key off the favorite team for THIS sport. NFL lives in
+  // `favorite_team`; others in `favorite_team_<sport>`. Alias it back to
+  // `favorite_team` via PostgREST so downstream filtering stays uniform.
+  const favSelect = sport === "nfl" ? "favorite_team" : `favorite_team:favorite_team_${sport}`;
+  const sportTeamEmoji = { nfl: "🏈", mlb: "⚾", nba: "🏀", nhl: "🏒" }[sport] || "🏈";
   const { user, profile } = useAuth();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -788,7 +794,7 @@ export default function GamePage({ params }) {
         if (data && data.length > 0) {
           // Fetch profiles to get favorite_team for each rater
           const userIds = [...new Set(data.map(r => r.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,favorite_team`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -921,7 +927,7 @@ export default function GamePage({ params }) {
         if (cancelled) return;
         if (cData && cData.length > 0) {
           const userIds = [...new Set(cData.map(c => c.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,favorite_team`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -1193,7 +1199,7 @@ export default function GamePage({ params }) {
         const refreshed = await sbJson(cRes);
         if (refreshed && refreshed.length > 0) {
           const userIds = [...new Set(refreshed.map(r => r.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,favorite_team`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -1783,6 +1789,7 @@ export default function GamePage({ params }) {
                       onDelete={deleteComment}
                       onReact={toggleReaction}
                       submitting={commentSubmitting}
+                      teamEmoji={sportTeamEmoji}
                     />
                   );
                 })}

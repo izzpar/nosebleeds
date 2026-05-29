@@ -1113,7 +1113,20 @@ function HomeContent() {
               </div>
             )}
 
-            {loading && <div className="text-center py-16 text-zinc-500">Loading {sport === "nfl" ? `${year} Week ${week}` : sportLabel(sport)}…</div>}
+            {loading && (
+              <div className="animate-pulse">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-2xl bg-zinc-900 border border-zinc-800 mb-3 overflow-hidden">
+                    <div className="h-[3px] bg-zinc-800" />
+                    <div className="p-3.5">
+                      <div className="h-3 w-32 rounded bg-zinc-800 mb-3" />
+                      <div className="flex items-center gap-2.5 mb-2"><div className="w-7 h-7 rounded-lg bg-zinc-800" /><div className="h-3.5 flex-1 max-w-[140px] rounded bg-zinc-800" /><div className="w-6 h-5 rounded bg-zinc-800" /></div>
+                      <div className="flex items-center gap-2.5"><div className="w-7 h-7 rounded-lg bg-zinc-800" /><div className="h-3.5 flex-1 max-w-[120px] rounded bg-zinc-800" /><div className="w-6 h-5 rounded bg-zinc-800" /></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
             {filtered.map((g) => <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />)}
           </div>
