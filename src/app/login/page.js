@@ -1,13 +1,20 @@
 "use client";
 import { supabase } from "@/lib/supabase";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState("signin"); // 'signin' | 'signup'
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [msg, setMsg] = useState(null); // { type: 'error' | 'success', text }
 
   const signInWithGoogle = async () => {
     setLoading(true);
+    setMsg(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -16,6 +23,42 @@ export default function LoginPage() {
     });
     if (error) {
       console.error("Login error:", error);
+      setMsg({ type: "error", text: error.message });
+      setLoading(false);
+    }
+  };
+
+  const submitEmail = async (e) => {
+    e?.preventDefault();
+    const mail = email.trim();
+    if (!mail || !password) { setMsg({ type: "error", text: "Enter your email and password." }); return; }
+    if (mode === "signup" && password.length < 6) { setMsg({ type: "error", text: "Password must be at least 6 characters." }); return; }
+    setLoading(true);
+    setMsg(null);
+    try {
+      if (mode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email: mail,
+          password,
+          options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin + "/auth/callback" : undefined },
+        });
+        if (error) { setMsg({ type: "error", text: error.message }); setLoading(false); return; }
+        if (data.session) {
+          // Confirmation disabled — signed in immediately
+          router.push("/");
+          return;
+        }
+        // Confirmation required
+        setMsg({ type: "success", text: "Check your email to confirm your account, then sign in." });
+        setMode("signin");
+        setLoading(false);
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: mail, password });
+        if (error) { setMsg({ type: "error", text: error.message }); setLoading(false); return; }
+        router.push("/");
+      }
+    } catch (err) {
+      setMsg({ type: "error", text: err.message || "Something went wrong." });
       setLoading(false);
     }
   };
@@ -26,13 +69,60 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-6xl mb-4">🩸</div>
         <h1 className="text-3xl font-extrabold text-white mb-2">The Nosebleeds</h1>
-        <p className="text-zinc-500 text-sm mb-10">Rate and review every game you watch</p>
+        <p className="text-zinc-500 text-sm mb-8">Rate and review every game you watch</p>
+
+        {/* Status message */}
+        {msg && (
+          <div className={`mb-4 px-3 py-2.5 rounded-xl text-sm font-semibold ${msg.type === "error" ? "bg-red-600/15 text-red-300 border border-red-600/30" : "bg-green-600/15 text-green-300 border border-green-600/30"}`}>
+            {msg.text}
+          </div>
+        )}
+
+        {/* Email / password form */}
+        <form onSubmit={submitEmail} className="text-left mb-4">
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Email</label>
+          <input
+            type="email" value={email} autoComplete="email"
+            onChange={(e) => { setEmail(e.target.value); setMsg(null); }}
+            placeholder="you@example.com"
+            className="w-full mt-1 mb-3 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 placeholder:text-zinc-600"
+          />
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Password</label>
+          <input
+            type="password" value={password} autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            onChange={(e) => { setPassword(e.target.value); setMsg(null); }}
+            placeholder={mode === "signup" ? "At least 6 characters" : "Your password"}
+            className="w-full mt-1 mb-4 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 placeholder:text-zinc-600"
+          />
+          <button
+            type="submit" disabled={loading}
+            className="w-full py-3.5 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading && <span className="inline-block w-3.5 h-3.5 border-2 border-red-300 border-t-white rounded-full animate-spin" />}
+            {loading ? "Working…" : mode === "signup" ? "Create account" : "Sign in"}
+          </button>
+        </form>
+
+        {/* Toggle sign in / sign up */}
+        <button
+          onClick={() => { setMode(mode === "signup" ? "signin" : "signup"); setMsg(null); }}
+          className="text-xs text-zinc-500 hover:text-red-400 transition-colors mb-6"
+        >
+          {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
+        </button>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="flex-1 h-px bg-zinc-800" />
+          <span className="text-[10px] text-zinc-600 font-bold uppercase tracking-wider">or</span>
+          <div className="flex-1 h-px bg-zinc-800" />
+        </div>
 
         {/* Google Sign In */}
         <button
           onClick={signInWithGoogle}
           disabled={loading}
-          className="w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-white text-zinc-900 font-bold text-sm hover:bg-zinc-100 transition-all disabled:opacity-50 mb-3"
+          className="w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-white text-zinc-900 font-bold text-sm hover:bg-zinc-100 transition-all disabled:opacity-50"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
@@ -42,10 +132,6 @@ export default function LoginPage() {
           </svg>
           {loading ? "Signing in..." : "Continue with Google"}
         </button>
-
-        <div className="mt-6 text-xs text-zinc-600">
-          By signing in, you agree to our Terms of Service
-        </div>
 
         {/* Browse without account */}
         <a href="/" className="block mt-8 text-sm text-zinc-500 hover:text-red-400 transition-colors">
