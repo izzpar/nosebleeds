@@ -9,7 +9,12 @@ const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
   nfl: "football/nfl",
   mlb: "baseball/mlb",
+  nba: "basketball/nba",
+  nhl: "hockey/nhl",
 };
+const ALL_SPORTS = ["nfl", "mlb", "nba", "nhl"];
+// Period count that signals overtime/extras (MLB innings, NBA quarters, NHL periods)
+const OT_THRESHOLD = { mlb: 9, nba: 4, nhl: 3, nfl: 4 };
 const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy
 
 // NFL stadium coordinates for weather lookups (Open-Meteo)
@@ -113,6 +118,18 @@ function autoMoods(g) {
     if (g.diff >= 8) m.push("💨 Blowout");
     if (g.ot) m.push("🔟 Extras");
     if (g.total <= 4 && g.isFinal) m.push("⚡ Pitcher's Duel");
+  } else if (g?.sport === "nba") {
+    if (g.total >= 240) m.push("🔥 Shootout");
+    if (g.diff <= 3 && g.isFinal) m.push("🎯 Clutch");
+    if (g.diff >= 20) m.push("💨 Blowout");
+    if (g.ot) m.push("⏱️ OT");
+    if (g.total <= 190 && g.isFinal) m.push("🛡️ Defensive");
+  } else if (g?.sport === "nhl") {
+    if (g.total >= 9) m.push("🚨 Goal Fest");
+    if (g.diff <= 1 && g.isFinal) m.push("🎯 Nail-biter");
+    if (g.diff >= 5) m.push("💨 Blowout");
+    if (g.ot) m.push("⏱️ OT");
+    if (g.total <= 3 && g.isFinal) m.push("🥅 Goalie Duel");
   } else {
     if (g.total >= 55) m.push("🔥 Shootout");
     if (g.diff <= 3 && g.isFinal) m.push("🎯 Clutch");
@@ -124,9 +141,9 @@ function autoMoods(g) {
 }
 
 async function fetchGame(id, sport = "nfl") {
-  // Try requested sport, then fall back to the other one (handles cases where
-  // user lands on /game/X without ?sport= param and the rating was for MLB)
-  const order = sport === "mlb" ? ["mlb", "nfl"] : ["nfl", "mlb"];
+  // Try the requested sport first, then fall back to the others (handles cases
+  // where the user lands on /game/X without a matching ?sport= param)
+  const order = [sport, ...ALL_SPORTS.filter((s) => s !== sport)];
   for (const trySport of order) {
     const result = await fetchGameForSport(id, trySport);
     if (result) return result;
@@ -195,13 +212,15 @@ async function fetchGameForSport(id, sport) {
       });
     });
 
-    // Full player stats by category, per team (NFL uses category.name, MLB uses category.type)
+    // Full player stats by category, per team. NFL uses category.name (passing/
+    // rushing/…), MLB category.type (batting/pitching), NHL category.name
+    // (forwards/defenses/goalies). NBA is a single, often-unnamed flat category.
     const fullPlayerStats = { away: {}, home: {} };
     (d.boxscore?.players || []).forEach((team) => {
       const abbr = team.team?.abbreviation;
       const side = abbr === ho.team?.abbreviation ? "home" : "away";
       (team.statistics || []).forEach((category) => {
-        const catName = category.name || category.type;
+        const catName = category.name || category.type || (sport === "nba" ? "stats" : "");
         const players = (category.athletes || []).map(a => ({
           name: a.athlete?.displayName || "",
           jersey: a.athlete?.jersey || "",
@@ -212,7 +231,7 @@ async function fetchGameForSport(id, sport) {
           fullPlayerStats[side][catName] = {
             label: category.text || category.name || category.type,
             keys: category.keys || [],
-            labels: category.labels || category.descriptions || [],
+            labels: category.labels || category.names || category.descriptions || [],
             players,
           };
         }
@@ -295,6 +314,31 @@ async function fetchGameForSport(id, sport) {
             if (er != null) bits.push(`${er} ER`);
             return bits.join(" · ");
           }
+        } else if (sport === "nba") {
+          // Flat box score — headline with points / rebounds / assists
+          const pts = get("PTS"), reb = get("REB"), ast = get("AST");
+          const bits = [];
+          if (pts != null) bits.push(`${pts} PTS`);
+          if (reb != null && reb !== "0") bits.push(`${reb} REB`);
+          if (ast != null && ast !== "0") bits.push(`${ast} AST`);
+          return bits.join(" · ");
+        } else if (sport === "nhl") {
+          if (catName === "goalies") {
+            const sv = get("SV") ?? get("SAVES"), ga = get("GA"), svpct = get("SV%");
+            const bits = [];
+            if (sv != null) bits.push(`${sv} SV`);
+            if (ga != null) bits.push(`${ga} GA`);
+            if (svpct != null) bits.push(`${svpct} SV%`);
+            return bits.join(" · ");
+          } else {
+            // Skaters (forwards / defenses): goals, assists, shots
+            const g_ = get("G"), a = get("A"), sog = get("SOG") ?? get("S");
+            const bits = [];
+            if (g_ != null && g_ !== "0") bits.push(`${g_} G`);
+            if (a != null && a !== "0") bits.push(`${a} A`);
+            if (sog != null && sog !== "0") bits.push(`${sog} SOG`);
+            return bits.join(" · ") || `${g_ || 0}G ${a || 0}A`;
+          }
         } else {
           if (catName === "passing") {
             const ca = get("C/ATT"), yds = get("YDS"), td = get("TD"), int = get("INT");
@@ -335,6 +379,10 @@ async function fetchGameForSport(id, sport) {
       // Priority categories first (the "skill" positions)
       const catOrder = sport === "mlb"
         ? ["batting", "pitching"]
+        : sport === "nba"
+        ? Object.keys(cats)
+        : sport === "nhl"
+        ? ["forwards", "defenses", "goalies"]
         : ["passing", "rushing", "receiving", "defensive"];
       catOrder.forEach((catName) => {
         const cat = cats[catName];
@@ -419,7 +467,7 @@ async function fetchGameForSport(id, sport) {
       atsRecords,
       standingsPos,
       probablePitchers,
-      ot: (ho.linescores || []).length > (sport === "mlb" ? 9 : 4),
+      ot: (ho.linescores || []).length > (OT_THRESHOLD[sport] ?? 4),
       diff: Math.abs((parseInt(ho.score) || 0) - (parseInt(aw.score) || 0)),
       total: (parseInt(ho.score) || 0) + (parseInt(aw.score) || 0),
       odds: d.pickcenter?.[0]?.details || "", ou: d.pickcenter?.[0]?.overUnder || "",
@@ -570,7 +618,8 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
 export default function GamePage({ params }) {
   const { id } = use(params);
   const searchParams = useSearchParams();
-  const sport = searchParams.get("sport") === "mlb" ? "mlb" : "nfl";
+  const sportParam = searchParams.get("sport");
+  const sport = ALL_SPORTS.includes(sportParam) ? sportParam : "nfl";
   const { user, profile } = useAuth();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -773,9 +822,12 @@ export default function GamePage({ params }) {
     return () => { cancelled = true; };
   }, [id]);
 
-  // Weather loader for Pre-Game card (uses Open-Meteo, no API key)
+  // Weather loader for Pre-Game card (uses Open-Meteo, no API key).
+  // Only outdoor leagues (NFL/MLB) — NBA/NHL play in arenas, and their team
+  // abbreviations can collide with the NFL/MLB stadium-coords table.
   useEffect(() => {
     if (!game) return;
+    if (sport !== "nfl" && sport !== "mlb") { setWeather(null); return; }
     const homeAbbr = game.home?.abbr;
     const coords = STADIUM_COORDS[homeAbbr];
     if (!coords) { setWeather(null); return; }
@@ -997,7 +1049,8 @@ export default function GamePage({ params }) {
   // Comment count by fandom
   const filteredComments = filterByFandom(comments.map(c => ({ ...c, favorite_team: c.profile?.favorite_team })));
   const moods = autoMoods(g);
-  const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(sport === "mlb" ? `${a.name} vs ${h.name} ${g.season} highlights MLB` : `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL`)}`;
+  const leagueLabel = { nfl: "NFL", mlb: "MLB", nba: "NBA", nhl: "NHL" }[sport] || "";
+  const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(sport === "nfl" ? `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL` : `${a.name} vs ${h.name} ${g.season} highlights ${leagueLabel}`)}`;
   const steps = ["Rating", "Details", "MVP", "Extras"];
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/game/${id}` : "";
   const shareText = `I rated ${a.abbr} ${a.score} - ${h.abbr} ${h.score} ${logged ? `a ${rating}/10` : ""} on The Nosebleeds 🩸`;
@@ -1217,7 +1270,11 @@ export default function GamePage({ params }) {
                   let label;
                   if (sport === "mlb") {
                     label = String(i + 1); // Innings: 1, 2, 3...
+                  } else if (sport === "nhl") {
+                    // 3 periods, then OT, then shootout
+                    label = i < 3 ? `P${i + 1}` : i === 3 ? "OT" : "SO";
                   } else {
+                    // NFL / NBA: 4 quarters, then OT
                     label = i < 4 ? `Q${i + 1}` : "OT";
                   }
                   return (
@@ -1753,27 +1810,68 @@ export default function GamePage({ params }) {
             {/* Box Score */}
             {(() => {
               // Sport-specific team-stat comparison keys
-              const compareKeys = sport === "mlb" ? [
-                { key: "hits", label: "Hits" },
-                { key: "runs", label: "Runs" },
-                { key: "homeRuns", label: "Home Runs" },
-                { key: "RBIs", label: "RBIs" },
-                { key: "doubles", label: "Doubles" },
-                { key: "walks", label: "Walks" },
-                { key: "strikeouts", label: "Strikeouts", lowerBetter: true },
-                { key: "stolenBases", label: "Stolen Bases" },
-                { key: "runnersLeftOnBase", label: "Left on Base", lowerBetter: true },
-                { key: "totalBases", label: "Total Bases" },
-              ] : [
-                { key: "firstDowns", label: "1st Downs" },
-                { key: "totalYards", label: "Total Yards" },
-                { key: "netPassingYards", label: "Pass Yards" },
-                { key: "rushingYards", label: "Rush Yards" },
-                { key: "turnovers", label: "Turnovers", lowerBetter: true },
-                { key: "thirdDownEff", label: "3rd Down" },
-                { key: "totalPenaltiesYards", label: "Penalties", lowerBetter: true },
-                { key: "possessionTime", label: "Possession" },
-              ];
+              const CURATED_TEAM_KEYS = {
+                mlb: [
+                  { key: "hits", label: "Hits" },
+                  { key: "runs", label: "Runs" },
+                  { key: "homeRuns", label: "Home Runs" },
+                  { key: "RBIs", label: "RBIs" },
+                  { key: "doubles", label: "Doubles" },
+                  { key: "walks", label: "Walks" },
+                  { key: "strikeouts", label: "Strikeouts", lowerBetter: true },
+                  { key: "stolenBases", label: "Stolen Bases" },
+                  { key: "runnersLeftOnBase", label: "Left on Base", lowerBetter: true },
+                  { key: "totalBases", label: "Total Bases" },
+                ],
+                nba: [
+                  { key: "fieldGoalsMade-fieldGoalsAttempted", label: "FG" },
+                  { key: "fieldGoalPct", label: "FG%" },
+                  { key: "threePointFieldGoalsMade-threePointFieldGoalsAttempted", label: "3PT" },
+                  { key: "freeThrowsMade-freeThrowsAttempted", label: "FT" },
+                  { key: "totalRebounds", label: "Rebounds" },
+                  { key: "offensiveRebounds", label: "Off Reb" },
+                  { key: "assists", label: "Assists" },
+                  { key: "steals", label: "Steals" },
+                  { key: "blocks", label: "Blocks" },
+                  { key: "totalTurnovers", label: "Turnovers", lowerBetter: true },
+                ],
+                nhl: [
+                  { key: "goals", label: "Goals" },
+                  { key: "assists", label: "Assists" },
+                  { key: "shotsTotal", label: "Shots" },
+                  { key: "powerPlayGoals", label: "PP Goals" },
+                  { key: "faceoffsWon", label: "Faceoffs Won" },
+                  { key: "penaltyMinutes", label: "Penalty Min", lowerBetter: true },
+                  { key: "hits", label: "Hits" },
+                  { key: "blockedShots", label: "Blocked Shots" },
+                  { key: "takeaways", label: "Takeaways" },
+                  { key: "giveaways", label: "Giveaways", lowerBetter: true },
+                  { key: "saves", label: "Saves" },
+                ],
+                nfl: [
+                  { key: "firstDowns", label: "1st Downs" },
+                  { key: "totalYards", label: "Total Yards" },
+                  { key: "netPassingYards", label: "Pass Yards" },
+                  { key: "rushingYards", label: "Rush Yards" },
+                  { key: "turnovers", label: "Turnovers", lowerBetter: true },
+                  { key: "thirdDownEff", label: "3rd Down" },
+                  { key: "totalPenaltiesYards", label: "Penalties", lowerBetter: true },
+                  { key: "possessionTime", label: "Possession" },
+                ],
+              };
+              let compareKeys = CURATED_TEAM_KEYS[sport] || CURATED_TEAM_KEYS.nfl;
+              // NBA/NHL key names are less predictable across ESPN versions — keep
+              // only curated keys that exist, and if too few survive, fall back to
+              // showing every team stat ESPN provided (labeled from the data).
+              if (sport === "nba" || sport === "nhl") {
+                const present = compareKeys.filter((ck) => g.teamStats?.away?.[ck.key] || g.teamStats?.home?.[ck.key]);
+                if (present.length >= 3) {
+                  compareKeys = present;
+                } else {
+                  const allKeys = [...new Set([...Object.keys(g.teamStats?.away || {}), ...Object.keys(g.teamStats?.home || {})])];
+                  compareKeys = allKeys.map((k) => ({ key: k, label: g.teamStats?.away?.[k]?.label || g.teamStats?.home?.[k]?.label || k }));
+                }
+              }
               const hasTeamStats = g.teamStats && (Object.keys(g.teamStats.away).length > 0 || Object.keys(g.teamStats.home).length > 0);
               const hasFullStats = g.fullPlayerStats && (Object.keys(g.fullPlayerStats.away).length > 0 || Object.keys(g.fullPlayerStats.home).length > 0);
               if (!hasTeamStats && !hasFullStats) {
@@ -1809,6 +1907,14 @@ export default function GamePage({ params }) {
                 if (cats.includes("batting")) tabs.push({ id: "batting", label: "Batting", emoji: "🏏" });
                 if (cats.includes("pitching")) tabs.push({ id: "pitching", label: "Pitching", emoji: "⚾" });
                 if (cats.includes("fielding")) tabs.push({ id: "fielding", label: "Fielding", emoji: "🥎" });
+              } else if (sport === "nba") {
+                // Single flat category (id varies by ESPN version) — one Player Stats tab
+                cats.forEach((cn) => tabs.push({ id: cn, label: "Player Stats", emoji: "🏀" }));
+              } else if (sport === "nhl") {
+                const nhlMeta = { forwards: { label: "Forwards", emoji: "🏒" }, defenses: { label: "Defense", emoji: "🛡️" }, goalies: { label: "Goalies", emoji: "🥅" } };
+                ["forwards", "defenses", "goalies"].forEach((k) => { if (cats.includes(k)) tabs.push({ id: k, ...nhlMeta[k] }); });
+                // Fallback if ESPN labels the skater groups differently
+                if (tabs.length === 1) cats.forEach((cn) => tabs.push({ id: cn, label: cn.charAt(0).toUpperCase() + cn.slice(1), emoji: "🏒" }));
               } else {
                 if (cats.includes("passing")) tabs.push({ id: "passing", label: "Passing", emoji: "🎯" });
                 if (cats.includes("rushing")) tabs.push({ id: "rushing", label: "Rushing", emoji: "🏃" });
@@ -1819,7 +1925,15 @@ export default function GamePage({ params }) {
               const renderCategoryTable = (catName) => {
                 const awayCategory = g.fullPlayerStats?.away?.[catName];
                 const homeCategory = g.fullPlayerStats?.home?.[catName];
-                const labels = (awayCategory?.labels && awayCategory.labels.length > 0 ? awayCategory.labels : homeCategory?.labels) || [];
+                const rawLabels = (awayCategory?.labels && awayCategory.labels.length > 0 ? awayCategory.labels : homeCategory?.labels) || [];
+                // For NHL skaters, lead with the stats fans care about: Goals, Assists, Shots, Hits.
+                // NB: ESPN's "S" is shots (shotsTotal); "SOG" is shootout goals, not shots on goal.
+                const priority = (sport === "nhl" && (catName === "forwards" || catName === "defenses")) ? ["G", "A", "S", "HT"] : [];
+                const front = [];
+                priority.forEach((tok) => { const idx = rawLabels.indexOf(tok); if (idx >= 0 && !front.includes(idx)) front.push(idx); });
+                // `order` reorders both the header labels and each player's stat cells in lockstep
+                const order = [...front, ...rawLabels.map((_, i) => i).filter((i) => !front.includes(i))];
+                const labels = order.map((i) => rawLabels[i]);
                 return (
                   <div className="space-y-4">
                     {[
@@ -1850,8 +1964,8 @@ export default function GamePage({ params }) {
                                     {p.name}
                                     {p.position && <span className="text-[9px] text-zinc-600 ml-1">{p.position}</span>}
                                   </Link>
-                                  {p.stats.map((stat, idx) => (
-                                    <div key={idx} className="w-11 shrink-0 text-[11px] font-bold text-zinc-300 text-right tabular-nums">{stat || "—"}</div>
+                                  {order.map((oi, idx) => (
+                                    <div key={idx} className="w-11 shrink-0 text-[11px] font-bold text-zinc-300 text-right tabular-nums">{p.stats[oi] || "—"}</div>
                                   ))}
                                 </div>
                               ))}
@@ -1937,6 +2051,10 @@ export default function GamePage({ params }) {
               <div className="flex gap-1.5 flex-wrap">
                 {(sport === "mlb"
                   ? ["💣 Slugfest", "⚡ Pitcher's Duel", "🔟 Extras", "💪 Comeback", "🎯 Nail-biter", "💨 Blowout", "🌟 Classic", "😤 Controversial"]
+                  : sport === "nba"
+                  ? ["🔥 Shootout", "💪 Comeback", "⏱️ OT", "🛡️ Defensive", "💨 Blowout", "🎯 Clutch", "🌟 Classic", "😤 Controversial"]
+                  : sport === "nhl"
+                  ? ["🚨 Goal Fest", "💪 Comeback", "⏱️ OT", "🥅 Goalie Duel", "💨 Blowout", "🎯 Nail-biter", "🌟 Classic", "😤 Controversial"]
                   : ["🔥 Shootout", "💪 Comeback", "⏱️ OT", "🛡️ Defensive", "💨 Blowout", "🎯 Clutch", "🌟 Classic", "😤 Controversial"]
                 ).map((m) => {
                   const userSel = userMoods.includes(m);

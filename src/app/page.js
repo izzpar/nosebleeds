@@ -10,14 +10,39 @@ const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
   nfl: "football/nfl",
   mlb: "baseball/mlb",
+  nba: "basketball/nba",
+  nhl: "hockey/nhl",
 };
 const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy for any remaining refs
+
+// Sport switcher config (also drives diary/profile toggles). Order = display order.
+const SPORTS = [
+  { id: "nfl", emoji: "🏈", label: "NFL" },
+  { id: "mlb", emoji: "⚾", label: "MLB" },
+  { id: "nba", emoji: "🏀", label: "NBA" },
+  { id: "nhl", emoji: "🏒", label: "NHL" },
+];
+const VALID_SPORTS = SPORTS.map((s) => s.id);
+// NFL is week/season based; everyone else is fetched by calendar date.
+const isDateSport = (s) => s !== "nfl";
+const sportLabel = (s) => SPORTS.find((x) => x.id === s)?.label || "NFL";
+const sportEmoji = (s) => SPORTS.find((x) => x.id === s)?.emoji || "🏈";
+// Profiles store the NFL favorite as `favorite_team`; others as `favorite_team_<sport>`.
+const favKey = (s) => (s === "nfl" ? "favorite_team" : `favorite_team_${s}`);
+// Game-detail href that carries sport so the game page hits the right ESPN endpoint.
+const gameHref = (gameId, gameSport) =>
+  gameSport && gameSport !== "nfl" ? `/game/${gameId}?sport=${gameSport}` : `/game/${gameId}`;
+
 const ALL_TEAMS = ["ARI","ATL","BAL","BUF","CAR","CHI","CIN","CLE","DAL","DEN","DET","GB","HOU","IND","JAX","KC","LAC","LAR","LV","MIA","MIN","NE","NO","NYG","NYJ","PHI","PIT","SEA","SF","TB","TEN","WSH"];
 const ALL_MLB_TEAMS = ["ARI","ATL","BAL","BOS","CHC","CHW","CIN","CLE","COL","DET","HOU","KC","LAA","LAD","MIA","MIL","MIN","NYM","NYY","OAK","PHI","PIT","SD","SEA","SF","STL","TB","TEX","TOR","WSH"];
-const TEAMS_BY_SPORT = { nfl: ALL_TEAMS, mlb: ALL_MLB_TEAMS };
+const ALL_NBA_TEAMS = ["ATL","BKN","BOS","CHA","CHI","CLE","DAL","DEN","DET","GS","HOU","IND","LAC","LAL","MEM","MIA","MIL","MIN","NO","NY","OKC","ORL","PHI","PHX","POR","SAC","SA","TOR","UTAH","WSH"];
+const ALL_NHL_TEAMS = ["ANA","BOS","BUF","CAR","CBJ","CGY","CHI","COL","DAL","DET","EDM","FLA","LA","MIN","MTL","NJ","NSH","NYI","NYR","OTT","PHI","PIT","SEA","SJ","STL","TB","TOR","UTAH","VAN","VGK","WPG","WSH"];
+const TEAMS_BY_SPORT = { nfl: ALL_TEAMS, mlb: ALL_MLB_TEAMS, nba: ALL_NBA_TEAMS, nhl: ALL_NHL_TEAMS };
 const TEAM_NAMES = {
   nfl: { ARI:"Cardinals", ATL:"Falcons", BAL:"Ravens", BUF:"Bills", CAR:"Panthers", CHI:"Bears", CIN:"Bengals", CLE:"Browns", DAL:"Cowboys", DEN:"Broncos", DET:"Lions", GB:"Packers", HOU:"Texans", IND:"Colts", JAX:"Jaguars", KC:"Chiefs", LAC:"Chargers", LAR:"Rams", LV:"Raiders", MIA:"Dolphins", MIN:"Vikings", NE:"Patriots", NO:"Saints", NYG:"Giants", NYJ:"Jets", PHI:"Eagles", PIT:"Steelers", SEA:"Seahawks", SF:"49ers", TB:"Buccaneers", TEN:"Titans", WSH:"Commanders" },
   mlb: { ARI:"D-backs", ATL:"Braves", BAL:"Orioles", BOS:"Red Sox", CHC:"Cubs", CHW:"White Sox", CIN:"Reds", CLE:"Guardians", COL:"Rockies", DET:"Tigers", HOU:"Astros", KC:"Royals", LAA:"Angels", LAD:"Dodgers", MIA:"Marlins", MIL:"Brewers", MIN:"Twins", NYM:"Mets", NYY:"Yankees", OAK:"Athletics", PHI:"Phillies", PIT:"Pirates", SD:"Padres", SEA:"Mariners", SF:"Giants", STL:"Cardinals", TB:"Rays", TEX:"Rangers", TOR:"Blue Jays", WSH:"Nationals" },
+  nba: { ATL:"Hawks", BKN:"Nets", BOS:"Celtics", CHA:"Hornets", CHI:"Bulls", CLE:"Cavaliers", DAL:"Mavericks", DEN:"Nuggets", DET:"Pistons", GS:"Warriors", HOU:"Rockets", IND:"Pacers", LAC:"Clippers", LAL:"Lakers", MEM:"Grizzlies", MIA:"Heat", MIL:"Bucks", MIN:"Timberwolves", NO:"Pelicans", NY:"Knicks", OKC:"Thunder", ORL:"Magic", PHI:"76ers", PHX:"Suns", POR:"Trail Blazers", SAC:"Kings", SA:"Spurs", TOR:"Raptors", UTAH:"Jazz", WSH:"Wizards" },
+  nhl: { ANA:"Ducks", BOS:"Bruins", BUF:"Sabres", CAR:"Hurricanes", CBJ:"Blue Jackets", CGY:"Flames", CHI:"Blackhawks", COL:"Avalanche", DAL:"Stars", DET:"Red Wings", EDM:"Oilers", FLA:"Panthers", LA:"Kings", MIN:"Wild", MTL:"Canadiens", NJ:"Devils", NSH:"Predators", NYI:"Islanders", NYR:"Rangers", OTT:"Senators", PHI:"Flyers", PIT:"Penguins", SEA:"Kraken", SJ:"Sharks", STL:"Blues", TB:"Lightning", TOR:"Maple Leafs", UTAH:"Mammoth", VAN:"Canucks", VGK:"Golden Knights", WPG:"Jets", WSH:"Capitals" },
 };
 const teamName = (sport, abbr) => TEAM_NAMES[sport]?.[abbr] || abbr;
 
@@ -28,12 +53,21 @@ const ESPN_TEAM_IDS = {
 };
 
 // Module-level roster cache so the Players tab only fetches once per session
-const rosterCache = { nfl: null, mlb: null };
+const rosterCache = { nfl: null, mlb: null, nba: null, nhl: null };
 
 async function loadFullRoster(sport, onProgress) {
   if (rosterCache[sport]) return rosterCache[sport];
-  const sportPath = sport === "mlb" ? "baseball/mlb" : "football/nfl";
-  const ids = ESPN_TEAM_IDS[sport] || [];
+  const sportPath = SPORT_PATHS[sport] || SPORT_PATHS.nfl;
+  // Use the hardcoded ID list when we have one (NFL/MLB); otherwise derive the
+  // team IDs from the league's teams endpoint (NBA/NHL change rosters/relocate).
+  let ids = ESPN_TEAM_IDS[sport];
+  if (!ids) {
+    try {
+      const tr = await fetch(`${ESPN_BASE}/${sportPath}/teams?limit=50`);
+      const td = await tr.json();
+      ids = (td?.sports?.[0]?.leagues?.[0]?.teams || []).map((t) => t.team?.id).filter(Boolean);
+    } catch (e) { ids = []; }
+  }
   const players = [];
   const seen = new Set();
   let done = 0;
@@ -192,12 +226,19 @@ async function fetchNflWeek(year, week) {
   } catch (e) { console.error(e); return []; }
 }
 
-async function fetchMlbDate(dateStr) {
+// Period count that signals overtime/extras, per date-based sport
+// (MLB = 9 innings, NBA = 4 quarters, NHL = 3 periods)
+const DATE_SPORT_OT = { mlb: 9, nba: 4, nhl: 3 };
+
+// Generic calendar-date scoreboard fetch — shared by MLB / NBA / NHL.
+async function fetchSportDate(sport, dateStr) {
   try {
+    const sportPath = SPORT_PATHS[sport] || SPORT_PATHS.mlb;
     // dateStr is YYYY-MM-DD; ESPN wants YYYYMMDD
     const dateParam = dateStr.replace(/-/g, "");
-    const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.mlb}/scoreboard?dates=${dateParam}`);
+    const r = await fetch(`${ESPN_BASE}/${sportPath}/scoreboard?dates=${dateParam}`);
     const d = await r.json();
+    const otThreshold = DATE_SPORT_OT[sport] ?? 4;
     return (d.events || []).map((e) => {
       const c = e.competitions?.[0];
       if (!c) return null;
@@ -210,7 +251,7 @@ async function fetchMlbDate(dateStr) {
       const dateStrLocal = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
       const timeStr = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       return {
-        id: e.id, sport: "mlb",
+        id: e.id, sport,
         // Synthesize "week" as day-of-year so existing sort logic still works
         week: Math.floor((dt - new Date(dt.getFullYear(), 0, 0)) / 86400000),
         season: dt.getFullYear(),
@@ -222,8 +263,7 @@ async function fetchMlbDate(dateStr) {
         isPre: st === "STATUS_SCHEDULED", isFinal: st === "STATUS_FINAL",
         home: { name: ho.team.displayName, abbr: ho.team.abbreviation, color: "#" + (ho.team.color || "333"), logo: ho.team.logo, record: ho.records?.[0]?.summary || "", score: parseInt(ho.score) || 0 },
         away: { name: aw.team.displayName, abbr: aw.team.abbreviation, color: "#" + (aw.team.color || "333"), logo: aw.team.logo, record: aw.records?.[0]?.summary || "", score: parseInt(aw.score) || 0 },
-        // MLB linescores are innings (usually 9, more for extras)
-        ot: (ho.linescores || []).length > 9,
+        ot: (ho.linescores || []).length > otThreshold,
         diff: Math.abs((parseInt(ho.score) || 0) - (parseInt(aw.score) || 0)),
         total: (parseInt(ho.score) || 0) + (parseInt(aw.score) || 0),
       };
@@ -238,11 +278,11 @@ function HomeContent() {
   const { user, profile, signOut, refreshProfile, loading: authLoading } = useAuth();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sport, setSportInternal] = useState("nfl"); // nfl | mlb
+  const [sport, setSportInternal] = useState("nfl"); // nfl | mlb | nba | nhl
   const [week, setWeek] = useState(18);
   const [year, setYear] = useState(2024);
-  // MLB uses a date string YYYY-MM-DD instead of week/year
-  const [mlbDate, setMlbDate] = useState(() => {
+  // Date-based sports (MLB/NBA/NHL) use a date string YYYY-MM-DD instead of week/year
+  const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   });
@@ -257,7 +297,7 @@ function HomeContent() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("nb_sport");
-      if (saved === "mlb" || saved === "nfl") { setSportInternal(saved); setProfileSport(saved); }
+      if (VALID_SPORTS.includes(saved)) { setSportInternal(saved); setProfileSport(saved); }
     } catch (e) {}
   }, []);
   const [search, setSearch] = useState("");
@@ -286,7 +326,8 @@ function HomeContent() {
   const [editHandle, setEditHandle] = useState("");
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editBio, setEditBio] = useState("");
-  const [editTeam, setEditTeam] = useState("");
+  // Favorite team per sport while editing: { nfl, mlb, nba, nhl } → abbr
+  const [editTeams, setEditTeams] = useState({});
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(null);
@@ -294,7 +335,6 @@ function HomeContent() {
   const [barDrilldown, setBarDrilldown] = useState(null); // { rating: int, games: [] }
   // Profile tab: which sport's stats to show (defaults to global sport)
   const [profileSport, setProfileSport] = useState("nfl");
-  const [editTeamMlb, setEditTeamMlb] = useState("");
   const [handleError, setHandleError] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
   const [newListName, setNewListName] = useState("");
@@ -374,16 +414,17 @@ function HomeContent() {
         const data = await fetchNflWeek(year, week);
         if (cancelled) return;
         setGames((prev) => [...prev.filter((g) => !(g.sport === "nfl" && g.week === week && g.season === year)), ...data]);
-      } else if (sport === "mlb") {
-        const data = await fetchMlbDate(mlbDate);
+      } else {
+        // MLB / NBA / NHL — calendar-date based
+        const data = await fetchSportDate(sport, selectedDate);
         if (cancelled) return;
-        setGames((prev) => [...prev.filter((g) => !(g.sport === "mlb" && g.gameDate === mlbDate)), ...data]);
+        setGames((prev) => [...prev.filter((g) => !(g.sport === sport && g.gameDate === selectedDate)), ...data]);
       }
       setLoading(false);
     }
     load();
     return () => { cancelled = true; };
-  }, [sport, week, year, mlbDate]);
+  }, [sport, week, year, selectedDate]);
 
   useEffect(() => {
     const urlTab = searchParams.get("tab");
@@ -411,13 +452,15 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [tab, user]);
 
+  // Build the per-sport favorite-team map from a profile row
+  const teamsFromProfile = (p) => Object.fromEntries(SPORTS.map((s) => [s.id, p?.[favKey(s.id)] || ""]));
+
   useEffect(() => {
     if (profile) {
       setEditHandle(profile.handle || "");
       setEditDisplayName(profile.display_name || "");
       setEditBio(profile.bio || "");
-      setEditTeam(profile.favorite_team || "");
-      setEditTeamMlb(profile.favorite_team_mlb || "");
+      setEditTeams(teamsFromProfile(profile));
       setEditAvatarUrl(profile.avatar_url || "");
     }
   }, [profile]);
@@ -428,8 +471,7 @@ function HomeContent() {
       setEditHandle(profile.handle || "");
       setEditDisplayName(profile.display_name || "");
       setEditBio(profile.bio || "");
-      setEditTeam(profile.favorite_team || "");
-      setEditTeamMlb(profile.favorite_team_mlb || "");
+      setEditTeams(teamsFromProfile(profile));
       setEditAvatarUrl(profile.avatar_url || "");
       setAvatarPreview(null);
       setHandleError("");
@@ -847,16 +889,15 @@ function HomeContent() {
   };
 
   // Game-detail href that carries sport so the page hits the right ESPN endpoint
-  const gh = (gameId, gameSport) => {
-    const s = gameSport || sport;
-    return s === "mlb" ? `/game/${gameId}?sport=mlb` : `/game/${gameId}`;
-  };
+  const gh = (gameId, gameSport) => gameHref(gameId, gameSport || sport);
+
+  // Is this game in the currently-selected scope (NFL week/season, or a date)?
+  const inCurrentScope = (x) => sport === "nfl"
+    ? (x.sport === "nfl" && x.week === week && x.season === year)
+    : (x.sport === sport && x.gameDate === selectedDate);
 
   const filtered = useMemo(() => {
-    let g = games.filter((x) => sport === "nfl"
-      ? (x.sport === "nfl" && x.week === week && x.season === year)
-      : (x.sport === "mlb" && x.gameDate === mlbDate)
-    );
+    let g = games.filter(inCurrentScope);
     if (search) {
       const s = search.toLowerCase();
       g = g.filter((x) => x.away.name.toLowerCase().includes(s) || x.home.name.toLowerCase().includes(s) || x.away.abbr.toLowerCase().includes(s) || x.home.abbr.toLowerCase().includes(s));
@@ -868,21 +909,18 @@ function HomeContent() {
     if (sort === "score") g = [...g].sort((a, b) => b.total - a.total);
     else if (sort === "close") g = [...g].sort((a, b) => a.diff - b.diff);
     return g;
-  }, [games, sport, week, year, mlbDate, search, sort, myTeams, gameStatus]);
+  }, [games, sport, week, year, selectedDate, search, sort, myTeams, gameStatus]);
 
   // Counts for status pills
   const statusCounts = useMemo(() => {
-    const inScope = games.filter((x) => sport === "nfl"
-      ? (x.sport === "nfl" && x.week === week && x.season === year)
-      : (x.sport === "mlb" && x.gameDate === mlbDate)
-    );
+    const inScope = games.filter(inCurrentScope);
     return {
       all: inScope.length,
       upcoming: inScope.filter(g => g.status === "STATUS_SCHEDULED").length,
       live: inScope.filter(g => g.status === "STATUS_IN_PROGRESS" || g.status === "STATUS_HALFTIME" || g.status === "STATUS_END_PERIOD" || g.status === "STATUS_END_OF_INNING").length,
       finished: inScope.filter(g => g.status === "STATUS_FINAL").length,
     };
-  }, [games, sport, week, year, mlbDate]);
+  }, [games, sport, week, year, selectedDate]);
 
   const ratedLogs = logs.filter(l => l.rating > 0);
   // Sport-filtered logs for the Profile tab (default 'nfl' for rows without sport set)
@@ -904,8 +942,12 @@ function HomeContent() {
           {/* Sport switcher - hidden on Diary/Profile which have their own profileSport toggle */}
           {tab !== "diary" && tab !== "profile" && (
             <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-              <button onClick={() => setSport("nfl")} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === "nfl" ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>🏈 NFL</button>
-              <button onClick={() => setSport("mlb")} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === "mlb" ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>⚾ MLB</button>
+              {SPORTS.map((s) => (
+                <button key={s.id} onClick={() => setSport(s.id)}
+                  className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>
+                  {s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -987,9 +1029,9 @@ function HomeContent() {
               </>
             )}
 
-            {sport === "mlb" && (() => {
+            {isDateSport(sport) && (() => {
               // Build a +/- 3 day window around the chosen date for quick nav
-              const base = new Date(mlbDate + "T12:00:00");
+              const base = new Date(selectedDate + "T12:00:00");
               const days = [];
               for (let i = -3; i <= 3; i++) {
                 const d = new Date(base);
@@ -1000,9 +1042,9 @@ function HomeContent() {
                 days.push({ ds, isToday, label: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) });
               }
               const shiftDay = (delta) => {
-                const d = new Date(mlbDate + "T12:00:00");
+                const d = new Date(selectedDate + "T12:00:00");
                 d.setDate(d.getDate() + delta);
-                setMlbDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
+                setSelectedDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
               };
               const today = new Date();
               const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -1010,17 +1052,17 @@ function HomeContent() {
                 <div className="mb-3">
                   <div className="flex items-center gap-2 mb-2">
                     <button onClick={() => shiftDay(-1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">← Prev</button>
-                    <input type="date" value={mlbDate} onChange={(e) => setMlbDate(e.target.value)}
+                    <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
                       className="flex-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 text-center" />
                     <button onClick={() => shiftDay(1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">Next →</button>
-                    {mlbDate !== todayStr && (
-                      <button onClick={() => setMlbDate(todayStr)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-600 text-white shrink-0">Today</button>
+                    {selectedDate !== todayStr && (
+                      <button onClick={() => setSelectedDate(todayStr)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-600 text-white shrink-0">Today</button>
                     )}
                   </div>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     {days.map(d => (
-                      <button key={d.ds} onClick={() => setMlbDate(d.ds)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${mlbDate === d.ds ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>
+                      <button key={d.ds} onClick={() => setSelectedDate(d.ds)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${selectedDate === d.ds ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>
                         {d.isToday ? "Today" : d.label}
                       </button>
                     ))}
@@ -1073,7 +1115,7 @@ function HomeContent() {
               </div>
             )}
 
-            {loading && <div className="text-center py-16 text-zinc-500">Loading {year} Week {week}...</div>}
+            {loading && <div className="text-center py-16 text-zinc-500">Loading {sport === "nfl" ? `${year} Week ${week}` : sportLabel(sport)}…</div>}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
             {filtered.map((g) => <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />)}
           </div>
@@ -1229,7 +1271,7 @@ function HomeContent() {
           return (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xl font-extrabold text-white">{sport === "mlb" ? "⚾" : "🏈"} Players</h2>
+                <h2 className="text-xl font-extrabold text-white">{sportEmoji(sport)} Players</h2>
                 {!playersLoading && <span className="text-[10px] text-zinc-600 font-semibold">{playersList.length} players</span>}
               </div>
               <p className="text-xs text-zinc-500 mb-3">Search any player in the league, or browse the most-picked below.</p>
@@ -1238,7 +1280,7 @@ function HomeContent() {
               <input
                 value={playerSearch}
                 onChange={(e) => setPlayerSearch(e.target.value)}
-                placeholder={`Search all ${sport === "mlb" ? "MLB" : "NFL"} players…`}
+                placeholder={`Search all ${sportLabel(sport)} players…`}
                 className="w-full px-3 py-2.5 mb-3 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 placeholder:text-zinc-600"
               />
 
@@ -1399,35 +1441,35 @@ function HomeContent() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-extrabold text-white">Your Diary</h2>
               <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-                <button onClick={() => setProfileSport("nfl")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "nfl" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏈 NFL</button>
-                <button onClick={() => setProfileSport("mlb")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "mlb" ? "bg-red-600 text-white" : "text-zinc-500"}`}>⚾ MLB</button>
+                {SPORTS.map((s) => (
+                  <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
+                ))}
               </div>
             </div>
             {sportRatedLogs.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-5xl mb-3">📓</div>
-                <div className="text-base font-bold text-white">No {profileSport === "mlb" ? "MLB" : "NFL"} games logged yet</div>
-                <div className="text-sm text-zinc-500 mt-1">Rate {profileSport === "mlb" ? "MLB" : "NFL"} games to build your diary</div>
+                <div className="text-base font-bold text-white">No {sportLabel(profileSport)} games logged yet</div>
+                <div className="text-sm text-zinc-500 mt-1">Rate {sportLabel(profileSport)} games to build your diary</div>
                 <button onClick={() => { setSport(profileSport); setTab("games"); }} className="mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
               </div>
             )}
             {[...sportRatedLogs].sort((a, b) => (b.season || 0) - (a.season || 0) || (b.week || 0) - (a.week || 0)).map((l) => {
               const g = games.find((x) => x.id === l.gameId);
-              const gameHref = l.sport === "mlb" ? `/game/${l.gameId}?sport=mlb` : `/game/${l.gameId}`;
               return (
-                <Link key={l.gameId} href={gameHref} className="block">
+                <Link key={l.gameId} href={gameHref(l.gameId, l.sport)} className="block">
                 <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
                   <Bdg r={l.rating} />
                   <div className="flex-1">
                     {g ? (
                       <>
                         <div className="text-sm font-bold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
-                        <div className="text-[10px] text-zinc-600">{l.sport === "mlb" ? g.shortDate : `Wk ${g.week} · ${g.shortDate}`}</div>
+                        <div className="text-[10px] text-zinc-600">{isDateSport(l.sport) ? g.shortDate : `Wk ${g.week} · ${g.shortDate}`}</div>
                       </>
                     ) : (
                       <>
                         <div className="text-sm font-bold text-white">{l.awayTeam && l.homeTeam ? `${l.awayTeam} ${l.awayScore} — ${l.homeTeam} ${l.homeScore}` : "Game rated"}</div>
-                        <div className="text-[10px] text-zinc-600">{l.sport === "mlb" ? (l.season || "") : `Wk ${l.week || "?"} · ${l.season || ""}`}</div>
+                        <div className="text-[10px] text-zinc-600">{isDateSport(l.sport) ? (l.season || "") : `Wk ${l.week || "?"} · ${l.season || ""}`}</div>
                       </>
                     )}
                     <div className="flex gap-2 mt-1 flex-wrap">
@@ -1479,14 +1521,11 @@ function HomeContent() {
                   )}
                 </div>
                 {/* Team badges */}
-                {(profile?.favorite_team || profile?.favorite_team_mlb) && (
+                {SPORTS.some((s) => profile?.[favKey(s.id)]) && (
                   <div className="flex justify-center gap-1.5 mb-2 flex-wrap">
-                    {profile?.favorite_team && (
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">🏈 {teamName("nfl", profile.favorite_team)}</span>
-                    )}
-                    {profile?.favorite_team_mlb && (
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">⚾ {teamName("mlb", profile.favorite_team_mlb)}</span>
-                    )}
+                    {SPORTS.filter((s) => profile?.[favKey(s.id)]).map((s) => (
+                      <span key={s.id} className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">{s.emoji} {teamName(s.id, profile[favKey(s.id)])}</span>
+                    ))}
                   </div>
                 )}
                 {/* Bio */}
@@ -1497,8 +1536,9 @@ function HomeContent() {
                 )}
                 {/* Profile sport switcher */}
                 <div className="flex gap-0.5 p-0.5 mb-3 rounded-full bg-zinc-950 border border-zinc-800 mx-auto w-fit">
-                  <button onClick={() => setProfileSport("nfl")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "nfl" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏈 NFL</button>
-                  <button onClick={() => setProfileSport("mlb")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "mlb" ? "bg-red-600 text-white" : "text-zinc-500"}`}>⚾ MLB</button>
+                  {SPORTS.map((s) => (
+                    <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
+                  ))}
                 </div>
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-2 text-center mb-3">
@@ -1569,11 +1609,11 @@ function HomeContent() {
                     {recent.map(p => {
                       const s = statusStyle(p.status);
                       return (
-                        <Link key={p.id} href={p.sport === "mlb" ? `/game/${p.game_id}?sport=mlb` : `/game/${p.game_id}`}
+                        <Link key={p.id} href={gameHref(p.game_id, p.sport)}
                           className="flex items-center gap-2.5 p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors">
                           <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-extrabold shrink-0 ${s.bg} ${s.tx}`}>{s.lbl}</span>
                           <span className="text-xs font-semibold text-white flex-1 truncate">{p.pick_label}</span>
-                          <span className="text-[9px] text-zinc-600">{p.sport === "mlb" ? "⚾" : "🏈"}</span>
+                          <span className="text-[9px] text-zinc-600">{sportEmoji(p.sport)}</span>
                         </Link>
                       );
                     })}
@@ -2012,32 +2052,25 @@ function HomeContent() {
               <div className="text-xs text-zinc-600 mt-1">{editBio.length}/160</div>
             </div>
 
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">🏈 Favorite NFL Team</label>
-                <span className="text-xs font-bold text-red-400">{editTeam ? teamName("nfl", editTeam) : "Not set"}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
-                <button onClick={() => setEditTeam("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeam === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
-                {ALL_TEAMS.map(t => (
-                  <button key={t} onClick={() => setEditTeam(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeam === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">⚾ Favorite MLB Team</label>
-                <span className="text-xs font-bold text-red-400">{editTeamMlb ? teamName("mlb", editTeamMlb) : "Not set"}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
-                <button onClick={() => setEditTeamMlb("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeamMlb === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
-                {ALL_MLB_TEAMS.map(t => (
-                  <button key={t} onClick={() => setEditTeamMlb(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeamMlb === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
-                ))}
-              </div>
-              <div className="text-[10px] text-zinc-600 mt-1">Used for fandom filters on each sport's games.</div>
-            </div>
+            {SPORTS.map((s) => {
+              const sel = editTeams[s.id] || "";
+              const pick = (t) => setEditTeams((prev) => ({ ...prev, [s.id]: t }));
+              return (
+                <div key={s.id} className="mb-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">{s.emoji} Favorite {s.label} Team</label>
+                    <span className="text-xs font-bold text-red-400">{sel ? teamName(s.id, sel) : "Not set"}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
+                    <button onClick={() => pick("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${sel === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
+                    {(TEAMS_BY_SPORT[s.id] || []).map((t) => (
+                      <button key={t} onClick={() => pick(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${sel === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <div className="text-[10px] text-zinc-600 mb-4 -mt-2">Used for fandom filters on each sport's games.</div>
 
             <div className="flex gap-2">
               <button onClick={() => setShowEditProfile(false)} className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Cancel</button>
@@ -2065,8 +2098,7 @@ function HomeContent() {
                       handle: editHandle,
                       display_name: editDisplayName || null,
                       bio: editBio || null,
-                      favorite_team: editTeam || null,
-                      favorite_team_mlb: editTeamMlb || null,
+                      ...Object.fromEntries(SPORTS.map((s) => [favKey(s.id), editTeams[s.id] || null])),
                       avatar_url: editAvatarUrl || null,
                       updated_at: new Date().toISOString(),
                     }),
