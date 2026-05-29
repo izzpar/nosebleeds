@@ -4,11 +4,68 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
 import { useAuth } from "@/components/AuthProvider";
-import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
-const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
+const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
+const SPORT_PATHS = {
+  nfl: "football/nfl",
+  mlb: "baseball/mlb",
+};
+const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy for any remaining refs
 const ALL_TEAMS = ["ARI","ATL","BAL","BUF","CAR","CHI","CIN","CLE","DAL","DEN","DET","GB","HOU","IND","JAX","KC","LAC","LAR","LV","MIA","MIN","NE","NO","NYG","NYJ","PHI","PIT","SEA","SF","TB","TEN","WSH"];
+const ALL_MLB_TEAMS = ["ARI","ATL","BAL","BOS","CHC","CHW","CIN","CLE","COL","DET","HOU","KC","LAA","LAD","MIA","MIL","MIN","NYM","NYY","OAK","PHI","PIT","SD","SEA","SF","STL","TB","TEX","TOR","WSH"];
+const TEAMS_BY_SPORT = { nfl: ALL_TEAMS, mlb: ALL_MLB_TEAMS };
+const TEAM_NAMES = {
+  nfl: { ARI:"Cardinals", ATL:"Falcons", BAL:"Ravens", BUF:"Bills", CAR:"Panthers", CHI:"Bears", CIN:"Bengals", CLE:"Browns", DAL:"Cowboys", DEN:"Broncos", DET:"Lions", GB:"Packers", HOU:"Texans", IND:"Colts", JAX:"Jaguars", KC:"Chiefs", LAC:"Chargers", LAR:"Rams", LV:"Raiders", MIA:"Dolphins", MIN:"Vikings", NE:"Patriots", NO:"Saints", NYG:"Giants", NYJ:"Jets", PHI:"Eagles", PIT:"Steelers", SEA:"Seahawks", SF:"49ers", TB:"Buccaneers", TEN:"Titans", WSH:"Commanders" },
+  mlb: { ARI:"D-backs", ATL:"Braves", BAL:"Orioles", BOS:"Red Sox", CHC:"Cubs", CHW:"White Sox", CIN:"Reds", CLE:"Guardians", COL:"Rockies", DET:"Tigers", HOU:"Astros", KC:"Royals", LAA:"Angels", LAD:"Dodgers", MIA:"Marlins", MIL:"Brewers", MIN:"Twins", NYM:"Mets", NYY:"Yankees", OAK:"Athletics", PHI:"Phillies", PIT:"Pirates", SD:"Padres", SEA:"Mariners", SF:"Giants", STL:"Cardinals", TB:"Rays", TEX:"Rangers", TOR:"Blue Jays", WSH:"Nationals" },
+};
+const teamName = (sport, abbr) => TEAM_NAMES[sport]?.[abbr] || abbr;
+
+// ESPN team IDs (stable) — used to fetch full league rosters for the Players tab
+const ESPN_TEAM_IDS = {
+  nfl: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","33","34"],
+  mlb: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"],
+};
+
+// Module-level roster cache so the Players tab only fetches once per session
+const rosterCache = { nfl: null, mlb: null };
+
+async function loadFullRoster(sport, onProgress) {
+  if (rosterCache[sport]) return rosterCache[sport];
+  const sportPath = sport === "mlb" ? "baseball/mlb" : "football/nfl";
+  const ids = ESPN_TEAM_IDS[sport] || [];
+  const players = [];
+  const seen = new Set();
+  let done = 0;
+  for (const teamId of ids) {
+    try {
+      const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/teams/${teamId}/roster`);
+      if (r.ok) {
+        const d = await r.json();
+        const abbr = d.team?.abbreviation || "";
+        (d.athletes || []).forEach((group) => {
+          (group.items || []).forEach((p) => {
+            const name = p.displayName;
+            if (!name || seen.has(name)) return;
+            seen.add(name);
+            players.push({
+              id: p.id || "",
+              name,
+              team: abbr,
+              position: p.position?.abbreviation || "",
+              headshot: p.headshot?.href || "",
+            });
+          });
+        });
+      }
+    } catch (e) { /* skip a failed team */ }
+    done++;
+    if (onProgress) onProgress(done, ids.length);
+  }
+  rosterCache[sport] = players;
+  return players;
+}
+
 
 const BADGES = [
   { id: "first", n: "First Log", i: "🏈", d: "Log your first game", ck: (l) => l.length >= 1 },
@@ -42,31 +99,56 @@ const FRIENDS = [
 ];
 
 function rc(r) {
-  if (r >= 9) return "#22c55e";
-  if (r >= 7) return "#dc2626";
-  if (r >= 5) return "#eab308";
-  if (r >= 3) return "#f97316";
-  return "#ef4444";
+  // Smooth gradient: red (low) → orange → yellow → lime → green (high)
+  const n = Math.round(r);
+  if (n <= 1) return "#7f1d1d"; // dark red
+  if (n === 2) return "#dc2626"; // red
+  if (n === 3) return "#f87171"; // light red
+  if (n === 4) return "#fb923c"; // orange
+  if (n === 5) return "#fbbf24"; // amber
+  if (n === 6) return "#facc15"; // yellow
+  if (n === 7) return "#a3e635"; // lime
+  if (n === 8) return "#4ade80"; // green
+  if (n === 9) return "#22c55e"; // bright green
+  return "#15803d"; // dark green for 10
 }
 
-function RBars({ dist }) {
+function RBars({ dist, onBarClick }) {
   const mx = Math.max(...dist, 1);
+  const total = dist.reduce((a, b) => a + b, 0);
   return (
-    <div className="flex items-end gap-1 h-12">
-      {dist.map((c, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
-          <div
-            className="w-full rounded-t"
-            style={{
-              height: `${Math.max((c / mx) * 100, 0)}%`,
-              minHeight: c > 0 ? 4 : 0,
-              backgroundColor: rc(i + 1),
-              opacity: c > 0 ? 1 : 0.12,
-            }}
-          />
-          <span className="text-[10px] text-zinc-600 font-semibold">{i + 1}</span>
-        </div>
-      ))}
+    <div>
+      <div className="flex gap-1 mb-1" style={{ height: "64px" }}>
+        {dist.map((c, i) => {
+          const fillPct = c > 0 ? Math.max((c / mx) * 100, 8) : 0;
+          const pct = total > 0 ? Math.round((c / total) * 100) : 0;
+          const clickable = c > 0 && onBarClick;
+          return (
+            <div
+              key={i}
+              className={`group flex-1 relative ${clickable ? "cursor-pointer" : "cursor-help"}`}
+              onClick={() => clickable && onBarClick(i + 1)}
+            >
+              {/* Tooltip - sits OUTSIDE the clipped track */}
+              <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-zinc-800 border border-zinc-700 text-white text-[10px] font-bold px-2 py-1 rounded-md whitespace-nowrap z-30 shadow-lg">
+                {c} {c === 1 ? "game" : "games"} ({pct}%){clickable && " · click"}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-zinc-700" />
+              </div>
+              {/* Track - clipped */}
+              <div className={`absolute inset-0 bg-zinc-800/40 rounded overflow-hidden ${clickable ? "hover:ring-2 hover:ring-red-600 transition-all" : ""}`}>
+                <div className="absolute bottom-0 left-0 right-0 transition-all" style={{ height: `${fillPct}%`, backgroundColor: rc(i + 1) }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-1">
+        {dist.map((_, i) => (
+          <div key={i} className="flex-1 text-center">
+            <span className="text-[10px] text-zinc-500 font-bold">{i + 1}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -80,9 +162,9 @@ function Bdg({ r, size = "md" }) {
   );
 }
 
-async function fetchWeek(year, week) {
+async function fetchNflWeek(year, week) {
   try {
-    const r = await fetch(`${ESPN}/scoreboard?seasontype=2&week=${week}&dates=${year}`);
+    const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.nfl}/scoreboard?seasontype=2&week=${week}&dates=${year}`);
     const d = await r.json();
     return (d.events || []).map((e) => {
       const c = e.competitions?.[0];
@@ -94,10 +176,11 @@ async function fetchWeek(year, week) {
       const dt = new Date(e.date);
       const st = c.status?.type?.name || "STATUS_FINAL";
       return {
-        id: e.id, week, season: year,
+        id: e.id, sport: "nfl", week, season: year,
         date: dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-        shortDate: dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        shortDate: dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
         net: c.broadcasts?.[0]?.names?.[0] || "", status: st,
+        statusDetail: c.status?.type?.shortDetail || c.status?.type?.detail || "",
         isPre: st === "STATUS_SCHEDULED", isFinal: st === "STATUS_FINAL",
         home: { name: ho.team.displayName, abbr: ho.team.abbreviation, color: "#" + (ho.team.color || "333"), logo: ho.team.logo, record: ho.records?.[0]?.summary || "", score: parseInt(ho.score) || 0 },
         away: { name: aw.team.displayName, abbr: aw.team.abbreviation, color: "#" + (aw.team.color || "333"), logo: aw.team.logo, record: aw.records?.[0]?.summary || "", score: parseInt(aw.score) || 0 },
@@ -109,12 +192,74 @@ async function fetchWeek(year, week) {
   } catch (e) { console.error(e); return []; }
 }
 
+async function fetchMlbDate(dateStr) {
+  try {
+    // dateStr is YYYY-MM-DD; ESPN wants YYYYMMDD
+    const dateParam = dateStr.replace(/-/g, "");
+    const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.mlb}/scoreboard?dates=${dateParam}`);
+    const d = await r.json();
+    return (d.events || []).map((e) => {
+      const c = e.competitions?.[0];
+      if (!c) return null;
+      const ts = c.competitors || [];
+      const ho = ts.find((t) => t.homeAway === "home");
+      const aw = ts.find((t) => t.homeAway === "away");
+      if (!ho || !aw) return null;
+      const dt = new Date(e.date);
+      const st = c.status?.type?.name || "STATUS_FINAL";
+      const dateStrLocal = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const timeStr = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      return {
+        id: e.id, sport: "mlb",
+        // Synthesize "week" as day-of-year so existing sort logic still works
+        week: Math.floor((dt - new Date(dt.getFullYear(), 0, 0)) / 86400000),
+        season: dt.getFullYear(),
+        gameDate: dateStr,
+        date: `${dateStrLocal} · ${timeStr}`,
+        shortDate: dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        net: c.broadcasts?.[0]?.names?.[0] || "", status: st,
+        statusDetail: c.status?.type?.shortDetail || c.status?.type?.detail || "",
+        isPre: st === "STATUS_SCHEDULED", isFinal: st === "STATUS_FINAL",
+        home: { name: ho.team.displayName, abbr: ho.team.abbreviation, color: "#" + (ho.team.color || "333"), logo: ho.team.logo, record: ho.records?.[0]?.summary || "", score: parseInt(ho.score) || 0 },
+        away: { name: aw.team.displayName, abbr: aw.team.abbreviation, color: "#" + (aw.team.color || "333"), logo: aw.team.logo, record: aw.records?.[0]?.summary || "", score: parseInt(aw.score) || 0 },
+        // MLB linescores are innings (usually 9, more for extras)
+        ot: (ho.linescores || []).length > 9,
+        diff: Math.abs((parseInt(ho.score) || 0) - (parseInt(aw.score) || 0)),
+        total: (parseInt(ho.score) || 0) + (parseInt(aw.score) || 0),
+      };
+    }).filter(Boolean);
+  } catch (e) { console.error(e); return []; }
+}
+
+// Legacy alias - some old code may still call fetchWeek
+const fetchWeek = fetchNflWeek;
+
 function HomeContent() {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut, refreshProfile, loading: authLoading } = useAuth();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sport, setSportInternal] = useState("nfl"); // nfl | mlb
   const [week, setWeek] = useState(18);
   const [year, setYear] = useState(2024);
+  // MLB uses a date string YYYY-MM-DD instead of week/year
+  const [mlbDate, setMlbDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  });
+  // Persist sport choice
+  const setSport = (s) => {
+    setSportInternal(s);
+    setProfileSport(s);
+    setMyTeams([]); // clear team filter - different teams per sport
+    setGameStatus("all");
+    try { localStorage.setItem("nb_sport", s); } catch (e) {}
+  };
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("nb_sport");
+      if (saved === "mlb" || saved === "nfl") { setSportInternal(saved); setProfileSport(saved); }
+    } catch (e) {}
+  }, []);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
   const router = useRouter();
@@ -129,27 +274,116 @@ function HomeContent() {
   };
   const [myTeams, setMyTeams] = useState([]);
   const [showTeams, setShowTeams] = useState(false);
+  const [gameStatus, setGameStatus] = useState("all"); // all | upcoming | live | finished
   const [logs, setLogs] = useState([]);
   const [pinned, setPinned] = useState([]);
+  const [myPredictions, setMyPredictions] = useState([]);
   const [lists, setLists] = useState([]);
   const [listGames, setListGames] = useState({});
   const [selectedListId, setSelectedListId] = useState(null);
   const [showNewList, setShowNewList] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editHandle, setEditHandle] = useState("");
+  const [editDisplayName, setEditDisplayName] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editTeam, setEditTeam] = useState("");
+  const [editAvatarUrl, setEditAvatarUrl] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [latestRecap, setLatestRecap] = useState(null); // { season, week } of most recent week with ratings
+  const [barDrilldown, setBarDrilldown] = useState(null); // { rating: int, games: [] }
+  // Profile tab: which sport's stats to show (defaults to global sport)
+  const [profileSport, setProfileSport] = useState("nfl");
+  const [editTeamMlb, setEditTeamMlb] = useState("");
+  const [handleError, setHandleError] = useState("");
+  const [profileSaved, setProfileSaved] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [followed, setFollowed] = useState([]);
+  const [topRaters, setTopRaters] = useState([]);
+  const [hotGames, setHotGames] = useState([]);
+  const [topRatedGames, setTopRatedGames] = useState([]);
+  const [communityLists, setCommunityLists] = useState([]);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [playersList, setPlayersList] = useState([]);
+  const [playersLoading, setPlayersLoading] = useState(false);
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [rosterProgress, setRosterProgress] = useState(0);
+  const [following, setFollowing] = useState([]);
+  const [friendsFeed, setFriendsFeed] = useState([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [suggestedUsers, setSuggestedUsers] = useState([]);
+
+  // Direct REST helper with JWT auto-refresh
+  const sbFetch = async (path, options = {}, retried = false) => {
+    const tokenKey = Object.keys(localStorage).find(k => k.includes("auth-token"));
+    const session = tokenKey ? JSON.parse(localStorage.getItem(tokenKey)) : null;
+    const token = session?.access_token;
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/${path}`, {
+      ...options,
+      headers: {
+        "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    // If JWT expired (401), try to refresh once and retry
+    if (res.status === 401 && !retried && session?.refresh_token) {
+      try {
+        const refreshRes = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+          method: "POST",
+          headers: {
+            "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ refresh_token: session.refresh_token }),
+        });
+        if (refreshRes.ok) {
+          const newSession = await refreshRes.json();
+          // Merge new tokens into stored session
+          const merged = { ...session, ...newSession };
+          localStorage.setItem(tokenKey, JSON.stringify(merged));
+          return sbFetch(path, options, true);
+        } else {
+          // Refresh failed - session truly dead, send to login
+          console.warn("Session refresh failed, redirecting to login");
+        }
+      } catch (e) { console.error("Refresh error:", e); }
+    }
+    return res;
+  };
+
+  // Array-safe JSON parse - returns [] for error responses
+  const sbJson = async (res) => {
+    try {
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      return [];
+    }
+  };
 
   const weeks = [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
   const years = [2024, 2023, 2022, 2021, 2020];
 
   useEffect(() => {
+    let cancelled = false;
     async function load() {
       setLoading(true);
-      const data = await fetchWeek(year, week);
-      setGames((prev) => [...prev.filter((g) => !(g.week === week && g.season === year)), ...data]);
+      if (sport === "nfl") {
+        const data = await fetchNflWeek(year, week);
+        if (cancelled) return;
+        setGames((prev) => [...prev.filter((g) => !(g.sport === "nfl" && g.week === week && g.season === year)), ...data]);
+      } else if (sport === "mlb") {
+        const data = await fetchMlbDate(mlbDate);
+        if (cancelled) return;
+        setGames((prev) => [...prev.filter((g) => !(g.sport === "mlb" && g.gameDate === mlbDate)), ...data]);
+      }
       setLoading(false);
     }
     load();
-  }, [week, year]);
+    return () => { cancelled = true; };
+  }, [sport, week, year, mlbDate]);
 
   useEffect(() => {
     const urlTab = searchParams.get("tab");
@@ -158,24 +392,129 @@ function HomeContent() {
 
   // If user lands on profile tab without being logged in, redirect to /login
   useEffect(() => {
-    if (tab === "profile" && user === null) {
+    if (tab === "profile" && !authLoading && user === null) {
       router.push("/login");
     }
+  }, [tab, user, authLoading]);
+
+  // Load the user's predictions for the profile picks section
+  useEffect(() => {
+    if (tab !== "profile" || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await sbFetch(`predictions?user_id=eq.${user.id}&mode=eq.pickem&order=created_at.desc&select=*`);
+        const data = await sbJson(res);
+        if (!cancelled) setMyPredictions(data);
+      } catch (e) { console.error("Profile predictions:", e); }
+    })();
+    return () => { cancelled = true; };
   }, [tab, user]);
+
+  useEffect(() => {
+    if (profile) {
+      setEditHandle(profile.handle || "");
+      setEditDisplayName(profile.display_name || "");
+      setEditBio(profile.bio || "");
+      setEditTeam(profile.favorite_team || "");
+      setEditTeamMlb(profile.favorite_team_mlb || "");
+      setEditAvatarUrl(profile.avatar_url || "");
+    }
+  }, [profile]);
+
+  // Re-sync form fields each time the modal opens (in case profile changed)
+  useEffect(() => {
+    if (showEditProfile && profile) {
+      setEditHandle(profile.handle || "");
+      setEditDisplayName(profile.display_name || "");
+      setEditBio(profile.bio || "");
+      setEditTeam(profile.favorite_team || "");
+      setEditTeamMlb(profile.favorite_team_mlb || "");
+      setEditAvatarUrl(profile.avatar_url || "");
+      setAvatarPreview(null);
+      setHandleError("");
+    }
+  }, [showEditProfile]);
+
+  // Upload a chosen image: resize via canvas, upload to Supabase Storage, save URL
+  const uploadAvatar = async (file) => {
+    if (!user) return;
+    if (!file.type.startsWith("image/")) {
+      setHandleError("Only images allowed");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setHandleError("Image too big (max 5MB)");
+      return;
+    }
+    setAvatarUploading(true);
+    setHandleError("");
+    try {
+      // Resize to max 256x256 via canvas
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = reject;
+        im.src = URL.createObjectURL(file);
+      });
+      const maxSide = 256;
+      const scale = Math.min(maxSide / img.width, maxSide / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
+
+      // Upload to Storage. Path: {user_id}/avatar-{timestamp}.jpg (timestamp busts cache)
+      const tokenKey = Object.keys(localStorage).find(k => k.includes("auth-token"));
+      const session = tokenKey ? JSON.parse(localStorage.getItem(tokenKey)) : null;
+      const token = session?.access_token;
+      const fileName = `${user.id}/avatar-${Date.now()}.jpg`;
+      const uploadRes = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/avatars/${fileName}`, {
+        method: "POST",
+        headers: {
+          "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "image/jpeg",
+          "x-upsert": "true",
+        },
+        body: blob,
+      });
+      if (!uploadRes.ok) {
+        const t = await uploadRes.text();
+        setHandleError(`Upload failed: ${t.substring(0, 100)}`);
+        setAvatarUploading(false);
+        return;
+      }
+      const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatars/${fileName}`;
+      setEditAvatarUrl(publicUrl);
+      setAvatarPreview(publicUrl);
+      setHandleError("✓ Photo uploaded — click Save to apply");
+    } catch (e) {
+      setHandleError(`Upload error: ${e.message}`);
+    }
+    setAvatarUploading(false);
+  };
+
+  const clearAvatar = () => {
+    setEditAvatarUrl("");
+    setAvatarPreview(null);
+    setHandleError("Photo cleared — click Save to apply");
+  };
 
   // Load all of the user's ratings from Supabase whenever user changes OR tab is visited
   useEffect(() => {
     async function loadRatings() {
       if (!user) { setLogs([]); return; }
       try {
-        const { data, error } = await supabase
-          .from("ratings")
-          .select("*")
-          .eq("user_id", user.id);
-        if (error) { console.error("Load ratings error:", error); return; }
+        const res = await sbFetch(`ratings?user_id=eq.${user.id}&select=*`);
+        const data = await sbJson(res);
         if (data) {
           const mapped = data.map(r => ({
             gameId: r.game_id,
+            sport: r.sport || "nfl",
             awayTeam: r.away_team || "",
             homeTeam: r.home_team || "",
             awayScore: r.away_score || 0,
@@ -201,9 +540,11 @@ function HomeContent() {
     async function loadLists() {
       if (!user) { setLists([]); setListGames({}); return; }
       try {
-        const { data: listData } = await supabase.from("lists").select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+        const lRes = await sbFetch(`lists?user_id=eq.${user.id}&order=created_at.asc&select=*`);
+        const listData = await sbJson(lRes);
         if (listData) setLists(listData);
-        const { data: gameData } = await supabase.from("list_games").select("*").eq("user_id", user.id);
+        const gRes = await sbFetch(`list_games?user_id=eq.${user.id}&select=*`);
+        const gameData = await sbJson(gRes);
         if (gameData) {
           const byList = {};
           gameData.forEach(lg => {
@@ -218,19 +559,335 @@ function HomeContent() {
     loadLists();
   }, [user, tab]);
 
+  // Load Discover tab data from real users
+  useEffect(() => {
+    if (tab !== "discover") return;
+    let cancelled = false;
+    async function loadDiscover() {
+      setDiscoverLoading(true);
+      try {
+        const arRes = await sbFetch(`ratings?public=eq.true&rating=not.is.null&sport=eq.${sport}&select=user_id,game_id,rating,review,away_team,home_team,away_score,home_score,week,season,created_at,sport`);
+        const allRatings = await sbJson(arRes);
+        if (cancelled) return;
+
+        if (allRatings && allRatings.length > 0) {
+          // Top Raters by rating count
+          const byUser = {};
+          allRatings.forEach(r => {
+            if (!byUser[r.user_id]) byUser[r.user_id] = { count: 0, sum: 0, reviews: 0 };
+            byUser[r.user_id].count++;
+            byUser[r.user_id].sum += parseFloat(r.rating);
+            if (r.review) byUser[r.user_id].reviews++;
+          });
+          const raterIds = Object.keys(byUser);
+          let profiles = [];
+          if (raterIds.length > 0) {
+            const pRes = await sbFetch(`profiles?user_id=in.(${raterIds.join(",")})&select=user_id,handle,display_name,avatar_url`);
+            profiles = await sbJson(pRes);
+          }
+          if (cancelled) return;
+          const profMap = {};
+          profiles.forEach(p => { profMap[p.user_id] = p; });
+          const raters = raterIds.map(uid => ({
+            user_id: uid,
+            profile: profMap[uid],
+            count: byUser[uid].count,
+            reviews: byUser[uid].reviews,
+            avg: (byUser[uid].sum / byUser[uid].count).toFixed(1),
+          })).sort((a, b) => b.count - a.count).slice(0, 10);
+          setTopRaters(raters);
+
+          // Hot Games this Week
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          const recent = allRatings.filter(r => r.created_at >= weekAgo);
+          const byGameRecent = {};
+          recent.forEach(r => {
+            if (!byGameRecent[r.game_id]) byGameRecent[r.game_id] = { count: 0, sum: 0, sample: r };
+            byGameRecent[r.game_id].count++;
+            byGameRecent[r.game_id].sum += parseFloat(r.rating);
+          });
+          setHotGames(Object.entries(byGameRecent).map(([gid, d]) => ({
+            game_id: gid, count: d.count, avg: (d.sum / d.count).toFixed(1), sample: d.sample,
+          })).sort((a, b) => b.count - a.count).slice(0, 5));
+
+          // Highest Rated Of All Time
+          const byGameAll = {};
+          allRatings.forEach(r => {
+            if (!byGameAll[r.game_id]) byGameAll[r.game_id] = { count: 0, sum: 0, sample: r };
+            byGameAll[r.game_id].count++;
+            byGameAll[r.game_id].sum += parseFloat(r.rating);
+          });
+          setTopRatedGames(Object.entries(byGameAll).map(([gid, d]) => ({
+            game_id: gid, count: d.count, avg: (d.sum / d.count).toFixed(1), sample: d.sample,
+          })).sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg)).slice(0, 5));
+        }
+
+        // Community Lists
+        const alRes = await sbFetch(`lists?order=created_at.desc&limit=30&select=id,name,icon,user_id,created_at`);
+        const allLists = await sbJson(alRes);
+        if (cancelled) return;
+        if (allLists && allLists.length > 0) {
+          const listIds = allLists.map(l => l.id);
+          const lgRes = await sbFetch(`list_games?list_id=in.(${listIds.join(",")})&select=list_id`);
+          const listGameRows = await sbJson(lgRes);
+          const userIdsL = [...new Set(allLists.map(l => l.user_id))];
+          const lpRes = await sbFetch(`profiles?user_id=in.(${userIdsL.join(",")})&select=user_id,handle,display_name`);
+          const lProfiles = await sbJson(lpRes);
+          const lProfMap = {};
+          (lProfiles || []).forEach(p => { lProfMap[p.user_id] = p; });
+          const countByList = {};
+          (listGameRows || []).forEach(lg => { countByList[lg.list_id] = (countByList[lg.list_id] || 0) + 1; });
+          setCommunityLists(allLists
+            .map(l => ({ ...l, gameCount: countByList[l.id] || 0, profile: lProfMap[l.user_id] }))
+            .filter(l => l.gameCount > 0)
+            .sort((a, b) => b.gameCount - a.gameCount)
+            .slice(0, 10));
+        }
+      } catch (e) { console.error("Discover load:", e); }
+      if (!cancelled) setDiscoverLoading(false);
+    }
+    loadDiscover();
+    return () => { cancelled = true; };
+  }, [tab, sport]);
+
+  // Load players list — full league roster merged with community MVP/Letdown picks
+  useEffect(() => {
+    if (tab !== "players") return;
+    let cancelled = false;
+    async function loadPlayers() {
+      setPlayersLoading(true);
+      setRosterProgress(rosterCache[sport] ? 100 : 0);
+      try {
+        // 1. Community picks from Supabase
+        const res = await sbFetch(`ratings?public=eq.true&sport=eq.${sport}&or=(mvp.not.is.null,letdown.not.is.null)&select=mvp,letdown,rating,game_id`);
+        const rows = await sbJson(res);
+        if (cancelled) return;
+        const picks = {};
+        rows.forEach(r => {
+          if (r.mvp) {
+            const p = picks[r.mvp] || (picks[r.mvp] = { mvp: 0, letdown: 0, games: new Set(), ratingSum: 0, ratingN: 0 });
+            p.mvp++;
+            if (r.game_id) p.games.add(r.game_id);
+            if (r.rating != null) { p.ratingSum += parseFloat(r.rating); p.ratingN++; }
+          }
+          if (r.letdown) {
+            const p = picks[r.letdown] || (picks[r.letdown] = { mvp: 0, letdown: 0, games: new Set(), ratingSum: 0, ratingN: 0 });
+            p.letdown++;
+            if (r.game_id) p.games.add(r.game_id);
+          }
+        });
+
+        // 2. Full league roster (cached after first load)
+        const roster = await loadFullRoster(sport, (done, total) => {
+          if (!cancelled) setRosterProgress(Math.round((done / total) * 100));
+        });
+        if (cancelled) return;
+
+        // 3. Merge — roster players, enriched with any community pick data
+        const rosterNames = new Set(roster.map(p => p.name));
+        const merged = roster.map(p => {
+          const pk = picks[p.name];
+          const total = pk ? pk.mvp + pk.letdown : 0;
+          return {
+            name: p.name,
+            team: p.team,
+            position: p.position,
+            headshot: p.headshot,
+            mvp: pk?.mvp || 0,
+            letdown: pk?.letdown || 0,
+            total,
+            gameCount: pk ? pk.games.size : 0,
+            mvpRate: total > 0 ? Math.round((pk.mvp / total) * 100) : 0,
+            hasPicks: total > 0,
+          };
+        });
+        // Any picked players NOT on a current roster (traded, retired, name variant) — keep them too
+        Object.keys(picks).forEach(name => {
+          if (!rosterNames.has(name)) {
+            const pk = picks[name];
+            const total = pk.mvp + pk.letdown;
+            merged.push({
+              name, team: "", position: "", headshot: "",
+              mvp: pk.mvp, letdown: pk.letdown, total,
+              gameCount: pk.games.size,
+              mvpRate: total > 0 ? Math.round((pk.mvp / total) * 100) : 0,
+              hasPicks: total > 0,
+            });
+          }
+        });
+        // Sort: picked players first (by activity), then the rest alphabetically
+        merged.sort((a, b) => {
+          if (a.hasPicks !== b.hasPicks) return a.hasPicks ? -1 : 1;
+          if (a.hasPicks) return b.total - a.total || b.mvp - a.mvp;
+          return a.name.localeCompare(b.name);
+        });
+        if (!cancelled) setPlayersList(merged);
+      } catch (e) { console.error("Players load:", e); }
+      if (!cancelled) setPlayersLoading(false);
+    }
+    loadPlayers();
+    return () => { cancelled = true; };
+  }, [tab, sport]);
+
+  // Compute the latest (season, week) with any ratings - for the recap banner
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLatest() {
+      try {
+        // Only NFL ratings — recaps are NFL-week-based; MLB recaps are a separate (future) feature
+        const res = await sbFetch(`ratings?public=eq.true&rating=not.is.null&sport=eq.nfl&order=created_at.desc&limit=50&select=season,week`);
+        const data = await sbJson(res);
+        if (cancelled || data.length === 0) return;
+        // NFL weeks are 1-18; guard against any bad data
+        const valid = data.filter(r => r.season > 0 && r.week >= 1 && r.week <= 18);
+        if (valid.length === 0) return;
+        const maxSeason = Math.max(...valid.map(r => r.season));
+        const inSeason = valid.filter(r => r.season === maxSeason);
+        const maxWeek = Math.max(...inSeason.map(r => r.week));
+        setLatestRecap({ season: maxSeason, week: maxWeek });
+      } catch (e) {}
+    }
+    loadLatest();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load my "following" list whenever user changes
+  useEffect(() => {
+    if (!user) { setFollowing([]); return; }
+    let cancelled = false;
+    async function loadFollowing() {
+      try {
+        const r = await sbFetch(`follows?follower_id=eq.${user.id}&select=following_id`);
+        const data = await sbJson(r);
+        if (cancelled) return;
+        if (data) setFollowing(data.map(f => f.following_id));
+      } catch (e) { console.error("Following:", e); }
+    }
+    loadFollowing();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  // Load Friends tab data
+  useEffect(() => {
+    if (tab !== "friends" || !user) return;
+    let cancelled = false;
+    async function loadFriends() {
+      setFriendsLoading(true);
+      try {
+        // Followings
+        const fRes = await sbFetch(`follows?follower_id=eq.${user.id}&select=following_id`);
+        const follows = await sbJson(fRes);
+        const followingIds = (follows || []).map(f => f.following_id);
+        if (cancelled) return;
+
+        if (followingIds.length > 0) {
+          // Get recent ratings from followed users
+          const frRes = await sbFetch(`ratings?user_id=in.(${followingIds.join(",")})&public=eq.true&rating=not.is.null&sport=eq.${sport}&order=created_at.desc&limit=50&select=*`);
+          const feedRatings = await sbJson(frRes);
+          if (cancelled) return;
+          if (feedRatings && feedRatings.length > 0) {
+            const userIds = [...new Set(feedRatings.map(r => r.user_id))];
+            let profiles = [];
+            if (userIds.length > 0) {
+              const fpRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url`);
+              profiles = await sbJson(fpRes);
+            }
+            const pmap = {};
+            profiles.forEach(p => { pmap[p.user_id] = p; });
+            setFriendsFeed(feedRatings.map(r => ({ ...r, profile: pmap[r.user_id] })));
+          } else {
+            setFriendsFeed([]);
+          }
+        } else {
+          setFriendsFeed([]);
+        }
+
+        // Suggested users: top raters that I don't follow yet (and not me)
+        const arRes2 = await sbFetch(`ratings?public=eq.true&rating=not.is.null&select=user_id`);
+        const allRatings = await sbJson(arRes2);
+        if (cancelled) return;
+        if (allRatings.length > 0) {
+          const counts = {};
+          allRatings.forEach(r => {
+            if (r.user_id !== user.id && !followingIds.includes(r.user_id)) {
+              counts[r.user_id] = (counts[r.user_id] || 0) + 1;
+            }
+          });
+          const sugIds = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([uid]) => uid);
+          if (sugIds.length > 0) {
+            const spRes = await sbFetch(`profiles?user_id=in.(${sugIds.join(",")})&select=user_id,handle,display_name,avatar_url`);
+            const sugProfiles = await sbJson(spRes);
+            const psug = {};
+            sugProfiles.forEach(p => { psug[p.user_id] = p; });
+            setSuggestedUsers(sugIds.map(uid => ({ user_id: uid, profile: psug[uid], count: counts[uid] })).filter(s => s.profile));
+          } else {
+            setSuggestedUsers([]);
+          }
+        }
+      } catch (e) { console.error("Friends:", e); }
+      if (!cancelled) setFriendsLoading(false);
+    }
+    loadFriends();
+    return () => { cancelled = true; };
+  }, [tab, user, sport]);
+
+  const toggleFollow = async (targetUserId) => {
+    if (!user) { router.push("/login"); return; }
+    if (targetUserId === user.id) return;
+    const isFollowing = following.includes(targetUserId);
+    try {
+      if (isFollowing) {
+        await sbFetch(`follows?follower_id=eq.${user.id}&following_id=eq.${targetUserId}`, { method: "DELETE" });
+        setFollowing(following.filter(id => id !== targetUserId));
+      } else {
+        await sbFetch(`follows`, { method: "POST", body: JSON.stringify({ follower_id: user.id, following_id: targetUserId }) });
+        setFollowing([...following, targetUserId]);
+      }
+    } catch (e) { console.error("Follow toggle:", e); }
+  };
+
+  // Game-detail href that carries sport so the page hits the right ESPN endpoint
+  const gh = (gameId, gameSport) => {
+    const s = gameSport || sport;
+    return s === "mlb" ? `/game/${gameId}?sport=mlb` : `/game/${gameId}`;
+  };
+
   const filtered = useMemo(() => {
-    let g = games.filter((g) => g.week === week && g.season === year);
+    let g = games.filter((x) => sport === "nfl"
+      ? (x.sport === "nfl" && x.week === week && x.season === year)
+      : (x.sport === "mlb" && x.gameDate === mlbDate)
+    );
     if (search) {
       const s = search.toLowerCase();
       g = g.filter((x) => x.away.name.toLowerCase().includes(s) || x.home.name.toLowerCase().includes(s) || x.away.abbr.toLowerCase().includes(s) || x.home.abbr.toLowerCase().includes(s));
     }
     if (myTeams.length > 0) g = g.filter((x) => myTeams.includes(x.away.abbr) || myTeams.includes(x.home.abbr));
+    if (gameStatus === "upcoming") g = g.filter((x) => x.status === "STATUS_SCHEDULED");
+    else if (gameStatus === "live") g = g.filter((x) => x.status === "STATUS_IN_PROGRESS" || x.status === "STATUS_HALFTIME" || x.status === "STATUS_END_PERIOD" || x.status === "STATUS_END_OF_INNING");
+    else if (gameStatus === "finished") g = g.filter((x) => x.status === "STATUS_FINAL");
     if (sort === "score") g = [...g].sort((a, b) => b.total - a.total);
     else if (sort === "close") g = [...g].sort((a, b) => a.diff - b.diff);
     return g;
-  }, [games, week, year, search, sort, myTeams]);
+  }, [games, sport, week, year, mlbDate, search, sort, myTeams, gameStatus]);
+
+  // Counts for status pills
+  const statusCounts = useMemo(() => {
+    const inScope = games.filter((x) => sport === "nfl"
+      ? (x.sport === "nfl" && x.week === week && x.season === year)
+      : (x.sport === "mlb" && x.gameDate === mlbDate)
+    );
+    return {
+      all: inScope.length,
+      upcoming: inScope.filter(g => g.status === "STATUS_SCHEDULED").length,
+      live: inScope.filter(g => g.status === "STATUS_IN_PROGRESS" || g.status === "STATUS_HALFTIME" || g.status === "STATUS_END_PERIOD" || g.status === "STATUS_END_OF_INNING").length,
+      finished: inScope.filter(g => g.status === "STATUS_FINAL").length,
+    };
+  }, [games, sport, week, year, mlbDate]);
 
   const ratedLogs = logs.filter(l => l.rating > 0);
+  // Sport-filtered logs for the Profile tab (default 'nfl' for rows without sport set)
+  const sportLogs = logs.filter(l => (l.sport || "nfl") === profileSport);
+  const sportRatedLogs = sportLogs.filter(l => l.rating > 0);
   const earned = BADGES.filter((b) => b.ck(ratedLogs));
   const gl = (id) => logs.find((l) => l.gameId === id);
   // For diary: show all rated games even if not in current games list
@@ -244,29 +901,133 @@ function HomeContent() {
           <h1 className="text-xl font-extrabold text-white">
             <span className="text-red-600">🩸</span> The Nosebleeds
           </h1>
+          {/* Sport switcher - hidden on Diary/Profile which have their own profileSport toggle */}
+          {tab !== "diary" && tab !== "profile" && (
+            <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
+              <button onClick={() => setSport("nfl")} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === "nfl" ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>🏈 NFL</button>
+              <button onClick={() => setSport("mlb")} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === "mlb" ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>⚾ MLB</button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-3">
+        {/* Players banner — Games tab. Players moved out of the bottom nav. */}
+        {tab === "games" && (
+          <button onClick={() => setTab("players")} className="block w-full mb-3 text-left">
+            <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
+              <div className="text-2xl">🧢</div>
+              <div className="flex-1">
+                <div className="text-sm font-bold text-white">Browse Players</div>
+                <div className="text-[10px] text-zinc-400">Search any player, see ratings, MVP picks & stats</div>
+              </div>
+              <span className="text-zinc-500">→</span>
+            </div>
+          </button>
+        )}
+
+        {/* Recap banner: Games tab + NFL only (recaps are NFL-week-based) */}
+        {latestRecap && tab === "games" && sport === "nfl" && (
+          <Link href={`/recap/${latestRecap.season}/${latestRecap.week}`} className="block mb-3">
+            <div className={`rounded-2xl p-3 flex items-center gap-3 transition-all ${new Date().getDay() === 2 ? "bg-gradient-to-r from-red-900/60 via-red-800/30 to-zinc-900 border-2 border-red-600/40 hover:border-red-600" : "bg-zinc-900 border border-zinc-800 hover:border-red-600/40"}`}>
+              <div className="text-2xl">📰</div>
+              <div className="flex-1">
+                <div className="text-sm font-bold text-white">
+                  {new Date().getDay() === 2 ? "Tuesday Recap is live!" : "Latest Recap"}
+                </div>
+                <div className="text-[10px] text-zinc-500">Week {latestRecap.week} · {latestRecap.season} — best games, top MVPs, biggest letdowns</div>
+              </div>
+              <span className="text-zinc-500">→</span>
+            </div>
+          </Link>
+        )}
+
+        {/* MLB Daily Recap banner — links to yesterday's recap */}
+        {tab === "games" && sport === "mlb" && (() => {
+          const d = new Date();
+          d.setDate(d.getDate() - 1);
+          const yday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          const ydayLabel = d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+          return (
+            <Link href={`/recap/mlb/${yday}`} className="block mb-3">
+              <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
+                <div className="text-2xl">⚾</div>
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-white">Yesterday's Recap</div>
+                  <div className="text-[10px] text-zinc-500">{ydayLabel} — best games, top MVPs, biggest letdowns</div>
+                </div>
+                <span className="text-zinc-500">→</span>
+              </div>
+            </Link>
+          );
+        })()}
+
+
         {/* ===== GAMES TAB ===== */}
         {tab === "games" && (
           <div>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Search teams..."
               className="w-full px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 mb-3" />
 
-            <div className="flex gap-2 mb-2">
-              {years.map((y) => (
-                <button key={y} onClick={() => setYear(y)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${year === y ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-500"}`}>{y}</button>
-              ))}
-            </div>
+            {sport === "nfl" && (
+              <>
+                <div className="flex gap-2 mb-2">
+                  {years.map((y) => (
+                    <button key={y} onClick={() => setYear(y)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${year === y ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-500"}`}>{y}</button>
+                  ))}
+                </div>
 
-            <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
-              {weeks.map((w) => (
-                <button key={w} onClick={() => setWeek(w)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${week === w ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>{w}</button>
-              ))}
-            </div>
+                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
+                  {weeks.map((w) => (
+                    <button key={w} onClick={() => setWeek(w)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${week === w ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>{w}</button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {sport === "mlb" && (() => {
+              // Build a +/- 3 day window around the chosen date for quick nav
+              const base = new Date(mlbDate + "T12:00:00");
+              const days = [];
+              for (let i = -3; i <= 3; i++) {
+                const d = new Date(base);
+                d.setDate(d.getDate() + i);
+                const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                const today = new Date();
+                const isToday = ds === `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+                days.push({ ds, isToday, label: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) });
+              }
+              const shiftDay = (delta) => {
+                const d = new Date(mlbDate + "T12:00:00");
+                d.setDate(d.getDate() + delta);
+                setMlbDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
+              };
+              const today = new Date();
+              const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+              return (
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <button onClick={() => shiftDay(-1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">← Prev</button>
+                    <input type="date" value={mlbDate} onChange={(e) => setMlbDate(e.target.value)}
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 text-center" />
+                    <button onClick={() => shiftDay(1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">Next →</button>
+                    {mlbDate !== todayStr && (
+                      <button onClick={() => setMlbDate(todayStr)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-600 text-white shrink-0">Today</button>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {days.map(d => (
+                      <button key={d.ds} onClick={() => setMlbDate(d.ds)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${mlbDate === d.ds ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>
+                        {d.isToday ? "Today" : d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex justify-between items-center mb-3">
               <div className="flex gap-2">
@@ -281,6 +1042,22 @@ function HomeContent() {
               </button>
             </div>
 
+            {/* Live/Finished/Upcoming filter - only show when there's variety */}
+            {(statusCounts.upcoming > 0 || statusCounts.live > 0) && statusCounts.all > 0 && (
+              <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+                {[
+                  { v: "all", l: "All", count: statusCounts.all, color: "" },
+                  ...(statusCounts.live > 0 ? [{ v: "live", l: "🔴 Live", count: statusCounts.live, color: "red" }] : []),
+                  ...(statusCounts.upcoming > 0 ? [{ v: "upcoming", l: "⏰ Upcoming", count: statusCounts.upcoming, color: "" }] : []),
+                  ...(statusCounts.finished > 0 ? [{ v: "finished", l: "✓ Finished", count: statusCounts.finished, color: "" }] : []),
+                ].map(f => (
+                  <button key={f.v} onClick={() => setGameStatus(f.v)} className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-all ${gameStatus === f.v ? (f.color === "red" ? "bg-red-600 text-white animate-pulse" : "bg-red-600 text-white") : "bg-zinc-900 text-zinc-500 border border-zinc-800"}`}>
+                    {f.l} <span className="opacity-60">({f.count})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {showTeams && (
               <div className="rounded-xl p-3 bg-zinc-900 border border-zinc-800 mb-3">
                 <div className="flex justify-between mb-2">
@@ -288,7 +1065,7 @@ function HomeContent() {
                   {myTeams.length > 0 && <button onClick={() => setMyTeams([])} className="text-[10px] text-red-400">Clear</button>}
                 </div>
                 <div className="flex gap-1 flex-wrap">
-                  {ALL_TEAMS.map((t) => (
+                  {(TEAMS_BY_SPORT[sport] || ALL_TEAMS).map((t) => (
                     <button key={t} onClick={() => setMyTeams((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t])}
                       className={`px-2 py-1 rounded-full text-[10px] font-semibold border ${myTeams.includes(t) ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-950 text-zinc-500 border-zinc-800"}`}>{t}</button>
                   ))}
@@ -298,138 +1075,359 @@ function HomeContent() {
 
             {loading && <div className="text-center py-16 text-zinc-500">Loading {year} Week {week}...</div>}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
-            {filtered.map((g) => <GameCard key={g.id} game={g} logged={!!gl(g.id)} />)}
+            {filtered.map((g) => <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />)}
           </div>
         )}
 
         {/* ===== DISCOVER TAB ===== */}
         {tab === "discover" && (
           <div>
-            <h2 className="text-xl font-extrabold text-white mb-4">Discover</h2>
+            <h2 className="text-xl font-extrabold text-white mb-1">Discover</h2>
+            <p className="text-sm text-zinc-500 mb-4">What the community is rating</p>
+
+            {discoverLoading && <div className="text-center py-8 text-zinc-500 text-sm">Loading community...</div>}
+
+            {/* Hot This Week */}
+            {hotGames.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-base font-bold text-white mb-3">🔥 Hot This Week</h3>
+                {hotGames.map((g, i) => (
+                  <Link key={g.game_id} href={gh(g.game_id, g.sample?.sport)} className="block">
+                    <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                      <span className="text-lg font-extrabold w-6 text-center text-red-500">#{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-white">{g.sample.away_team} {g.sample.away_score} — {g.sample.home_team} {g.sample.home_score}</div>
+                        <div className="text-[10px] text-zinc-500">Wk {g.sample.week || "?"} · {g.count} {g.count === 1 ? "rater" : "raters"}</div>
+                      </div>
+                      <div className="w-11 h-11 flex items-center justify-center font-bold rounded-xl text-base text-white" style={{ backgroundColor: parseFloat(g.avg) >= 9 ? "#22c55e" : parseFloat(g.avg) >= 7.5 ? "#84cc16" : parseFloat(g.avg) >= 6 ? "#eab308" : parseFloat(g.avg) >= 4 ? "#f97316" : parseFloat(g.avg) >= 2 ? "#ef4444" : "#991b1b" }}>{g.avg}</div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {/* Highest Rated */}
+            {topRatedGames.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-base font-bold text-white mb-3">⭐ Highest Rated</h3>
+                {topRatedGames.map((g, i) => (
+                  <Link key={g.game_id} href={gh(g.game_id, g.sample?.sport)} className="block">
+                    <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                      <span className="text-base font-extrabold w-5 text-center" style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#a1a1aa" : i === 2 ? "#b45309" : "#52525b" }}>{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-white">{g.sample.away_team} {g.sample.away_score} — {g.sample.home_team} {g.sample.home_score}</div>
+                        <div className="text-[10px] text-zinc-500">Wk {g.sample.week || "?"} · {g.count} {g.count === 1 ? "rater" : "raters"}</div>
+                      </div>
+                      <div className="w-11 h-11 flex items-center justify-center font-bold rounded-xl text-base text-white" style={{ backgroundColor: parseFloat(g.avg) >= 9 ? "#22c55e" : parseFloat(g.avg) >= 7.5 ? "#84cc16" : parseFloat(g.avg) >= 6 ? "#eab308" : parseFloat(g.avg) >= 4 ? "#f97316" : parseFloat(g.avg) >= 2 ? "#ef4444" : "#991b1b" }}>{g.avg}</div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
 
             {/* Top Raters */}
-            <div className="mb-5">
-              <h3 className="text-sm font-bold text-white mb-3">🏆 Top Raters</h3>
-              {TOP_RATERS.map((r, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800">
-                  <span className="text-base font-extrabold w-5 text-center" style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#a1a1aa" : i === 2 ? "#b45309" : "#52525b" }}>{i + 1}</span>
-                  <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center text-xs font-bold text-white">{r.badge}</div>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold text-white">{r.n}</div>
-                    <div className="text-[10px] text-zinc-500">{r.reviews} reviews · avg {r.avg}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-white">❤️ {(r.likes / 1000).toFixed(1)}k</div>
-                    <button onClick={() => setFollowed((p) => p.includes(r.n) ? p.filter((x) => x !== r.n) : [...p, r.n])}
-                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold mt-0.5 ${followed.includes(r.n) ? "bg-zinc-700 text-zinc-300" : "bg-red-600/10 text-red-400"}`}>
-                      {followed.includes(r.n) ? "Following" : "Follow"}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Community Lists */}
-            <div className="mb-5">
-              <h3 className="text-sm font-bold text-white mb-3">📋 Community Lists</h3>
-              {COMMUNITY_LISTS.map((l, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
-                  <span className="text-2xl">{l.icon}</span>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold text-white">{l.name}</div>
-                    <div className="text-[10px] text-zinc-500">by {l.by} · {l.count} games</div>
-                  </div>
-                  <div className="text-[11px] text-zinc-500">❤️ {l.likes > 999 ? (l.likes / 1000).toFixed(1) + "k" : l.likes}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Rankings */}
-            {[
-              { t: "🔥 Highest Scoring", d: [...games].sort((a, b) => b.total - a.total).slice(0, 5), v: (g) => g.total, c: "#dc2626" },
-              { t: "🎯 Nail-Biters", d: [...games].filter((g) => g.diff > 0 && g.isFinal).sort((a, b) => a.diff - b.diff).slice(0, 5), v: (g) => "+" + g.diff, c: "#22c55e" },
-            ].map((sec) => (
-              <div key={sec.t} className="mb-5">
-                <h3 className="text-sm font-bold text-white mb-3">{sec.t}</h3>
-                {sec.d.map((g, i) => (
-                  <div key={g.id} className="flex items-center gap-2 p-2.5 rounded-xl mb-1.5 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
-                    <span className="text-sm font-extrabold w-5 text-center" style={{ color: i === 0 ? sec.c : "#52525b" }}>{i + 1}</span>
-                    {g.away.logo && <img src={g.away.logo} className="w-5 h-5 object-contain" />}
-                    {g.home.logo && <img src={g.home.logo} className="w-5 h-5 object-contain" />}
-                    <div className="flex-1">
-                      <div className="text-xs font-semibold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
-                      <div className="text-[10px] text-zinc-600">Wk {g.week}</div>
-                    </div>
-                    <span className="text-sm font-extrabold" style={{ color: sec.c }}>{sec.v(g)}</span>
+            {topRaters.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-base font-bold text-white mb-3">🏆 Top Raters</h3>
+                {topRaters.map((r, i) => (
+                  <div key={r.user_id} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                    <Link href={r.profile?.handle ? `/u/${r.profile.handle}` : "#"} className="flex items-center gap-3 flex-1">
+                      <span className="text-base font-extrabold w-5 text-center" style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#a1a1aa" : i === 2 ? "#b45309" : "#52525b" }}>{i + 1}</span>
+                      {r.profile?.avatar_url ? (
+                        <img src={r.profile.avatar_url} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-xs font-bold text-white">
+                          {(r.profile?.display_name || r.profile?.handle || "?")[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-white">{r.profile?.display_name || (r.profile?.handle ? `@${r.profile.handle}` : "Anonymous")}</div>
+                        <div className="text-[10px] text-zinc-500">{r.count} {r.count === 1 ? "rating" : "ratings"} · avg {r.avg}{r.reviews > 0 && ` · ${r.reviews} reviews`}</div>
+                      </div>
+                    </Link>
+                    {user && r.user_id !== user.id && (
+                      <button onClick={() => toggleFollow(r.user_id)} className={`text-xs px-3 py-1.5 rounded-full font-bold whitespace-nowrap ${following.includes(r.user_id) ? "bg-zinc-700 text-zinc-300" : "bg-red-600/10 text-red-400"}`}>
+                        {following.includes(r.user_id) ? "Following" : "+ Follow"}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
-            ))}
+            )}
+
+            {/* Community Lists */}
+            {communityLists.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-base font-bold text-white mb-3">📋 Community Lists</h3>
+                {communityLists.map(l => (
+                  <Link key={l.id} href={l.profile?.handle ? `/u/${l.profile.handle}` : "#"} className="block">
+                    <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                      <span className="text-2xl">{l.icon || "📋"}</span>
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-white">{l.name}</div>
+                        <div className="text-[10px] text-zinc-500">by {l.profile?.display_name || (l.profile?.handle ? `@${l.profile.handle}` : "anon")} · {l.gameCount} {l.gameCount === 1 ? "game" : "games"}</div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!discoverLoading && hotGames.length === 0 && topRatedGames.length === 0 && topRaters.length === 0 && communityLists.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-5xl mb-3">🌱</div>
+                <div className="text-base font-bold text-white">Nothing here yet</div>
+                <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">Rate some games and they'll show up here for everyone to discover</div>
+                <button onClick={() => setTab("games")} className="mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
+              </div>
+            )}
           </div>
         )}
+
+        {/* ===== PLAYERS TAB ===== */}
+        {tab === "players" && (() => {
+          const q = playerSearch.trim().toLowerCase();
+          const pickedPlayers = playersList.filter(p => p.hasPicks);
+          // When searching, show all matches; otherwise just the picked players
+          const searchResults = q ? playersList.filter(p => p.name.toLowerCase().includes(q)).slice(0, 60) : [];
+          const showList = q ? searchResults : pickedPlayers;
+
+          const renderRow = (p, i, showRank) => (
+            <Link key={p.name} href={`/player/${encodeURIComponent(p.name)}`} className="block">
+              <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                {showRank && (
+                  <span className="text-sm font-extrabold w-5 text-center shrink-0" style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#a1a1aa" : i === 2 ? "#b45309" : "#52525b" }}>{i + 1}</span>
+                )}
+                {p.headshot ? (
+                  <img src={p.headshot} alt={p.name} referrerPolicy="no-referrer" className="w-9 h-9 rounded-xl object-cover bg-zinc-800 shrink-0" />
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-zinc-800 flex items-center justify-center text-[11px] font-extrabold text-white shrink-0">
+                    {p.name.split(" ").map(w => w[0]).slice(0, 2).join("")}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-white truncate">{p.name}</div>
+                  <div className="text-[10px] text-zinc-500 flex items-center gap-2">
+                    {(p.team || p.position) && <span>{p.team}{p.team && p.position && " · "}{p.position}</span>}
+                    {p.hasPicks && <span className="text-green-400">🌟 {p.mvp}</span>}
+                    {p.hasPicks && <span className="text-red-400">😤 {p.letdown}</span>}
+                  </div>
+                </div>
+                {p.hasPicks ? (
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-extrabold" style={{ color: p.mvpRate >= 50 ? "#22c55e" : "#ef4444" }}>{p.mvpRate}%</div>
+                    <div className="text-[8px] text-zinc-600 font-bold tracking-wider">MVP RATE</div>
+                  </div>
+                ) : (
+                  <span className="text-zinc-700 text-xs shrink-0">→</span>
+                )}
+              </div>
+            </Link>
+          );
+
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xl font-extrabold text-white">{sport === "mlb" ? "⚾" : "🏈"} Players</h2>
+                {!playersLoading && <span className="text-[10px] text-zinc-600 font-semibold">{playersList.length} players</span>}
+              </div>
+              <p className="text-xs text-zinc-500 mb-3">Search any player in the league, or browse the most-picked below.</p>
+
+              {/* Search */}
+              <input
+                value={playerSearch}
+                onChange={(e) => setPlayerSearch(e.target.value)}
+                placeholder={`Search all ${sport === "mlb" ? "MLB" : "NFL"} players…`}
+                className="w-full px-3 py-2.5 mb-3 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 placeholder:text-zinc-600"
+              />
+
+              {/* Loading with progress */}
+              {playersLoading && (
+                <div className="text-center py-10">
+                  <div className="inline-block w-6 h-6 border-2 border-zinc-700 border-t-red-500 rounded-full animate-spin mb-3" />
+                  <div className="text-sm text-zinc-400">Loading league rosters…</div>
+                  {rosterProgress > 0 && rosterProgress < 100 && (
+                    <div className="mt-2 max-w-[200px] mx-auto">
+                      <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                        <div className="h-full bg-red-600 transition-all" style={{ width: `${rosterProgress}%` }} />
+                      </div>
+                      <div className="text-[10px] text-zinc-600 mt-1">{rosterProgress}%</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Search results */}
+              {!playersLoading && q && (
+                <>
+                  <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">
+                    {searchResults.length} {searchResults.length === 1 ? "result" : "results"}
+                  </div>
+                  {searchResults.length === 0 && (
+                    <div className="text-center py-10 text-zinc-600 text-sm">No players match "{playerSearch}"</div>
+                  )}
+                  {searchResults.map((p, i) => renderRow(p, i, false))}
+                </>
+              )}
+
+              {/* Default: most-picked players */}
+              {!playersLoading && !q && (
+                <>
+                  {pickedPlayers.length > 0 ? (
+                    <>
+                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">🔥 Most Picked by Community</div>
+                      {pickedPlayers.map((p, i) => renderRow(p, i, true))}
+                      <div className="text-[10px] text-zinc-600 text-center mt-3">Search above to find any other player in the league</div>
+                    </>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-5xl mb-3">🧢</div>
+                      <div className="text-base font-bold text-white">No community picks yet</div>
+                      <div className="text-sm text-zinc-500 mt-1">Search for any player above, or pick MVPs when you rate games.</div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ===== FRIENDS TAB ===== */}
         {tab === "friends" && (
           <div>
             <h2 className="text-xl font-extrabold text-white mb-1">Friends</h2>
-            <p className="text-xs text-zinc-500 mb-4">See what your crew is watching</p>
+            <p className="text-sm text-zinc-500 mb-4">See what your crew is watching</p>
 
-            <div className="flex gap-3 mb-5 overflow-x-auto pb-1">
-              {FRIENDS.map((f) => (
-                <div key={f.n} className="text-center shrink-0">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white border-2 border-zinc-800" style={{ backgroundColor: f.c }}>{f.a}</div>
-                  <div className="text-[10px] font-semibold text-zinc-400 mt-1">{f.n}</div>
-                </div>
-              ))}
-              <div className="text-center shrink-0">
-                <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl text-zinc-600 bg-zinc-800">+</div>
-                <div className="text-[10px] font-semibold text-zinc-600 mt-1">Add</div>
+            {!user && (
+              <div className="text-center py-12">
+                <div className="text-5xl mb-3">👥</div>
+                <div className="text-base font-bold text-white">Sign in to follow friends</div>
+                <button onClick={() => router.push("/login")} className="mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Sign In →</button>
               </div>
-            </div>
+            )}
 
-            {FRIENDS.flatMap((f) => f.logs.map((l) => ({ ...l, fr: f }))).sort((a, b) => a.t.localeCompare(b.t)).map((item, i) => (
-              <div key={i} className="flex gap-3 p-3.5 rounded-2xl mb-2 bg-zinc-900 border border-zinc-800">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ backgroundColor: item.fr.c }}>{item.fr.a}</div>
-                <div className="flex-1">
-                  <div className="text-sm text-white"><span className="font-bold">{item.fr.n}</span> <span className="text-zinc-500">rated</span></div>
-                  <div className="text-sm font-bold text-white mt-0.5">{item.g}</div>
-                  {item.rv && <div className="text-xs text-zinc-400 italic mt-1">&quot;{item.rv}&quot;</div>}
-                  <div className="text-[10px] text-zinc-600 mt-1">Wk {item.w} · {item.t}</div>
-                </div>
-                <Bdg r={item.r} />
-              </div>
-            ))}
+            {user && friendsLoading && <div className="text-center py-8 text-zinc-500 text-sm">Loading feed...</div>}
+
+            {user && !friendsLoading && (
+              <>
+                {/* Following avatars row */}
+                {friendsFeed.length > 0 && (
+                  <div className="flex gap-3 mb-5 overflow-x-auto pb-1">
+                    {[...new Map(friendsFeed.map(r => [r.user_id, r])).values()].slice(0, 10).map((r) => (
+                      <Link key={r.user_id} href={r.profile?.handle ? `/u/${r.profile.handle}` : "#"} className="text-center shrink-0">
+                        {r.profile?.avatar_url ? (
+                          <img src={r.profile.avatar_url} referrerPolicy="no-referrer" className="w-12 h-12 rounded-full border-2 border-zinc-800" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-white border-2 border-zinc-800 bg-gradient-to-br from-red-600 to-red-900">
+                            {(r.profile?.display_name || r.profile?.handle || "?")[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <div className="text-[10px] font-semibold text-zinc-400 mt-1 truncate w-12">{r.profile?.display_name || r.profile?.handle || "?"}</div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
+                {/* Activity feed */}
+                {friendsFeed.length === 0 && suggestedUsers.length === 0 && (
+                  <div className="text-center py-12">
+                    <div className="text-5xl mb-3">👋</div>
+                    <div className="text-base font-bold text-white">No one to follow yet</div>
+                    <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">As more people join, you can follow them to see their ratings here</div>
+                  </div>
+                )}
+
+                {friendsFeed.map((r) => (
+                  <Link key={r.id} href={gh(r.game_id, r.sport)} className="block">
+                    <div className="flex gap-3 p-3.5 rounded-2xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                      {r.profile?.avatar_url ? (
+                        <img src={r.profile.avatar_url} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full shrink-0" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0 bg-gradient-to-br from-red-600 to-red-900">
+                          {(r.profile?.display_name || r.profile?.handle || "?")[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <div className="text-sm text-white">
+                          <span className="font-bold">{r.profile?.display_name || `@${r.profile?.handle || "anon"}`}</span>
+                          <span className="text-zinc-500"> rated</span>
+                        </div>
+                        <div className="text-sm font-bold text-white mt-0.5">{r.away_team} {r.away_score} — {r.home_team} {r.home_score}</div>
+                        {r.review && <div className="text-xs text-zinc-400 italic mt-1">&quot;{r.review}&quot;</div>}
+                        <div className="text-[10px] text-zinc-600 mt-1">Wk {r.week || "?"} · {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                      </div>
+                      <div className="w-11 h-11 flex items-center justify-center font-bold rounded-xl text-base text-white shrink-0" style={{ backgroundColor: parseFloat(r.rating) >= 9 ? "#22c55e" : parseFloat(r.rating) >= 7.5 ? "#84cc16" : parseFloat(r.rating) >= 6 ? "#eab308" : parseFloat(r.rating) >= 4 ? "#f97316" : parseFloat(r.rating) >= 2 ? "#ef4444" : "#991b1b" }}>{parseFloat(r.rating).toFixed(1)}</div>
+                    </div>
+                  </Link>
+                ))}
+
+                {/* Suggested users to follow */}
+                {suggestedUsers.length > 0 && (
+                  <div className="mt-6 mb-5">
+                    <h3 className="text-base font-bold text-white mb-3">👀 People to Follow</h3>
+                    {suggestedUsers.map((s) => (
+                      <div key={s.user_id} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800">
+                        <Link href={s.profile?.handle ? `/u/${s.profile.handle}` : "#"} className="flex items-center gap-3 flex-1">
+                          {s.profile?.avatar_url ? (
+                            <img src={s.profile.avatar_url} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white bg-gradient-to-br from-red-600 to-red-900">
+                              {(s.profile?.display_name || s.profile?.handle || "?")[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <div className="text-sm font-bold text-white">{s.profile?.display_name || `@${s.profile?.handle}`}</div>
+                            <div className="text-[10px] text-zinc-500">{s.count} {s.count === 1 ? "rating" : "ratings"}</div>
+                          </div>
+                        </Link>
+                        <button onClick={() => toggleFollow(s.user_id)} className={`text-xs px-3 py-1.5 rounded-full font-bold ${following.includes(s.user_id) ? "bg-zinc-700 text-zinc-300" : "bg-red-600 text-white"}`}>
+                          {following.includes(s.user_id) ? "Following" : "+ Follow"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
         {/* ===== DIARY TAB ===== */}
         {tab === "diary" && (
           <div>
-            <h2 className="text-xl font-extrabold text-white mb-4">Your Diary</h2>
-            {logs.length === 0 && (
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-extrabold text-white">Your Diary</h2>
+              <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
+                <button onClick={() => setProfileSport("nfl")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "nfl" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏈 NFL</button>
+                <button onClick={() => setProfileSport("mlb")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "mlb" ? "bg-red-600 text-white" : "text-zinc-500"}`}>⚾ MLB</button>
+              </div>
+            </div>
+            {sportRatedLogs.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-5xl mb-3">📓</div>
-                <div className="text-base font-bold text-white">Start logging games</div>
-                <div className="text-sm text-zinc-500 mt-1">Rate games to build your football memory book</div>
-                <button onClick={() => setTab("games")} className="mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
+                <div className="text-base font-bold text-white">No {profileSport === "mlb" ? "MLB" : "NFL"} games logged yet</div>
+                <div className="text-sm text-zinc-500 mt-1">Rate {profileSport === "mlb" ? "MLB" : "NFL"} games to build your diary</div>
+                <button onClick={() => { setSport(profileSport); setTab("games"); }} className="mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
               </div>
             )}
-            {[...logs].filter(l => l.rating > 0).sort((a, b) => (b.week || 0) - (a.week || 0)).map((l) => {
+            {[...sportRatedLogs].sort((a, b) => (b.season || 0) - (a.season || 0) || (b.week || 0) - (a.week || 0)).map((l) => {
               const g = games.find((x) => x.id === l.gameId);
+              const gameHref = l.sport === "mlb" ? `/game/${l.gameId}?sport=mlb` : `/game/${l.gameId}`;
               return (
-                <Link key={l.gameId} href={`/game/${l.gameId}`} className="block">
+                <Link key={l.gameId} href={gameHref} className="block">
                 <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
                   <Bdg r={l.rating} />
                   <div className="flex-1">
                     {g ? (
                       <>
                         <div className="text-sm font-bold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
-                        <div className="text-[10px] text-zinc-600">Wk {g.week} · {g.shortDate}</div>
+                        <div className="text-[10px] text-zinc-600">{l.sport === "mlb" ? g.shortDate : `Wk ${g.week} · ${g.shortDate}`}</div>
                       </>
                     ) : (
                       <>
                         <div className="text-sm font-bold text-white">{l.awayTeam && l.homeTeam ? `${l.awayTeam} ${l.awayScore} — ${l.homeTeam} ${l.homeScore}` : "Game rated"}</div>
-                        <div className="text-[10px] text-zinc-600">Wk {l.week || "?"} · {l.season || ""}</div>
+                        <div className="text-[10px] text-zinc-600">{l.sport === "mlb" ? (l.season || "") : `Wk ${l.week || "?"} · ${l.season || ""}`}</div>
                       </>
                     )}
                     <div className="flex gap-2 mt-1 flex-wrap">
@@ -458,50 +1456,157 @@ function HomeContent() {
               </div>
             )}
             {user && <>
-            {/* User card */}
-            <div className="rounded-2xl p-5 bg-zinc-900 border border-zinc-800 mb-4">
-              <div className="flex items-center gap-3 mb-4">
-                {user?.user_metadata?.avatar_url ? (
-                  <img src={user.user_metadata.avatar_url} className="w-12 h-12 rounded-full" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-white text-lg font-extrabold">{(user?.user_metadata?.full_name || "U")[0]}</div>
-                )}
-                <div>
-                  <div className="text-lg font-extrabold text-white">{user?.user_metadata?.full_name || "User"}</div>
-                  <div className="text-xs text-zinc-500">{user?.email || ""}</div>
-                  {myTeams.length > 0 && <div className="text-[10px] text-red-400 mt-0.5">{myTeams.join(" · ")}</div>}
+            {/* User card - sleeker design */}
+            <div className="rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 mb-4">
+              {/* Banner gradient */}
+              <div className="h-16 bg-gradient-to-br from-red-900/40 via-red-700/20 to-zinc-900" />
+              <div className="px-5 pb-5 -mt-10">
+                {/* Avatar centered */}
+                <div className="flex justify-center mb-3">
+                  {(profile?.avatar_url || user?.user_metadata?.avatar_url) ? (
+                    <img src={profile?.avatar_url || user.user_metadata.avatar_url} referrerPolicy="no-referrer" className="w-20 h-20 rounded-full border-4 border-zinc-900 object-cover" />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full border-4 border-zinc-900 bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-white text-2xl font-extrabold">{(profile?.display_name || user?.user_metadata?.full_name || "U")[0]?.toUpperCase()}</div>
+                  )}
                 </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                {[
-                  { v: logs.filter(l => l.rating > 0).length, l: "GAMES", action: () => setTab("diary") },
-                  { v: logs.filter((l) => l.review).length, l: "REVIEWS", action: () => setTab("diary") },
-                  { v: logs.filter(l => l.rating > 0).length ? (logs.filter(l => l.rating > 0).reduce((s, l) => s + l.rating, 0) / logs.filter(l => l.rating > 0).length).toFixed(1) : "—", l: "AVG", action: () => { document.getElementById("rating-dist")?.scrollIntoView({ behavior: "smooth" }); } },
-                ].map((s) => (
-                  <button key={s.l} onClick={s.action} className="p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors cursor-pointer text-center">
-                    <div className="text-2xl font-extrabold text-white">{s.v}</div>
-                    <div className="text-[10px] text-zinc-500 font-bold">{s.l}</div>
+                {/* Name & handle */}
+                <div className="text-center mb-1">
+                  <div className="text-xl font-extrabold text-white">{profile?.display_name || user?.user_metadata?.full_name || "User"}</div>
+                  {profile?.handle ? (
+                    <div className="text-sm text-red-400 mt-0.5">@{profile.handle}</div>
+                  ) : (
+                    <div className="text-xs text-zinc-500 mt-0.5">{user?.email || ""}</div>
+                  )}
+                </div>
+                {/* Team badges */}
+                {(profile?.favorite_team || profile?.favorite_team_mlb) && (
+                  <div className="flex justify-center gap-1.5 mb-2 flex-wrap">
+                    {profile?.favorite_team && (
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">🏈 {teamName("nfl", profile.favorite_team)}</span>
+                    )}
+                    {profile?.favorite_team_mlb && (
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">⚾ {teamName("mlb", profile.favorite_team_mlb)}</span>
+                    )}
+                  </div>
+                )}
+                {/* Bio */}
+                {profile?.bio && <div className="text-sm text-zinc-400 text-center mb-3 max-w-xs mx-auto">{profile.bio}</div>}
+                {/* Joined date */}
+                {profile?.created_at && (
+                  <div className="text-[10px] text-zinc-600 text-center mb-3">Joined {new Date(profile.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
+                )}
+                {/* Profile sport switcher */}
+                <div className="flex gap-0.5 p-0.5 mb-3 rounded-full bg-zinc-950 border border-zinc-800 mx-auto w-fit">
+                  <button onClick={() => setProfileSport("nfl")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "nfl" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏈 NFL</button>
+                  <button onClick={() => setProfileSport("mlb")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "mlb" ? "bg-red-600 text-white" : "text-zinc-500"}`}>⚾ MLB</button>
+                </div>
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                  {[
+                    { v: sportRatedLogs.length, l: "RATED", action: () => setTab("diary") },
+                    { v: sportLogs.filter((l) => l.review).length, l: "WROTE", action: () => setTab("diary") },
+                    { v: sportRatedLogs.length ? (sportRatedLogs.reduce((s, l) => s + l.rating, 0) / sportRatedLogs.length).toFixed(1) : "—", l: "AVG", action: () => { document.getElementById("rating-dist")?.scrollIntoView({ behavior: "smooth" }); } },
+                  ].map((s) => (
+                    <button key={s.l} onClick={s.action} className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 transition-colors cursor-pointer text-center">
+                      <div className="text-2xl font-extrabold text-white">{s.v}</div>
+                      <div className="text-[10px] text-zinc-500 font-bold tracking-widest">{s.l}</div>
+                    </button>
+                  ))}
+                </div>
+                {/* Action buttons */}
+                <div className={profile?.handle ? "grid grid-cols-2 gap-2" : ""}>
+                  {profile?.handle && (
+                    <Link href={`/u/${profile.handle}`} className="py-2 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-semibold text-center hover:bg-zinc-700 transition-all">
+                      👁️ View Public
+                    </Link>
+                  )}
+                  <button onClick={() => setShowEditProfile(true)} className="w-full py-2 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-semibold hover:bg-zinc-700 transition-all">
+                    ✏️ Edit Profile
                   </button>
-                ))}
+                </div>
+                <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all">Sign Out</button>
               </div>
-              <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-3 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-sm font-semibold hover:bg-zinc-700 transition-all">Sign Out</button>
             </div>
+
+            {/* Your Picks — prediction record + recent */}
+            {myPredictions.length > 0 && (() => {
+              const settled = myPredictions.filter(p => p.status !== "pending");
+              const pending = myPredictions.filter(p => p.status === "pending");
+              const w = settled.filter(p => p.status === "won").length;
+              const l = settled.filter(p => p.status === "lost").length;
+              const pu = settled.filter(p => p.status === "push").length;
+              const wpct = (w + l) > 0 ? Math.round((w / (w + l)) * 100) : 0;
+              const units = settled.reduce((s, p) => s + (parseFloat(p.units) || 0), 0);
+              const uStr = (units >= 0 ? "+" : "") + units.toFixed(2);
+              const recent = myPredictions.slice(0, 4);
+              const statusStyle = (st) => st === "won" ? { bg: "bg-green-500/15", tx: "text-green-400", lbl: "W" }
+                : st === "lost" ? { bg: "bg-red-500/15", tx: "text-red-400", lbl: "L" }
+                : st === "push" ? { bg: "bg-zinc-800", tx: "text-zinc-400", lbl: "P" }
+                : { bg: "bg-zinc-800", tx: "text-zinc-500", lbl: "•" };
+              return (
+                <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-base font-bold text-white">🔮 Your Picks</h3>
+                    <Link href="/predictions/breakdown" className="text-[10px] font-bold text-red-400 hover:text-red-300">Full history ›</Link>
+                  </div>
+                  {/* Record row */}
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="rounded-xl bg-zinc-950 p-3 text-center">
+                      <div className="text-xl font-extrabold text-white">{w}-{l}{pu > 0 && `-${pu}`}</div>
+                      <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Record</div>
+                    </div>
+                    <div className="rounded-xl bg-zinc-950 p-3 text-center">
+                      <div className="text-xl font-extrabold" style={{ color: wpct >= 50 ? "#22c55e" : "#ef4444" }}>{wpct}%</div>
+                      <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Win Rate</div>
+                    </div>
+                    <Link href="/predictions/breakdown" className="rounded-xl bg-zinc-950 p-3 text-center hover:bg-zinc-800 transition-colors">
+                      <div className="text-xl font-extrabold" style={{ color: units > 0 ? "#22c55e" : units < 0 ? "#ef4444" : "#a1a1aa" }}>{uStr}u</div>
+                      <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Units</div>
+                    </Link>
+                  </div>
+                  {/* Recent picks */}
+                  <div className="space-y-1.5">
+                    {recent.map(p => {
+                      const s = statusStyle(p.status);
+                      return (
+                        <Link key={p.id} href={p.sport === "mlb" ? `/game/${p.game_id}?sport=mlb` : `/game/${p.game_id}`}
+                          className="flex items-center gap-2.5 p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors">
+                          <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-extrabold shrink-0 ${s.bg} ${s.tx}`}>{s.lbl}</span>
+                          <span className="text-xs font-semibold text-white flex-1 truncate">{p.pick_label}</span>
+                          <span className="text-[9px] text-zinc-600">{p.sport === "mlb" ? "⚾" : "🏈"}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  {pending.length > 0 && (
+                    <div className="text-[10px] text-zinc-500 text-center mt-2">{pending.length} pick{pending.length === 1 ? "" : "s"} pending</div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Pinned */}
             {pinned.length > 0 && (
               <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
-                <h3 className="text-sm font-bold text-white mb-3">📌 Pinned Games</h3>
+                <h3 className="text-base font-bold text-white mb-3">📌 Pinned Games</h3>
                 <div className="grid grid-cols-2 gap-2">
                   {pinned.slice(0, 4).map((id) => {
                     const g = games.find((x) => x.id === id);
                     const l = gl(id);
-                    if (!g) return null;
+                    // Use ESPN game data if available, otherwise fall back to log metadata
+                    const awayAbbr = g?.away?.abbr || l?.awayTeam || "?";
+                    const homeAbbr = g?.home?.abbr || l?.homeTeam || "?";
+                    const awayScore = g?.away?.score ?? l?.awayScore ?? "—";
+                    const homeScore = g?.home?.score ?? l?.homeScore ?? "—";
+                    const week = g?.week || l?.week || "?";
                     return (
-                      <div key={id} className="p-2.5 rounded-lg bg-zinc-950 border-l-2 border-red-600">
-                        <div className="text-xs font-bold text-white">{g.away.abbr} {g.away.score}—{g.home.abbr} {g.home.score}</div>
-                        <div className="text-[10px] text-zinc-600">Wk {g.week}</div>
-                        {l && <div className="text-base font-extrabold mt-1" style={{ color: rc(l.rating) }}>{l.rating}</div>}
-                      </div>
+                      <Link key={id} href={`/game/${id}`} className="block">
+                        <div className="p-2.5 rounded-lg bg-zinc-950 border-l-2 border-red-600 hover:bg-zinc-900 transition-colors">
+                          <div className="text-xs font-bold text-white">{awayAbbr} {awayScore}—{homeAbbr} {homeScore}</div>
+                          <div className="text-[10px] text-zinc-600">Wk {week}</div>
+                          {l?.rating > 0 && <div className="text-base font-extrabold mt-1" style={{ color: rc(l.rating) }}>{l.rating}</div>}
+                        </div>
+                      </Link>
                     );
                   })}
                 </div>
@@ -540,7 +1645,7 @@ function HomeContent() {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 try {
-                                  await supabase.from("list_games").delete().eq("id", gm.id);
+                                  await sbFetch(`list_games?id=eq.${gm.id}`, { method: "DELETE" });
                                   setListGames(prev => ({ ...prev, [l.id]: (prev[l.id] || []).filter(x => x.id !== gm.id) }));
                                 } catch (err) { console.error(err); }
                               }} className="text-[10px] text-zinc-600 hover:text-red-400">remove</button>
@@ -597,17 +1702,393 @@ function HomeContent() {
               </div>
             )}
 
+            {/* Your Stats */}
+            {logs.filter(l => l.rating > 0).length > 0 && (() => {
+              const rated = logs.filter(l => l.rating > 0);
+              const total = rated.length;
+              const avgRating = (rated.reduce((s, l) => s + l.rating, 0) / total).toFixed(1);
+
+              // Per-team breakdown (combine home + away appearances)
+              const teamStats = {};
+              rated.forEach(l => {
+                [l.awayTeam, l.homeTeam].forEach(t => {
+                  if (!t) return;
+                  if (!teamStats[t]) teamStats[t] = { count: 0, sum: 0 };
+                  teamStats[t].count++;
+                  teamStats[t].sum += l.rating;
+                });
+              });
+              const topTeams = Object.entries(teamStats)
+                .filter(([, s]) => s.count >= 1)
+                .map(([t, s]) => ({ team: t, count: s.count, avg: (s.sum / s.count).toFixed(1) }))
+                .sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg));
+              const bestTeams = topTeams.slice(0, 3);
+              const worstTeams = [...topTeams].reverse().slice(0, 3);
+
+              // Worth-it breakdown (only those with answers)
+              const withWorth = rated.filter(l => l.worthIt);
+              const yesCount = withWorth.filter(l => l.worthIt === "yes").length;
+              const noCount = withWorth.filter(l => l.worthIt === "no").length;
+              const mehCount = withWorth.filter(l => l.worthIt === "meh").length;
+              const worthPct = withWorth.length > 0 ? Math.round((yesCount / withWorth.length) * 100) : 0;
+
+              // Watch-how breakdown
+              const watchCounts = {};
+              rated.forEach(l => { if (l.watchHow) watchCounts[l.watchHow] = (watchCounts[l.watchHow] || 0) + 1; });
+              const topWatch = Object.entries(watchCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+              // By season
+              const seasonStats = {};
+              rated.forEach(l => {
+                const s = l.season || "?";
+                if (!seasonStats[s]) seasonStats[s] = { count: 0, sum: 0 };
+                seasonStats[s].count++;
+                seasonStats[s].sum += l.rating;
+              });
+              const seasonRows = Object.entries(seasonStats)
+                .map(([s, v]) => ({ season: s, count: v.count, avg: (v.sum / v.count).toFixed(1) }))
+                .sort((a, b) => parseInt(b.season) - parseInt(a.season));
+
+              // Top rated of all-time
+              const topRated = [...rated].sort((a, b) => b.rating - a.rating).slice(0, 5);
+
+              return (
+                <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
+                  <h3 className="text-base font-bold text-white mb-3">📊 Your Stats</h3>
+
+                  {/* Worth-it pie */}
+                  {withWorth.length > 0 && (
+                    <div className="mb-4 p-3 rounded-xl bg-zinc-950">
+                      <div className="flex justify-between items-baseline mb-2">
+                        <span className="text-sm font-semibold text-white">👀 Worth Watching</span>
+                        <span className="text-2xl font-extrabold text-green-400">{worthPct}%</span>
+                      </div>
+                      <div className="flex h-2 rounded-full overflow-hidden bg-zinc-900">
+                        {yesCount > 0 && <div style={{ width: `${(yesCount / withWorth.length) * 100}%`, backgroundColor: "#22c55e" }} />}
+                        {mehCount > 0 && <div style={{ width: `${(mehCount / withWorth.length) * 100}%`, backgroundColor: "#eab308" }} />}
+                        {noCount > 0 && <div style={{ width: `${(noCount / withWorth.length) * 100}%`, backgroundColor: "#ef4444" }} />}
+                      </div>
+                      <div className="flex justify-between mt-1 text-[10px] text-zinc-500">
+                        <span>👍 {yesCount}</span>
+                        <span>😐 {mehCount}</span>
+                        <span>👎 {noCount}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Best & Worst teams */}
+                  {topTeams.length > 1 && (
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="p-3 rounded-xl bg-zinc-950">
+                        <div className="text-[10px] font-bold text-green-400 tracking-widest uppercase mb-2">Most Fun</div>
+                        {bestTeams.map(t => (
+                          <div key={t.team} className="flex justify-between items-center mb-1">
+                            <span className="text-sm font-bold text-white">{t.team}</span>
+                            <span className="text-sm font-bold" style={{ color: rc(parseFloat(t.avg)) }}>{t.avg}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="p-3 rounded-xl bg-zinc-950">
+                        <div className="text-[10px] font-bold text-red-400 tracking-widest uppercase mb-2">Most Painful</div>
+                        {worstTeams.map(t => (
+                          <div key={t.team} className="flex justify-between items-center mb-1">
+                            <span className="text-sm font-bold text-white">{t.team}</span>
+                            <span className="text-sm font-bold" style={{ color: rc(parseFloat(t.avg)) }}>{t.avg}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Where you watch */}
+                  {topWatch.length > 0 && (
+                    <div className="mb-4 p-3 rounded-xl bg-zinc-950">
+                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">How You Watch</div>
+                      {topWatch.map(([w, count]) => (
+                        <div key={w} className="flex justify-between items-center mb-1">
+                          <span className="text-sm text-white">{w}</span>
+                          <span className="text-xs font-bold text-zinc-400">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* By season */}
+                  {seasonRows.length > 1 && (
+                    <div className="mb-4 p-3 rounded-xl bg-zinc-950">
+                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">By Season</div>
+                      {seasonRows.map(r => (
+                        <div key={r.season} className="flex justify-between items-center mb-1">
+                          <span className="text-sm text-white">{r.season} <span className="text-zinc-600 text-xs">({r.count})</span></span>
+                          <span className="text-sm font-bold" style={{ color: rc(parseFloat(r.avg)) }}>{r.avg}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Your top rated */}
+                  {topRated.length > 0 && (
+                    <div className="p-3 rounded-xl bg-zinc-950">
+                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">⭐ Your Top Rated</div>
+                      {topRated.map((l, i) => (
+                        <Link key={l.gameId} href={`/game/${l.gameId}`} className="flex items-center gap-2 py-1.5 hover:bg-zinc-900 rounded-lg px-1.5 -mx-1.5 transition-colors">
+                          <span className="text-xs font-extrabold w-4" style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#a1a1aa" : i === 2 ? "#b45309" : "#52525b" }}>{i + 1}</span>
+                          <div className="flex-1 text-xs font-bold text-white">{l.awayTeam} {l.awayScore}—{l.homeTeam} {l.homeScore}</div>
+                          <span className="text-xs text-zinc-500">Wk {l.week || "?"}</span>
+                          <span className="text-sm font-extrabold" style={{ color: rc(l.rating) }}>{l.rating}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Rating Distribution */}
-            {logs.length > 0 && (
+            {sportLogs.length > 0 && (
               <div id="rating-dist" className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 scroll-mt-20">
-                <h3 className="text-base font-bold text-white mb-3">Rating Distribution</h3>
-                <RBars dist={Array(10).fill(0).map((_, i) => logs.filter((l) => Math.floor(l.rating) === i + 1).length)} />
+                <h3 className="text-base font-bold text-white mb-3">{profileSport === "mlb" ? "⚾" : "🏈"} Rating Distribution</h3>
+                <RBars
+                  dist={Array(10).fill(0).map((_, i) => sportLogs.filter((l) => l.rating > 0 && Math.round(l.rating) === i + 1).length)}
+                  onBarClick={(rating) => {
+                    const games = sportLogs.filter(l => l.rating > 0 && Math.round(l.rating) === rating);
+                    setBarDrilldown({ rating, games });
+                  }}
+                />
               </div>
             )}
             </>}
           </div>
         )}
       </div>
+
+      {/* Bar drilldown modal */}
+      {barDrilldown && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto" onClick={() => setBarDrilldown(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-zinc-950 px-5 pt-4 pb-3 border-b border-zinc-800 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Games You Rated</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-lg font-bold text-white">{barDrilldown.games.length} {barDrilldown.games.length === 1 ? "game" : "games"} at</span>
+                  <span className="text-xl font-extrabold px-2 py-0.5 rounded-lg text-white" style={{ backgroundColor: rc(barDrilldown.rating) }}>{barDrilldown.rating}</span>
+                </div>
+              </div>
+              <button onClick={() => setBarDrilldown(null)} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
+            </div>
+            <div className="p-5">
+              {barDrilldown.games.map(l => (
+                <Link key={l.gameId} href={`/game/${l.gameId}`} onClick={() => setBarDrilldown(null)} className="block">
+                  <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                    <div className="flex-1">
+                      <div className="text-sm font-bold text-white">{l.awayTeam} {l.awayScore}—{l.homeTeam} {l.homeScore}</div>
+                      <div className="text-[10px] text-zinc-500">Wk {l.week || "?"} · {l.season || "?"}</div>
+                      {l.review && <div className="text-xs text-zinc-400 italic mt-1 line-clamp-2">&quot;{l.review}&quot;</div>}
+                    </div>
+                    <div className="w-11 h-11 flex items-center justify-center text-white font-extrabold rounded-xl text-base shrink-0" style={{ backgroundColor: rc(l.rating) }}>{l.rating}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile Modal */}
+      {showEditProfile && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          {/* Success overlay */}
+          {profileSaved && (
+            <>
+              <style>{`
+                @keyframes nbCheckPop {
+                  0% { opacity: 0; transform: scale(0.3); }
+                  60% { opacity: 1; transform: scale(1.15); }
+                  100% { opacity: 1; transform: scale(1); }
+                }
+                @keyframes nbCheckRing {
+                  0% { transform: scale(0.6); opacity: 0.8; }
+                  100% { transform: scale(1.8); opacity: 0; }
+                }
+                @keyframes nbFadeIn { from { opacity: 0; } to { opacity: 1; } }
+              `}</style>
+              <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/70 backdrop-blur-sm" style={{ animation: "nbFadeIn 0.2s ease-out" }}>
+                <div className="flex flex-col items-center">
+                  <div className="relative">
+                    <div className="absolute inset-0 rounded-full bg-green-500/40" style={{ animation: "nbCheckRing 0.9s ease-out" }} />
+                    <div className="w-20 h-20 rounded-full bg-green-600 flex items-center justify-center text-white text-4xl font-bold" style={{ animation: "nbCheckPop 0.45s cubic-bezier(0.34,1.56,0.64,1)" }}>
+                      ✓
+                    </div>
+                  </div>
+                  <div className="mt-4 text-lg font-extrabold text-white" style={{ animation: "nbFadeIn 0.3s ease-out 0.2s both" }}>Profile Saved</div>
+                </div>
+              </div>
+            </>
+          )}
+          <div className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-bold text-white">Edit Profile</div>
+              <button onClick={() => setShowEditProfile(false)} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
+            </div>
+
+            {/* Status banner */}
+            {handleError && (
+              <>
+                <style>{`
+                  @keyframes nbBannerIn {
+                    0% { opacity: 0; transform: translateY(-8px); }
+                    100% { opacity: 1; transform: translateY(0); }
+                  }
+                `}</style>
+                <div
+                  className={`mb-4 px-3 py-2.5 rounded-lg text-sm font-bold text-center flex items-center justify-center gap-2 ${
+                    handleError.startsWith("✓") ? "bg-green-600/90 text-white" :
+                    handleError === "Saving..." ? "bg-zinc-800 text-zinc-200" :
+                    "bg-red-600/90 text-white"
+                  }`}
+                  style={{ animation: "nbBannerIn 0.22s ease-out" }}
+                >
+                  {handleError === "Saving..." && (
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                  )}
+                  {handleError.startsWith("✓") && <span className="text-base leading-none">✓</span>}
+                  <span>{handleError.replace("✓ ", "").replace("...", "…")}</span>
+                </div>
+              </>
+            )}
+
+            {/* Avatar upload */}
+            <div className="mb-4 flex items-center gap-4">
+              <div className="relative shrink-0">
+                {editAvatarUrl ? (
+                  <img src={editAvatarUrl} referrerPolicy="no-referrer" className="w-20 h-20 rounded-full border-2 border-zinc-800 object-cover" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full border-2 border-zinc-800 bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-white text-2xl font-extrabold">
+                    {(editDisplayName || profile?.handle || "U")[0]?.toUpperCase()}
+                  </div>
+                )}
+                {avatarUploading && (
+                  <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center text-white text-xs font-bold">...</div>
+                )}
+              </div>
+              <div className="flex-1">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Profile Photo</label>
+                <div className="flex gap-2 mt-1.5">
+                  <label className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold cursor-pointer hover:bg-red-700 transition-colors">
+                    📷 Upload
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                      onChange={(e) => { if (e.target.files?.[0]) uploadAvatar(e.target.files[0]); e.target.value = ""; }} />
+                  </label>
+                  {editAvatarUrl && (
+                    <button onClick={clearAvatar} className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 text-xs font-bold hover:bg-zinc-700 transition-colors">
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div className="text-[10px] text-zinc-600 mt-1">JPG, PNG, or WEBP · max 5MB</div>
+              </div>
+            </div>
+
+            <div className="mb-3">
+              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Handle</label>
+              <div className="flex items-center mt-1 rounded-xl bg-zinc-900 border border-zinc-800 px-3">
+                <span className="text-zinc-500 text-sm">@</span>
+                <input value={editHandle} onChange={(e) => { setEditHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")); setHandleError(""); }}
+                  className="flex-1 py-2.5 bg-transparent text-white text-sm outline-none" />
+              </div>
+              <div className="text-xs text-zinc-600 mt-1">3-20 chars, letters/numbers/underscores only</div>
+            </div>
+
+            <div className="mb-3">
+              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Display Name</label>
+              <input value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)}
+                className="w-full mt-1 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600" />
+            </div>
+
+            <div className="mb-4">
+              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Bio</label>
+              <textarea value={editBio} onChange={(e) => setEditBio(e.target.value.slice(0, 160))} rows={3} placeholder="Tell people about yourself..."
+                className="w-full mt-1 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 resize-none" />
+              <div className="text-xs text-zinc-600 mt-1">{editBio.length}/160</div>
+            </div>
+
+            <div className="mb-4">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">🏈 Favorite NFL Team</label>
+                <span className="text-xs font-bold text-red-400">{editTeam ? teamName("nfl", editTeam) : "Not set"}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
+                <button onClick={() => setEditTeam("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeam === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
+                {ALL_TEAMS.map(t => (
+                  <button key={t} onClick={() => setEditTeam(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeam === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">⚾ Favorite MLB Team</label>
+                <span className="text-xs font-bold text-red-400">{editTeamMlb ? teamName("mlb", editTeamMlb) : "Not set"}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
+                <button onClick={() => setEditTeamMlb("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeamMlb === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
+                {ALL_MLB_TEAMS.map(t => (
+                  <button key={t} onClick={() => setEditTeamMlb(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeamMlb === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
+                ))}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-1">Used for fandom filters on each sport's games.</div>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowEditProfile(false)} className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Cancel</button>
+              <button onClick={async () => {
+                if (!editHandle.trim() || editHandle.length < 3) {
+                  setHandleError("Handle must be at least 3 characters");
+                  return;
+                }
+                if (editHandle.length > 20) {
+                  setHandleError("Handle max 20 characters");
+                  return;
+                }
+                setHandleError("Saving...");
+                try {
+                  const tRes = await sbFetch(`profiles?handle=eq.${editHandle}&select=user_id`);
+                  const tArr = await tRes.json();
+                  const taken = tArr && tArr[0];
+                  if (taken && taken.user_id !== user.id) {
+                    setHandleError("Handle already taken");
+                    return;
+                  }
+                  const uRes = await sbFetch(`profiles?user_id=eq.${user.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                      handle: editHandle,
+                      display_name: editDisplayName || null,
+                      bio: editBio || null,
+                      favorite_team: editTeam || null,
+                      favorite_team_mlb: editTeamMlb || null,
+                      avatar_url: editAvatarUrl || null,
+                      updated_at: new Date().toISOString(),
+                    }),
+                  });
+                  if (!uRes.ok) {
+                    const errTxt = await uRes.text();
+                    setHandleError(`Save failed: ${errTxt.substring(0, 80)}`);
+                    return;
+                  }
+                  await refreshProfile();
+                  setHandleError("");
+                  setProfileSaved(true);
+                  setTimeout(() => { setProfileSaved(false); setShowEditProfile(false); }, 1500);
+                } catch (e) { console.error(e); setHandleError(`Error: ${e.message}`); }
+              }} disabled={handleError === "Saving..."} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
+                {handleError === "Saving..." && <span className="inline-block w-3.5 h-3.5 border-2 border-red-300 border-t-white rounded-full animate-spin" />}
+                {handleError === "Saving..." ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New List Modal */}
       {showNewList && (
@@ -620,8 +2101,16 @@ function HomeContent() {
               <button onClick={async () => {
                 if (!newListName.trim() || !user) return;
                 try {
-                  const { data } = await supabase.from("lists").insert({ user_id: user.id, name: newListName.trim(), icon: "📋" }).select().single();
-                  if (data) setLists([...lists, data]);
+                  const cRes = await sbFetch(`lists`, {
+                    method: "POST",
+                    headers: { "Prefer": "return=representation" },
+                    body: JSON.stringify({ user_id: user.id, name: newListName.trim(), icon: "📋" })
+                  });
+                  if (cRes.ok) {
+                    const arr = await sbJson(cRes);
+                    const data = Array.isArray(arr) ? arr[0] : arr;
+                    if (data) setLists([...lists, data]);
+                  }
                 } catch (e) { console.error("Create list:", e); }
                 setNewListName("");
                 setShowNewList(false);
