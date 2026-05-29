@@ -1288,7 +1288,7 @@ export default function GamePage({ params }) {
               <div className="text-center flex-1">
                 {a.logo && <img src={a.logo} className="w-14 h-14 object-contain mx-auto" />}
                 <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: a.score < h.score ? "#52525b" : "#fafafa" }}>{g.isPre ? "—" : a.score}</div>
-                <div className="text-sm font-semibold text-zinc-400 mt-1">{a.name}</div>
+                <Link href={`/team/${sport}/${a.abbr}`} className="text-sm font-semibold text-zinc-400 mt-1 hover:text-white transition-colors inline-block">{a.name}</Link>
                 <div className="text-[10px] text-zinc-600">{a.record}</div>
               </div>
               <div className="text-[10px] font-bold tracking-widest">
@@ -1303,7 +1303,7 @@ export default function GamePage({ params }) {
               <div className="text-center flex-1">
                 {h.logo && <img src={h.logo} className="w-14 h-14 object-contain mx-auto" />}
                 <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: h.score > a.score ? "#fafafa" : "#52525b" }}>{g.isPre ? "—" : h.score}</div>
-                <div className="text-sm font-semibold text-zinc-400 mt-1">{h.name}</div>
+                <Link href={`/team/${sport}/${h.abbr}`} className="text-sm font-semibold text-zinc-400 mt-1 hover:text-white transition-colors inline-block">{h.name}</Link>
                 <div className="text-[10px] text-zinc-600">{h.record}</div>
               </div>
             </div>
