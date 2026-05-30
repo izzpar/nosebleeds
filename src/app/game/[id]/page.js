@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { emotesFor } from "@/lib/drops";
+import { makeRatingCard } from "@/lib/shareCard";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -677,6 +678,7 @@ export default function GamePage({ params }) {
   const [showWiz, setShowWiz] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [cardBusy, setCardBusy] = useState(false);
   const [step, setStep] = useState(0);
 
   // Rating state
@@ -1262,6 +1264,30 @@ export default function GamePage({ params }) {
     if (navigator.share) {
       try { await navigator.share({ title: "The Nosebleeds", text: shareText, url: shareUrl }); } catch (e) {}
     } else copyShareLink();
+  };
+
+  // Generate a PNG rating card and share it (or download as a fallback)
+  const saveRatingCard = async () => {
+    if (cardBusy) return;
+    setCardBusy(true);
+    try {
+      const { blob, dataUrl } = await makeRatingCard({
+        title: sport === "nfl" ? `NFL · Week ${g.week} · ${g.season}` : `${leagueLabel} · ${g.season}`,
+        leftLabel: a.abbr, leftScore: g.isPre ? null : a.score, leftColor: a.color,
+        rightLabel: h.abbr, rightScore: g.isPre ? null : h.score, rightColor: h.color,
+        rating, ratingLabel: ratingLabel(rating),
+        handle: profile?.handle || "",
+      });
+      const file = blob ? new File([blob], "nosebleeds-rating.png", { type: "image/png" }) : null;
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], text: shareText });
+      } else {
+        const link = document.createElement("a");
+        link.href = dataUrl; link.download = "nosebleeds-rating.png";
+        document.body.appendChild(link); link.click(); link.remove();
+      }
+    } catch (e) { console.error("rating card:", e); }
+    setCardBusy(false);
   };
 
   return (
@@ -2502,6 +2528,11 @@ export default function GamePage({ params }) {
               </button>
               <button onClick={nativeShare} className="py-3 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">📤 Share</button>
             </div>
+            {/* Image rating card */}
+            <button onClick={saveRatingCard} disabled={cardBusy} className="w-full py-3 rounded-xl bg-gradient-to-r from-red-600 to-red-800 text-white text-sm font-bold hover:opacity-90 transition-opacity mb-3 flex items-center justify-center gap-2 disabled:opacity-60">
+              {cardBusy && <span className="inline-block w-3.5 h-3.5 border-2 border-red-300 border-t-white rounded-full animate-spin" />}
+              {cardBusy ? "Making card…" : "🖼️ Rating Card Image"}
+            </button>
             <div className="grid grid-cols-3 gap-2">
               <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 rounded-xl bg-zinc-900 text-center text-xs font-bold text-white hover:bg-zinc-800 transition-colors">𝕏 Tweet</a>
               <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 rounded-xl bg-zinc-900 text-center text-xs font-bold text-white hover:bg-zinc-800 transition-colors">f Facebook</a>
