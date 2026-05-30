@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
-import { emotesFor } from "@/lib/drops";
+import { emotesFor, nameColor } from "@/lib/drops";
 import { makeRatingCard } from "@/lib/shareCard";
 import { repScore, repTier } from "@/lib/reputation";
 
@@ -521,7 +521,7 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
         </Link>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400">
+            <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400" style={nameColor(c.profile?.unlocked) ? { color: nameColor(c.profile.unlocked) } : undefined}>
               {c.profile?.display_name || (c.profile?.handle ? `@${c.profile.handle}` : "Anonymous")}
             </Link>
             {repMap[c.user_id] && (
@@ -737,6 +737,7 @@ export default function GamePage({ params }) {
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [commentRep, setCommentRep] = useState({}); // user_id -> rep tier (for comment flair)
+  const [commentSort, setCommentSort] = useState("top"); // 'top' (most reactions) | 'new'
 
   // Load game
   useEffect(() => {
@@ -957,7 +958,7 @@ export default function GamePage({ params }) {
         if (cancelled) return;
         if (cData && cData.length > 0) {
           const userIds = [...new Set(cData.map(c => c.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,${favSelect}`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,unlocked,${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -1112,6 +1113,9 @@ export default function GamePage({ params }) {
   // Comment count by fandom
   const filteredComments = filterByFandom(comments.map(c => ({ ...c, favorite_team: c.profile?.favorite_team })));
   const moods = autoMoods(g);
+  // Hot take — your rating is far from the community consensus
+  const allAvg = allCommunityRatings.length > 0 ? allCommunityRatings.reduce((s, r) => s + parseFloat(r.rating), 0) / allCommunityRatings.length : null;
+  const isHotTake = logged && allCommunityRatings.length >= 3 && allAvg != null && Math.abs(rating - allAvg) >= 3;
   const leagueLabel = { nfl: "NFL", mlb: "MLB", nba: "NBA", nhl: "NHL" }[sport] || "";
   const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(sport === "nfl" ? `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL` : `${a.name} vs ${h.name} ${g.season} highlights ${leagueLabel}`)}`;
   const steps = ["Rating", "Details", "MVP", "Extras"];
@@ -1915,8 +1919,23 @@ export default function GamePage({ params }) {
               {!commentLoading && comments.length === 0 && (
                 <div className="text-center py-6 text-zinc-600 text-sm">No comments yet</div>
               )}
+              {/* Sort toggle */}
+              {filteredComments.filter(c => !c.parent_id).length > 1 && (
+                <div className="flex gap-1 mb-3">
+                  {[{ id: "top", l: "🔝 Top" }, { id: "new", l: "🕐 Newest" }].map((o) => (
+                    <button key={o.id} onClick={() => setCommentSort(o.id)} className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all ${commentSort === o.id ? "bg-red-600 text-white" : "bg-zinc-950 text-zinc-500 border border-zinc-800"}`}>{o.l}</button>
+                  ))}
+                </div>
+              )}
               <div className="space-y-3">
-                {filteredComments.filter(c => !c.parent_id).map((c) => {
+                {(() => {
+                  const reactionTotal = (c) => (c.reactions || []).length;
+                  const topLevel = filteredComments.filter(c => !c.parent_id);
+                  const sorted = commentSort === "top"
+                    ? [...topLevel].sort((a, b) => reactionTotal(b) - reactionTotal(a) || new Date(b.created_at) - new Date(a.created_at))
+                    : [...topLevel].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                  return sorted;
+                })().map((c) => {
                   const replies = filteredComments.filter(r => r.parent_id === c.id);
                   return (
                     <CommentItem
@@ -2225,7 +2244,10 @@ export default function GamePage({ params }) {
             {/* Logged summary card */}
             {logged && !showWiz && (
               <div onClick={() => setShowWiz(true)} className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 cursor-pointer hover:border-red-600/40 transition-all">
-                <div className="text-[10px] font-bold tracking-widest uppercase text-red-400 mb-2">Your Rating · Tap to edit ✏️</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] font-bold tracking-widest uppercase text-red-400">Your Rating · Tap to edit ✏️</div>
+                  {isHotTake && <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">🌶️ Hot Take</span>}
+                </div>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[{ l: "Overall", v: rating }, { l: sport === "mlb" ? "Umpires" : "Refs", v: refR }, { l: "Entertain", v: entR }].map((x) => (
                     <div key={x.l} className="text-center p-2.5 rounded-xl bg-zinc-950">
