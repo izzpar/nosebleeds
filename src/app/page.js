@@ -1106,6 +1106,15 @@ function HomeContent() {
   };
   const earned = BADGES.filter((b) => b.ck(badgeCtx));
 
+  // "On This Day" — your own ratings logged on this calendar date in past years
+  const onThisDay = (() => {
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return ratedLogs
+      .filter((l) => l.createdAt && l.createdAt.slice(5, 10) === mmdd && new Date(l.createdAt).getFullYear() < now.getFullYear())
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  })();
+
   const buyPack = async (pack) => {
     if (!user) { router.push("/login"); return; }
     if (!dropsStoreReady || dropsUnlocked.includes(pack.id) || dropsBalance < pack.cost) return;
