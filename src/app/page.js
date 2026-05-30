@@ -310,6 +310,14 @@ function HomeContent() {
   }, []);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
+  // Onboarding: prompt new users (no favorite teams) to set up their profile
+  const [onboardDismissed, setOnboardDismissed] = useState(true);
+  useEffect(() => { try { setOnboardDismissed(localStorage.getItem("nb_onboard_done") === "1"); } catch (e) {} }, []);
+  const dismissOnboard = () => { setOnboardDismissed(true); try { localStorage.setItem("nb_onboard_done", "1"); } catch (e) {} };
+  // Notifications: new ratings from people you follow since your last visit
+  const [notifs, setNotifs] = useState([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") || "games";
@@ -854,6 +862,37 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [user]);
 
+  // Notifications — recent ratings from people you follow
+  useEffect(() => {
+    if (!user || following.length === 0) { setNotifs([]); setNotifUnread(0); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await sbFetch(`ratings?user_id=in.(${following.join(",")})&public=eq.true&rating=not.is.null&order=created_at.desc&limit=20&select=id,user_id,game_id,sport,away_team,home_team,away_score,home_score,rating,created_at,game_date`);
+        const rows = await sbJson(r);
+        if (cancelled) return;
+        const uids = [...new Set(rows.map((x) => x.user_id))];
+        let profs = [];
+        if (uids.length) profs = await sbJson(await sbFetch(`profiles?user_id=in.(${uids.join(",")})&select=user_id,handle,display_name,avatar_url`));
+        const pmap = {};
+        profs.forEach((p) => { pmap[p.user_id] = p; });
+        const enriched = rows.map((x) => ({ ...x, profile: pmap[x.user_id] }));
+        if (cancelled) return;
+        setNotifs(enriched);
+        let seen = "";
+        try { seen = localStorage.getItem("nb_notif_seen") || ""; } catch (e) {}
+        setNotifUnread(enriched.filter((x) => !seen || x.created_at > seen).length);
+      } catch (e) { console.error("Notifications:", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [user, following]);
+
+  const openNotifs = () => {
+    setShowNotifs(true);
+    setNotifUnread(0);
+    try { localStorage.setItem("nb_notif_seen", new Date().toISOString()); } catch (e) {}
+  };
+
   // Load Friends tab data
   useEffect(() => {
     if (tab !== "friends" || !user) return;
@@ -1008,21 +1047,47 @@ function HomeContent() {
           <h1 className="text-xl font-extrabold text-white">
             <span className="text-red-600">🩸</span> The Nosebleeds
           </h1>
-          {/* Sport switcher - hidden on Diary/Profile which have their own profileSport toggle */}
-          {tab !== "diary" && tab !== "profile" && (
-            <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-              {SPORTS.map((s) => (
-                <button key={s.id} onClick={() => setSport(s.id)}
-                  className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>
-                  {s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Notifications bell */}
+            {user && (
+              <button onClick={openNotifs} className="relative w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm hover:border-zinc-600 transition-colors shrink-0">
+                🔔
+                {notifUnread > 0 && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">{notifUnread > 9 ? "9+" : notifUnread}</span>}
+              </button>
+            )}
+            {/* Sport switcher - hidden on Diary/Profile which have their own profileSport toggle */}
+            {tab !== "diary" && tab !== "profile" && (
+              <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
+                {SPORTS.map((s) => (
+                  <button key={s.id} onClick={() => setSport(s.id)}
+                    className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>
+                    {s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-3">
+        {/* Onboarding — nudge new users to pick favorite teams */}
+        {tab === "games" && user && profile && !onboardDismissed && !FAV_SPORTS.some((s) => profile[favKey(s.id)]) && (
+          <div className="rounded-2xl p-4 mb-3 bg-gradient-to-br from-red-900/50 via-zinc-900 to-zinc-900 border border-red-600/30">
+            <div className="flex items-start gap-3">
+              <div className="text-2xl">👋</div>
+              <div className="flex-1">
+                <div className="text-sm font-bold text-white">Welcome to The Nosebleeds!</div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">Pick your favorite teams to personalize your feed and unlock fandom filters.</div>
+                <div className="flex gap-2 mt-2.5">
+                  <button onClick={() => { setTab("profile"); setShowEditProfile(true); }} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold">Set up profile →</button>
+                  <button onClick={dismissOnboard} className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold">Maybe later</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Players banner — Games tab (team sports only; tennis has no roster) */}
         {tab === "games" && sport !== "tennis" && (
           <button onClick={() => setTab("players")} className="block w-full mb-3 text-left">
@@ -1881,17 +1946,17 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* Season Wrapped */}
-            {logs.length >= 3 && (
+            {/* Season Wrapped — reflects the selected profile sport */}
+            {sportRatedLogs.length >= 3 && (
               <div className="rounded-2xl p-5 mb-4 bg-gradient-to-br from-red-600 via-red-800 to-red-950 text-white relative overflow-hidden">
-                <div className="absolute -top-5 -right-5 text-8xl opacity-5">🏈</div>
-                <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">Season Wrapped</div>
-                <div className="text-lg font-extrabold mt-1 mb-3">Your {year} Season</div>
+                <div className="absolute -top-5 -right-5 text-8xl opacity-5">{sportEmoji(profileSport)}</div>
+                <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">{sportEmoji(profileSport)} {sportLabel(profileSport)} Wrapped</div>
+                <div className="text-lg font-extrabold mt-1 mb-3">Your {sportLabel(profileSport)} Season</div>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { v: logs.length, l: "Games" },
-                    { v: (logs.reduce((s, l) => s + l.rating, 0) / logs.length).toFixed(1), l: "Avg Rating" },
-                    { v: logs.filter((l) => l.worthIt === "yes").length, l: "Worth It" },
+                    { v: sportRatedLogs.length, l: "Games" },
+                    { v: (sportRatedLogs.reduce((s, l) => s + l.rating, 0) / sportRatedLogs.length).toFixed(1), l: "Avg Rating" },
+                    { v: sportRatedLogs.filter((l) => l.worthIt === "yes").length, l: "Worth It" },
                     { v: earned.length + "/" + BADGES.length, l: "Badges" },
                   ].map((s, i) => (
                     <div key={i} className="bg-white/10 rounded-lg p-2">
@@ -2310,6 +2375,43 @@ function HomeContent() {
               }}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-bold text-sm">Create</button>
               <button onClick={() => setShowNewList(false)} className="px-4 py-2.5 bg-zinc-800 text-zinc-400 rounded-xl font-semibold text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications panel */}
+      {showNotifs && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto" onClick={() => setShowNotifs(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[85vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-zinc-950 px-5 pt-4 pb-3 border-b border-zinc-800 flex items-center justify-between">
+              <div className="text-base font-bold text-white">🔔 Notifications</div>
+              <button onClick={() => setShowNotifs(false)} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
+            </div>
+            <div className="p-4">
+              {notifs.length === 0 ? (
+                <div className="text-center py-10">
+                  <div className="text-4xl mb-2">🔕</div>
+                  <div className="text-sm font-bold text-white">Nothing yet</div>
+                  <div className="text-xs text-zinc-500 mt-1">Follow people on the Friends tab to see their ratings here.</div>
+                </div>
+              ) : notifs.map((n) => (
+                <Link key={n.id} href={gameHref(n.game_id, n.sport, n.game_date)} onClick={() => setShowNotifs(false)} className="block">
+                  <div className="flex items-center gap-3 p-2.5 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                    {n.profile?.avatar_url ? (
+                      <img src={n.profile.avatar_url} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-xs font-bold text-white shrink-0">{(n.profile?.display_name || n.profile?.handle || "?")[0]?.toUpperCase()}</div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-white"><span className="font-bold">{n.profile?.display_name || `@${n.profile?.handle || "someone"}`}</span> <span className="text-zinc-500">rated</span></div>
+                      <div className="text-sm font-bold text-white truncate">{n.away_team} {n.away_score} — {n.home_team} {n.home_score}</div>
+                      <div className="text-[10px] text-zinc-600">{new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                    </div>
+                    <div className="w-9 h-9 flex items-center justify-center text-white font-extrabold rounded-lg text-sm shrink-0" style={{ backgroundColor: rc(parseFloat(n.rating)) }}>{parseFloat(n.rating).toFixed(1)}</div>
+                  </div>
+                </Link>
+              ))}
             </div>
           </div>
         </div>
