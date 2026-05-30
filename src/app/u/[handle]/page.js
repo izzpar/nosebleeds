@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import Nav from "@/components/Nav";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
+import { nameColor } from "@/lib/drops";
 
 function rc(r) {
   if (r >= 9) return "#22c55e";
@@ -34,6 +35,7 @@ export default function PublicProfile({ params }) {
   const [followingCount, setFollowingCount] = useState(0);
   const [commentsPosted, setCommentsPosted] = useState(0);
   const [likesReceived, setLikesReceived] = useState(0);
+  const [tasteMatch, setTasteMatch] = useState(null); // { pct, common } vs the viewer
 
   const sbFetch = async (path, options = {}) => {
     const tokenKey = Object.keys(localStorage).find(k => k.includes("auth-token"));
@@ -92,11 +94,27 @@ export default function PublicProfile({ params }) {
           }
         } catch (e) {}
 
-        // Am I following them?
+        // Am I following them? + taste match
         if (user && user.id !== profileData.user_id) {
           const fcheckRes = await sbFetch(`follows?follower_id=eq.${user.id}&following_id=eq.${profileData.user_id}&select=id`);
           const fcheckArr = await fcheckRes.json();
           setIsFollowing(fcheckArr && fcheckArr.length > 0);
+
+          // Taste match: compare ratings on games both have rated
+          try {
+            const myRes = await sbFetch(`ratings?user_id=eq.${user.id}&rating=not.is.null&select=game_id,rating`);
+            const mine = await myRes.json();
+            const myMap = {};
+            (Array.isArray(mine) ? mine : []).forEach((r) => { myMap[r.game_id] = parseFloat(r.rating); });
+            const diffs = [];
+            (Array.isArray(ratingsData) ? ratingsData : []).forEach((r) => {
+              if (myMap[r.game_id] != null) diffs.push(Math.abs(parseFloat(r.rating) - myMap[r.game_id]));
+            });
+            if (diffs.length >= 3) {
+              const avg = diffs.reduce((s, d) => s + d, 0) / diffs.length;
+              setTasteMatch({ pct: Math.round(100 - (avg / 9) * 100), common: diffs.length });
+            }
+          } catch (e) {}
         }
       } catch (e) { console.error(e); }
       setLoading(false);
@@ -163,7 +181,7 @@ export default function PublicProfile({ params }) {
               {(profile.display_name || profile.handle || "?")[0].toUpperCase()}
             </div>
           )}
-          <div className="text-xl font-extrabold text-white">{profile.display_name || profile.handle}</div>
+          <div className="text-xl font-extrabold" style={{ color: nameColor(profile.unlocked) || "#fafafa" }}>{profile.display_name || profile.handle}</div>
           <div className="text-sm text-red-400 mt-0.5">@{profile.handle}</div>
           <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 py-1 rounded-full" style={{ background: tier.color + "22", color: tier.color }}>
             {tier.emoji} {tier.name} · {repPts.toLocaleString()} Cred
@@ -175,6 +193,14 @@ export default function PublicProfile({ params }) {
             <span><span className="text-white font-bold">{followerCount}</span> followers</span>
             <span><span className="text-white font-bold">{followingCount}</span> following</span>
           </div>
+
+          {/* Taste match vs the viewer */}
+          {tasteMatch && (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-950 border border-zinc-800">
+              <span className="text-base font-extrabold" style={{ color: tasteMatch.pct >= 50 ? "#22c55e" : "#f97316" }}>{tasteMatch.pct}%</span>
+              <span className="text-[11px] text-zinc-400">taste match · {tasteMatch.common} shared {tasteMatch.common === 1 ? "game" : "games"}</span>
+            </div>
+          )}
 
           {/* Action buttons */}
           <div className="mt-3 flex gap-2 justify-center">
