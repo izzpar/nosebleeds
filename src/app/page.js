@@ -6,7 +6,7 @@ import GameCard from "@/components/GameCard";
 import TennisCard from "@/components/TennisCard";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
-import { DROPS, EMOTE_PACKS, dropsEarned, dropsSpent } from "@/lib/drops";
+import { DROPS, EMOTE_PACKS, NAME_FLAIR, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
 
@@ -623,6 +623,7 @@ function HomeContent() {
             week: r.week || 0,
             season: r.season || 0,
             gameDate: r.game_date || "",
+            createdAt: r.created_at || "",
           }));
           setLogs(mapped);
           setPinned(mapped.filter(l => l.pinned).map(l => l.gameId));
@@ -870,11 +871,14 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [user]);
 
-  // Notifications — recent ratings from people you follow
+  // Notifications — recent ratings from people you follow. Polls while the app
+  // is open and fires a native browser notification for genuinely-new activity
+  // (if the user opted in). Background push when the app is CLOSED needs server
+  // infra (VAPID keys) — see notes.
   useEffect(() => {
     if (!user || following.length === 0) { setNotifs([]); setNotifUnread(0); return; }
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       try {
         const r = await sbFetch(`ratings?user_id=in.(${following.join(",")})&public=eq.true&rating=not.is.null&order=created_at.desc&limit=20&select=id,user_id,game_id,sport,away_team,home_team,away_score,home_score,rating,created_at,game_date`);
         const rows = await sbJson(r);
@@ -890,10 +894,36 @@ function HomeContent() {
         let seen = "";
         try { seen = localStorage.getItem("nb_notif_seen") || ""; } catch (e) {}
         setNotifUnread(enriched.filter((x) => !seen || x.created_at > seen).length);
+
+        // Fire an OS notification for new activity since we last fired (opt-in)
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          let firedAt = "";
+          try { firedAt = localStorage.getItem("nb_notif_fired") || ""; } catch (e) {}
+          const fresh = enriched.filter((x) => x.created_at > firedAt);
+          if (firedAt && fresh.length > 0) {
+            const top = fresh[0];
+            const who = top.profile?.display_name || (top.profile?.handle ? `@${top.profile.handle}` : "Someone you follow");
+            try {
+              new Notification("🩸 The Nosebleeds", {
+                body: fresh.length === 1 ? `${who} rated ${top.away_team}–${top.home_team}` : `${fresh.length} new ratings from people you follow`,
+                tag: "nb-follows",
+              });
+            } catch (e) {}
+          }
+          if (enriched[0]) { try { localStorage.setItem("nb_notif_fired", enriched[0].created_at); } catch (e) {} }
+        }
       } catch (e) { console.error("Notifications:", e); }
-    })();
-    return () => { cancelled = true; };
+    };
+    load();
+    const timer = setInterval(load, 90000); // poll every 90s while open
+    return () => { cancelled = true; clearInterval(timer); };
   }, [user, following]);
+
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  const enableNotifs = async () => {
+    if (typeof Notification === "undefined") return;
+    try { const p = await Notification.requestPermission(); setNotifPerm(p); } catch (e) {}
+  };
 
   const openNotifs = () => {
     setShowNotifs(true);
@@ -1037,6 +1067,18 @@ function HomeContent() {
   const myRep = repScore({ ratings: ratedLogs.length, reviews: reviewCount, comments: commentsPosted, likes: likesReceived, followers: followerCount });
   const myTier = repTier(myRep);
   const myNextTier = nextTier(myRep);
+
+  // Daily rating streak — consecutive days (ending today or yesterday) with a rating
+  const ratingStreak = (() => {
+    const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    const days = new Set(ratedLogs.map((l) => (l.createdAt || "").slice(0, 10)).filter(Boolean));
+    if (days.size === 0) return 0;
+    const cur = new Date();
+    let streak = 0;
+    if (!days.has(ymd(cur))) { cur.setDate(cur.getDate() - 1); if (!days.has(ymd(cur))) return 0; }
+    while (days.has(ymd(cur))) { streak++; cur.setDate(cur.getDate() - 1); }
+    return streak;
+  })();
 
   const buyPack = async (pack) => {
     if (!user) { router.push("/login"); return; }
@@ -1700,7 +1742,7 @@ function HomeContent() {
                 </div>
                 {/* Name & handle */}
                 <div className="text-center mb-1">
-                  <div className="text-xl font-extrabold text-white">{profile?.display_name || user?.user_metadata?.full_name || "User"}</div>
+                  <div className="text-xl font-extrabold" style={{ color: nameColor(profile?.unlocked) || "#fafafa" }}>{profile?.display_name || user?.user_metadata?.full_name || "User"}</div>
                   {profile?.handle ? (
                     <div className="text-sm text-red-400 mt-0.5">@{profile.handle}</div>
                   ) : (
@@ -1717,7 +1759,12 @@ function HomeContent() {
                 )}
                 {/* Bio */}
                 {profile?.bio && <div className="text-sm text-zinc-400 text-center mb-3 max-w-xs mx-auto">{profile.bio}</div>}
-                {/* Joined date */}
+                {/* Streak + Joined date */}
+                {ratingStreak > 1 && (
+                  <div className="flex justify-center mb-2">
+                    <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">🔥 {ratingStreak}-day rating streak</span>
+                  </div>
+                )}
                 {profile?.created_at && (
                   <div className="text-[10px] text-zinc-600 text-center mb-3">Joined {new Date(profile.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
                 )}
@@ -1891,6 +1938,29 @@ function HomeContent() {
                 })}
               </div>
               <div className="text-[10px] text-zinc-600 mt-2">Unlocked emotes become extra reactions on game comments.</div>
+
+              {/* Name flair */}
+              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Name Flair</div>
+              <div className="flex flex-wrap gap-2">
+                {NAME_FLAIR.map((f) => {
+                  const owned = dropsUnlocked.includes(f.id);
+                  const affordable = dropsBalance >= f.cost;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => buyPack(f)}
+                      disabled={owned || !dropsStoreReady || !affordable || buyingDrops === f.id}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${owned ? "border-current" : "border-zinc-800 bg-zinc-950"}`}
+                      style={{ color: f.color }}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: f.color }} />
+                      {f.name}
+                      <span className="text-[10px] text-zinc-500">{owned ? "✓" : `🩸${f.cost}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Your priciest unlocked flair colors your name everywhere.</div>
               {!dropsStoreReady && (
                 <div className="text-[10px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
               )}
@@ -2434,6 +2504,14 @@ function HomeContent() {
               <button onClick={() => setShowNotifs(false)} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
             </div>
             <div className="p-4">
+              {notifPerm === "default" && (
+                <button onClick={enableNotifs} className="w-full mb-3 py-2.5 rounded-xl bg-red-600/10 border border-red-600/30 text-red-400 text-xs font-bold">
+                  🔔 Enable browser alerts for new activity
+                </button>
+              )}
+              {notifPerm === "denied" && (
+                <div className="mb-3 text-[10px] text-zinc-600 text-center">Browser alerts are blocked — enable them in your browser's site settings.</div>
+              )}
               {notifs.length === 0 ? (
                 <div className="text-center py-10">
                   <div className="text-4xl mb-2">🔕</div>
