@@ -7,6 +7,7 @@ import TennisCard from "@/components/TennisCard";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
 import { DROPS, EMOTE_PACKS, dropsEarned, dropsSpent } from "@/lib/drops";
+import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
@@ -334,7 +335,9 @@ function HomeContent() {
   const [logs, setLogs] = useState([]);
   const [pinned, setPinned] = useState([]);
   const [myPredictions, setMyPredictions] = useState([]);
-  const [likesReceived, setLikesReceived] = useState(0); // reactions on this user's comments (for Drops)
+  const [likesReceived, setLikesReceived] = useState(0); // reactions on this user's comments (Drops + Rep)
+  const [commentsPosted, setCommentsPosted] = useState(0);
+  const [followerCount, setFollowerCount] = useState(0);
   const [buyingDrops, setBuyingDrops] = useState(null);  // pack id currently being purchased
   const [lists, setLists] = useState([]);
   const [listGames, setListGames] = useState({});
@@ -475,7 +478,7 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [tab, user]);
 
-  // Count reactions other people left on this user's comments (Drops earnings)
+  // Reputation/Drops inputs: comments posted, reactions received, followers
   useEffect(() => {
     if (tab !== "profile" || !user) return;
     let cancelled = false;
@@ -484,11 +487,16 @@ function HomeContent() {
         const cRes = await sbFetch(`comments?user_id=eq.${user.id}&select=id`);
         const myComments = await sbJson(cRes);
         const ids = myComments.map((c) => c.id);
-        if (ids.length === 0) { if (!cancelled) setLikesReceived(0); return; }
-        const rRes = await sbFetch(`comment_reactions?comment_id=in.(${ids.join(",")})&select=user_id`);
-        const reacts = await sbJson(rRes);
-        if (!cancelled) setLikesReceived(reacts.filter((r) => r.user_id !== user.id).length);
-      } catch (e) { /* leave at 0 */ }
+        if (!cancelled) setCommentsPosted(ids.length);
+        if (ids.length > 0) {
+          const rRes = await sbFetch(`comment_reactions?comment_id=in.(${ids.join(",")})&select=user_id`);
+          const reacts = await sbJson(rRes);
+          if (!cancelled) setLikesReceived(reacts.filter((r) => r.user_id !== user.id).length);
+        } else if (!cancelled) setLikesReceived(0);
+        const fRes = await sbFetch(`follows?following_id=eq.${user.id}&select=follower_id`);
+        const followers = await sbJson(fRes);
+        if (!cancelled) setFollowerCount(followers.length);
+      } catch (e) { /* leave at defaults */ }
     })();
     return () => { cancelled = true; };
   }, [tab, user]);
@@ -1024,6 +1032,11 @@ function HomeContent() {
   const reviewCount = logs.filter((l) => l.review).length;
   const dropsEarnedTotal = dropsEarned({ ratings: ratedLogs.length, reviews: reviewCount, likes: likesReceived });
   const dropsBalance = dropsEarnedTotal - dropsSpent(dropsUnlocked);
+
+  // Reputation (derived standing). Tier shown on profile + as comment flair.
+  const myRep = repScore({ ratings: ratedLogs.length, reviews: reviewCount, comments: commentsPosted, likes: likesReceived, followers: followerCount });
+  const myTier = repTier(myRep);
+  const myNextTier = nextTier(myRep);
 
   const buyPack = async (pack) => {
     if (!user) { router.push("/login"); return; }
@@ -1798,6 +1811,38 @@ function HomeContent() {
                 </div>
               );
             })()}
+
+            {/* 🏅 Reputation */}
+            <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-white">🏅 Reputation</h3>
+                <span className="text-xs font-extrabold px-2.5 py-1 rounded-full" style={{ background: myTier.color + "22", color: myTier.color }}>{myTier.emoji} {myTier.name}</span>
+              </div>
+              <div className="flex items-end justify-between mb-1">
+                <div className="text-3xl font-extrabold text-white">{myRep.toLocaleString()}<span className="text-sm font-bold text-zinc-500 ml-1">Cred</span></div>
+                {myNextTier && <div className="text-[10px] text-zinc-500 text-right">{(myNextTier.min - myRep).toLocaleString()} to {myNextTier.emoji} {myNextTier.name}</div>}
+              </div>
+              {/* Progress to next tier */}
+              <div className="h-2 rounded-full bg-zinc-950 overflow-hidden mb-3">
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(tierProgress(myRep) * 100)}%`, backgroundColor: myTier.color }} />
+              </div>
+              {/* Breakdown */}
+              <div className="grid grid-cols-5 gap-1.5 text-center">
+                {[
+                  { v: ratedLogs.length, l: "Rated" },
+                  { v: reviewCount, l: "Reviews" },
+                  { v: commentsPosted, l: "Comments" },
+                  { v: likesReceived, l: "Likes" },
+                  { v: followerCount, l: "Followers" },
+                ].map((s) => (
+                  <div key={s.l} className="rounded-lg bg-zinc-950 p-2">
+                    <div className="text-base font-extrabold text-white">{s.v}</div>
+                    <div className="text-[8px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Earn Cred from rating games, writing reviews, and the likes your comments get.</div>
+            </div>
 
             {/* 🩸 Drops — currency + emote store */}
             <div className="rounded-2xl p-4 bg-gradient-to-br from-red-950/40 via-zinc-900 to-zinc-900 border border-zinc-800 mb-4">

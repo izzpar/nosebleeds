@@ -6,6 +6,7 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { emotesFor } from "@/lib/drops";
 import { makeRatingCard } from "@/lib/shareCard";
+import { repScore, repTier } from "@/lib/reputation";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -479,7 +480,7 @@ async function fetchGameForSport(id, sport) {
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "😂", "😡"];
 
-function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply, teamEmoji = "🏈", reactionEmojis = REACTION_EMOJIS }) {
+function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply, teamEmoji = "🏈", reactionEmojis = REACTION_EMOJIS, repMap = {} }) {
   const c = comment;
   const [showPicker, setShowPicker] = useState(false);
   // Group reactions by emoji
@@ -523,6 +524,9 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
             <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400">
               {c.profile?.display_name || (c.profile?.handle ? `@${c.profile.handle}` : "Anonymous")}
             </Link>
+            {repMap[c.user_id] && (
+              <span title={`${repMap[c.user_id].name} · reputation`} className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: repMap[c.user_id].color + "22", color: repMap[c.user_id].color }}>{repMap[c.user_id].emoji} {repMap[c.user_id].name}</span>
+            )}
             {c.profile?.favorite_team && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-600/20 text-red-300 border border-red-600/30">{teamEmoji} {c.profile.favorite_team}</span>
             )}
@@ -611,6 +615,7 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
               isReply={true}
               teamEmoji={teamEmoji}
               reactionEmojis={reactionEmojis}
+              repMap={repMap}
             />
           ))}
         </div>
@@ -731,6 +736,7 @@ export default function GamePage({ params }) {
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
+  const [commentRep, setCommentRep] = useState({}); // user_id -> rep tier (for comment flair)
 
   // Load game
   useEffect(() => {
@@ -967,6 +973,31 @@ export default function GamePage({ params }) {
           });
 
           setComments(cData.map(c => ({ ...c, profile: pmap[c.user_id], reactions: rmap[c.id] || [] })));
+
+          // Compute commenter reputation tiers (flair next to names) in the
+          // background, so comments render immediately and tiers pop in after.
+          (async () => {
+            try {
+              const stats = {};
+              userIds.forEach((u) => { stats[u] = { ratings: 0, reviews: 0, comments: 0, likes: 0, followers: 0 }; });
+              const rt = await sbJson(await sbFetch(`ratings?user_id=in.(${userIds.join(",")})&select=user_id,review,rating`));
+              rt.forEach((r) => { if (!stats[r.user_id]) return; if (r.rating != null) stats[r.user_id].ratings++; if (r.review) stats[r.user_id].reviews++; });
+              const cm = await sbJson(await sbFetch(`comments?user_id=in.(${userIds.join(",")})&select=id,user_id`));
+              const ownerByComment = {};
+              cm.forEach((c) => { if (stats[c.user_id]) { stats[c.user_id].comments++; ownerByComment[c.id] = c.user_id; } });
+              const allCommentIds = Object.keys(ownerByComment);
+              if (allCommentIds.length > 0) {
+                const rx = await sbJson(await sbFetch(`comment_reactions?comment_id=in.(${allCommentIds.join(",")})&select=comment_id,user_id`));
+                rx.forEach((r) => { const owner = ownerByComment[r.comment_id]; if (owner && r.user_id !== owner && stats[owner]) stats[owner].likes++; });
+              }
+              const fl = await sbJson(await sbFetch(`follows?following_id=in.(${userIds.join(",")})&select=following_id`));
+              fl.forEach((f) => { if (stats[f.following_id]) stats[f.following_id].followers++; });
+              if (cancelled) return;
+              const tiers = {};
+              userIds.forEach((u) => { tiers[u] = repTier(repScore(stats[u])); });
+              setCommentRep(tiers);
+            } catch (e) { /* flair is best-effort */ }
+          })();
         } else {
           setComments([]);
         }
@@ -1903,6 +1934,7 @@ export default function GamePage({ params }) {
                       submitting={commentSubmitting}
                       teamEmoji={sportTeamEmoji}
                       reactionEmojis={reactionPalette}
+                      repMap={commentRep}
                     />
                   );
                 })}

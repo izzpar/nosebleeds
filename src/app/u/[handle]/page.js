@@ -3,6 +3,7 @@ import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import Nav from "@/components/Nav";
+import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 
 function rc(r) {
   if (r >= 9) return "#22c55e";
@@ -31,6 +32,8 @@ export default function PublicProfile({ params }) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
+  const [commentsPosted, setCommentsPosted] = useState(0);
+  const [likesReceived, setLikesReceived] = useState(0);
 
   const sbFetch = async (path, options = {}) => {
     const tokenKey = Object.keys(localStorage).find(k => k.includes("auth-token"));
@@ -75,6 +78,19 @@ export default function PublicProfile({ params }) {
         const gcRes = await sbFetch(`follows?follower_id=eq.${profileData.user_id}&select=id`, { headers: { "Prefer": "count=exact" } });
         const gCount = parseInt(gcRes.headers.get("content-range")?.split("/")[1] || "0");
         setFollowingCount(gCount || 0);
+
+        // Reputation inputs: comments posted + reactions received
+        try {
+          const cmRes = await sbFetch(`comments?user_id=eq.${profileData.user_id}&select=id`);
+          const myComments = await cmRes.json();
+          const cIds = Array.isArray(myComments) ? myComments.map((c) => c.id) : [];
+          setCommentsPosted(cIds.length);
+          if (cIds.length > 0) {
+            const rxRes = await sbFetch(`comment_reactions?comment_id=in.(${cIds.join(",")})&select=user_id`);
+            const rx = await rxRes.json();
+            setLikesReceived((Array.isArray(rx) ? rx : []).filter((r) => r.user_id !== profileData.user_id).length);
+          }
+        } catch (e) {}
 
         // Am I following them?
         if (user && user.id !== profileData.user_id) {
@@ -122,6 +138,9 @@ export default function PublicProfile({ params }) {
   const reviews = ratings.filter(r => r.review).length;
   const avgRating = games > 0 ? (ratings.reduce((s, r) => s + parseFloat(r.rating), 0) / games).toFixed(1) : "—";
   const topRated = [...ratings].sort((a, b) => b.rating - a.rating).slice(0, 3);
+  const repPts = repScore({ ratings: games, reviews, comments: commentsPosted, likes: likesReceived, followers: followerCount });
+  const tier = repTier(repPts);
+  const nt = nextTier(repPts);
 
   return (
     <div className="min-h-screen pb-24">
@@ -146,6 +165,9 @@ export default function PublicProfile({ params }) {
           )}
           <div className="text-xl font-extrabold text-white">{profile.display_name || profile.handle}</div>
           <div className="text-sm text-red-400 mt-0.5">@{profile.handle}</div>
+          <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 py-1 rounded-full" style={{ background: tier.color + "22", color: tier.color }}>
+            {tier.emoji} {tier.name} · {repPts.toLocaleString()} Cred
+          </div>
           {profile.bio && <div className="text-sm text-zinc-400 mt-2 max-w-xs mx-auto">{profile.bio}</div>}
 
           {/* Follow stats */}
