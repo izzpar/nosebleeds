@@ -110,13 +110,28 @@ async function loadFullRoster(sport, onProgress) {
 }
 
 
+// Each badge's `ck` receives a context: { logs (rated), reviews, sports (Set),
+// streak, rep, drops, mvpPicks }.
 const BADGES = [
-  { id: "first", n: "First Log", i: "🏈", d: "Log your first game", ck: (l) => l.length >= 1 },
-  { id: "five", n: "Starting 5", i: "⭐", d: "Log 5 games", ck: (l) => l.length >= 5 },
-  { id: "harsh", n: "Harsh Critic", i: "😤", d: "Rate ≤ 2", ck: (l) => l.some((x) => x.rating <= 2) },
-  { id: "fan", n: "True Fan", i: "❤️", d: "Give a 10", ck: (l) => l.some((x) => x.rating >= 10) },
-  { id: "writer", n: "Wordsmith", i: "✍️", d: "3+ reviews", ck: (l) => l.filter((x) => x.review).length >= 3 },
-  { id: "stad", n: "Live", i: "🏟️", d: "Watch at stadium", ck: (l) => l.some((x) => x.watchHow === "🏟️ Stadium") },
+  { id: "first", n: "First Log", i: "📝", d: "Log your first game", ck: (c) => c.logs.length >= 1 },
+  { id: "five", n: "Starting 5", i: "⭐", d: "Log 5 games", ck: (c) => c.logs.length >= 5 },
+  { id: "ten", n: "Double Digits", i: "🔟", d: "Log 10 games", ck: (c) => c.logs.length >= 10 },
+  { id: "fifty", n: "Half Century", i: "🏅", d: "Log 50 games", ck: (c) => c.logs.length >= 50 },
+  { id: "hundred", n: "Centurion", i: "💯", d: "Log 100 games", ck: (c) => c.logs.length >= 100 },
+  { id: "harsh", n: "Harsh Critic", i: "😤", d: "Rate a game ≤ 2", ck: (c) => c.logs.some((x) => x.rating <= 2) },
+  { id: "fan", n: "True Fan", i: "❤️", d: "Give a perfect 10", ck: (c) => c.logs.some((x) => x.rating >= 10) },
+  { id: "coaster", n: "Rollercoaster", i: "🎢", d: "Give both a ≤2 and a ≥9", ck: (c) => c.logs.some((x) => x.rating <= 2) && c.logs.some((x) => x.rating >= 9) },
+  { id: "writer", n: "Wordsmith", i: "✍️", d: "Write 3 reviews", ck: (c) => c.reviews >= 3 },
+  { id: "critic", n: "The Critic", i: "🎙️", d: "Write 15 reviews", ck: (c) => c.reviews >= 15 },
+  { id: "stad", n: "Live & Loud", i: "🏟️", d: "Watch one at the stadium", ck: (c) => c.logs.some((x) => x.watchHow === "🏟️ Stadium") },
+  { id: "scout", n: "Talent Scout", i: "🌟", d: "Pick 5 MVPs", ck: (c) => c.mvpPicks >= 5 },
+  { id: "multi", n: "Multi-Sport", i: "🔀", d: "Rate 2+ sports", ck: (c) => c.sports.size >= 2 },
+  { id: "omni", n: "Omnivore", i: "🏆", d: "Rate all 5 sports", ck: (c) => c.sports.size >= 5 },
+  { id: "streak3", n: "On Fire", i: "🔥", d: "3-day rating streak", ck: (c) => c.streak >= 3 },
+  { id: "streak7", n: "Unmissable", i: "📆", d: "7-day rating streak", ck: (c) => c.streak >= 7 },
+  { id: "vet", n: "Respected", i: "🎯", d: "Reach Veteran reputation", ck: (c) => c.rep >= 200 },
+  { id: "allstar", n: "All-Star", i: "🥇", d: "Reach All-Star reputation", ck: (c) => c.rep >= 500 },
+  { id: "roller", n: "High Roller", i: "🩸", d: "Earn 250 Drops", ck: (c) => c.drops >= 250 },
 ];
 
 const TOP_RATERS = [
@@ -1050,7 +1065,6 @@ function HomeContent() {
   // Sport-filtered logs for the Profile tab (default 'nfl' for rows without sport set)
   const sportLogs = logs.filter(l => (l.sport || "nfl") === profileSport);
   const sportRatedLogs = sportLogs.filter(l => l.rating > 0);
-  const earned = BADGES.filter((b) => b.ck(ratedLogs));
   const gl = (id) => logs.find((l) => l.gameId === id);
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
@@ -1079,6 +1093,18 @@ function HomeContent() {
     while (days.has(ymd(cur))) { streak++; cur.setDate(cur.getDate() - 1); }
     return streak;
   })();
+
+  // Achievements — earned badges, computed from a rich activity context
+  const badgeCtx = {
+    logs: ratedLogs,
+    reviews: reviewCount,
+    sports: new Set(ratedLogs.map((l) => l.sport || "nfl")),
+    streak: ratingStreak,
+    rep: myRep,
+    drops: dropsEarnedTotal,
+    mvpPicks: ratedLogs.filter((l) => l.mvp).length,
+  };
+  const earned = BADGES.filter((b) => b.ck(badgeCtx));
 
   const buyPack = async (pack) => {
     if (!user) { router.push("/login"); return; }
@@ -1431,7 +1457,7 @@ function HomeContent() {
               <div className="mb-5">
                 <h3 className="text-base font-bold text-white mb-3">📋 Community Lists</h3>
                 {communityLists.map(l => (
-                  <Link key={l.id} href={l.profile?.handle ? `/u/${l.profile.handle}` : "#"} className="block">
+                  <Link key={l.id} href={`/list/${l.id}`} className="block">
                     <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
                       <span className="text-2xl">{l.icon || "📋"}</span>
                       <div className="flex-1">
@@ -2009,6 +2035,7 @@ function HomeContent() {
                       <div className="text-sm font-bold text-white">{l.icon} {l.name}</div>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-zinc-600">{games.length} games</span>
+                        <Link href={`/list/${l.id}`} onClick={(e) => e.stopPropagation()} className="text-[11px] text-red-400 hover:text-red-300 font-semibold">Open ↗</Link>
                         <span className="text-zinc-600 text-xs">{selectedListId === l.id ? "▼" : "▶"}</span>
                       </div>
                     </div>
