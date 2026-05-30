@@ -214,6 +214,9 @@ export default function LoginPage() {
         <a href="/" className="block mt-8 text-sm text-zinc-500 hover:text-red-400 transition-colors">
           Browse games without signing in →
         </a>
+        <a href="/about" className="block mt-3 text-xs text-zinc-600 hover:text-red-400 transition-colors">
+          New here? See how it works
+        </a>
       </div>
       <Nav />
     </div>
