@@ -1169,6 +1169,31 @@ function HomeContent() {
           </div>
         )}
 
+        {/* On This Day — your ratings from this date in past years */}
+        {tab === "games" && onThisDay.length > 0 && (
+          <div className="rounded-2xl p-3 mb-3 bg-zinc-900 border border-zinc-800">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">📆</span>
+              <span className="text-sm font-bold text-white">On This Day</span>
+            </div>
+            <div className="space-y-1.5">
+              {onThisDay.slice(0, 3).map((l) => {
+                const yrsAgo = new Date().getFullYear() - new Date(l.createdAt).getFullYear();
+                return (
+                  <Link key={l.gameId} href={gameHref(l.gameId, l.sport, l.gameDate)} className="flex items-center gap-2.5 p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors">
+                    <span className="w-9 h-9 flex items-center justify-center rounded-lg text-white font-extrabold text-sm shrink-0" style={{ backgroundColor: rc(l.rating) }}>{l.rating}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-white truncate">{l.awayTeam} {l.awayScore} — {l.homeTeam} {l.homeScore}</div>
+                      <div className="text-[10px] text-zinc-500">{sportEmoji(l.sport)} {yrsAgo} {yrsAgo === 1 ? "year" : "years"} ago today</div>
+                    </div>
+                    <span className="text-zinc-600 text-xs shrink-0">→</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Players banner — Games tab (team sports only; tennis has no roster) */}
         {tab === "games" && sport !== "tennis" && (
           <button onClick={() => setTab("players")} className="block w-full mb-3 text-left">
@@ -1709,6 +1734,64 @@ function HomeContent() {
                 <button onClick={() => { setSport(profileSport); setTab("games"); }} className="mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
               </div>
             )}
+            {/* Activity heatmap — last 26 weeks, colored by that day's avg rating */}
+            {sportRatedLogs.length > 0 && (() => {
+              const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+              const byDay = {};
+              sportRatedLogs.forEach((l) => {
+                const d = (l.createdAt || "").slice(0, 10);
+                if (!d) return;
+                if (!byDay[d]) byDay[d] = { sum: 0, n: 0 };
+                byDay[d].sum += l.rating; byDay[d].n++;
+              });
+              const WEEKS = 26;
+              const today = new Date();
+              // Start on the Sunday WEEKS-1 weeks before this week
+              const start = new Date(today);
+              start.setDate(start.getDate() - start.getDay() - (WEEKS - 1) * 7);
+              const cols = [];
+              let monthMarks = [];
+              for (let w = 0; w < WEEKS; w++) {
+                const col = [];
+                for (let dow = 0; dow < 7; dow++) {
+                  const cell = new Date(start);
+                  cell.setDate(cell.getDate() + w * 7 + dow);
+                  const key = ymd(cell);
+                  const day = byDay[key];
+                  col.push({ key, future: cell > today, avg: day ? day.sum / day.n : null, n: day ? day.n : 0 });
+                  if (dow === 0) monthMarks.push(cell.getDate() <= 7 ? cell.toLocaleDateString("en-US", { month: "short" }) : "");
+                }
+                cols.push(col);
+              }
+              const activeDays = Object.keys(byDay).length;
+              return (
+                <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-white">📅 Activity</h3>
+                    <span className="text-[10px] text-zinc-500">{activeDays} active {activeDays === 1 ? "day" : "days"} · 26 wks</span>
+                  </div>
+                  <div className="overflow-x-auto pb-1">
+                    <div className="flex gap-[3px] min-w-max">
+                      {cols.map((col, wi) => (
+                        <div key={wi} className="flex flex-col gap-[3px]">
+                          {col.map((cell) => (
+                            <div key={cell.key} title={cell.n > 0 ? `${cell.key}: ${cell.n} rated · avg ${cell.avg.toFixed(1)}` : cell.key}
+                              className="w-[10px] h-[10px] rounded-[2px]"
+                              style={{ backgroundColor: cell.future ? "transparent" : cell.avg != null ? rc(cell.avg) : "#27272a" }} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5 mt-2 text-[9px] text-zinc-600">
+                    <span>Low</span>
+                    {[2, 4, 6, 8, 10].map((r) => <span key={r} className="w-[10px] h-[10px] rounded-[2px]" style={{ backgroundColor: rc(r) }} />)}
+                    <span>High</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {[...sportRatedLogs].sort((a, b) => (b.season || 0) - (a.season || 0) || (b.week || 0) - (a.week || 0)).map((l) => {
               const g = games.find((x) => x.id === l.gameId);
               return (
