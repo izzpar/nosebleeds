@@ -1070,6 +1070,41 @@ function HomeContent() {
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
 
+  // Quick-rate from a game card: upsert the rating and update local logs.
+  const quickRate = async (g, rating) => {
+    if (!user) { router.push("/login"); return; }
+    const existing = gl(g.id);
+    const base = {
+      game_id: g.id, user_id: user.id, sport: g.sport,
+      away_team: g.away.abbr, home_team: g.home.abbr,
+      away_score: g.away.score, home_score: g.home.score,
+      season: g.season, week: g.week,
+      game_date: g.gameDate || null,
+      rating,
+    };
+    try {
+      const rows = await sbJson(await sbFetch(`ratings?game_id=eq.${g.id}&user_id=eq.${user.id}&select=id`));
+      if (rows.length > 0) {
+        await sbFetch(`ratings?id=eq.${rows[0].id}`, { method: "PATCH", body: JSON.stringify({ rating }) });
+      } else {
+        await sbFetch(`ratings`, { method: "POST", body: JSON.stringify(base) });
+      }
+      // Update local logs so the card + diary reflect it immediately
+      setLogs((prev) => {
+        if (prev.some((l) => l.gameId === g.id)) {
+          return prev.map((l) => l.gameId === g.id ? { ...l, rating } : l);
+        }
+        return [...prev, {
+          gameId: g.id, sport: g.sport, awayTeam: g.away.abbr, homeTeam: g.home.abbr,
+          awayScore: g.away.score, homeScore: g.home.score, favorited: false, pinned: false,
+          rating, refRating: 5, entRating: 7, mvp: "", letdown: "", watchHow: "", worthIt: "",
+          review: "", week: g.week || 0, season: g.season || 0, gameDate: g.gameDate || "",
+          createdAt: new Date().toISOString(),
+        }];
+      });
+    } catch (e) { console.error("Quick rate:", e); }
+  };
+
   // 🩸 Drops currency — earned from activity, spent on unlocked emote packs.
   // `unlocked` only exists once the migration has run; absence = store dormant.
   const dropsUnlocked = profile?.unlocked || [];
@@ -1384,7 +1419,9 @@ function HomeContent() {
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
             {filtered.map((g) => g.sport === "tennis"
               ? <TennisCard key={g.id} match={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />
-              : <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />)}
+              : <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)}
+                  myRating={user ? (gl(g.id)?.rating > 0 ? gl(g.id).rating : null) : null}
+                  onQuickRate={user ? quickRate : null} />)}
           </div>
         )}
 
