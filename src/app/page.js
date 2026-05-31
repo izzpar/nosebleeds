@@ -3,36 +3,75 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
+import TennisCard from "@/components/TennisCard";
+import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
+import { DROPS, EMOTE_PACKS, NAME_FLAIR, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
+import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
   nfl: "football/nfl",
   mlb: "baseball/mlb",
+  nba: "basketball/nba",
+  nhl: "hockey/nhl",
 };
 const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy for any remaining refs
+
+// Sport switcher config (also drives diary/profile toggles). Order = display order.
+// `team: false` sports (tennis) are player-based — no favorite-team picker, no
+// team game page; they route to their own detail flow.
+const SPORTS = [
+  { id: "nfl", emoji: "🏈", label: "NFL", team: true },
+  { id: "mlb", emoji: "⚾", label: "MLB", team: true },
+  { id: "nba", emoji: "🏀", label: "NBA", team: true },
+  { id: "nhl", emoji: "🏒", label: "NHL", team: true },
+  { id: "tennis", emoji: "🎾", label: "Tennis", team: false },
+];
+const FAV_SPORTS = SPORTS.filter((s) => s.team); // sports that have favorite-team pickers
+const VALID_SPORTS = SPORTS.map((s) => s.id);
+// NFL is week/season based; everyone else is fetched by calendar date.
+const isDateSport = (s) => s !== "nfl";
+const sportLabel = (s) => SPORTS.find((x) => x.id === s)?.label || "NFL";
+const sportEmoji = (s) => SPORTS.find((x) => x.id === s)?.emoji || "🏈";
+// Profiles store the NFL favorite as `favorite_team`; others as `favorite_team_<sport>`.
+const favKey = (s) => (s === "nfl" ? "favorite_team" : `favorite_team_${s}`);
+// Game-detail href. Tennis has its own player-based detail page; team sports
+// carry ?sport so the shared game page hits the right ESPN endpoint.
+const gameHref = (gameId, gameSport, date) =>
+  gameSport === "tennis" ? `/tennis/${gameId}${date ? `?d=${date}` : ""}`
+    : gameSport && gameSport !== "nfl" ? `/game/${gameId}?sport=${gameSport}`
+    : `/game/${gameId}`;
+
 const ALL_TEAMS = ["ARI","ATL","BAL","BUF","CAR","CHI","CIN","CLE","DAL","DEN","DET","GB","HOU","IND","JAX","KC","LAC","LAR","LV","MIA","MIN","NE","NO","NYG","NYJ","PHI","PIT","SEA","SF","TB","TEN","WSH"];
 const ALL_MLB_TEAMS = ["ARI","ATL","BAL","BOS","CHC","CHW","CIN","CLE","COL","DET","HOU","KC","LAA","LAD","MIA","MIL","MIN","NYM","NYY","OAK","PHI","PIT","SD","SEA","SF","STL","TB","TEX","TOR","WSH"];
-const TEAMS_BY_SPORT = { nfl: ALL_TEAMS, mlb: ALL_MLB_TEAMS };
+const ALL_NBA_TEAMS = ["ATL","BKN","BOS","CHA","CHI","CLE","DAL","DEN","DET","GS","HOU","IND","LAC","LAL","MEM","MIA","MIL","MIN","NO","NY","OKC","ORL","PHI","PHX","POR","SAC","SA","TOR","UTAH","WSH"];
+const ALL_NHL_TEAMS = ["ANA","BOS","BUF","CAR","CBJ","CGY","CHI","COL","DAL","DET","EDM","FLA","LA","MIN","MTL","NJ","NSH","NYI","NYR","OTT","PHI","PIT","SEA","SJ","STL","TB","TOR","UTAH","VAN","VGK","WPG","WSH"];
+const TEAMS_BY_SPORT = { nfl: ALL_TEAMS, mlb: ALL_MLB_TEAMS, nba: ALL_NBA_TEAMS, nhl: ALL_NHL_TEAMS };
 const TEAM_NAMES = {
   nfl: { ARI:"Cardinals", ATL:"Falcons", BAL:"Ravens", BUF:"Bills", CAR:"Panthers", CHI:"Bears", CIN:"Bengals", CLE:"Browns", DAL:"Cowboys", DEN:"Broncos", DET:"Lions", GB:"Packers", HOU:"Texans", IND:"Colts", JAX:"Jaguars", KC:"Chiefs", LAC:"Chargers", LAR:"Rams", LV:"Raiders", MIA:"Dolphins", MIN:"Vikings", NE:"Patriots", NO:"Saints", NYG:"Giants", NYJ:"Jets", PHI:"Eagles", PIT:"Steelers", SEA:"Seahawks", SF:"49ers", TB:"Buccaneers", TEN:"Titans", WSH:"Commanders" },
   mlb: { ARI:"D-backs", ATL:"Braves", BAL:"Orioles", BOS:"Red Sox", CHC:"Cubs", CHW:"White Sox", CIN:"Reds", CLE:"Guardians", COL:"Rockies", DET:"Tigers", HOU:"Astros", KC:"Royals", LAA:"Angels", LAD:"Dodgers", MIA:"Marlins", MIL:"Brewers", MIN:"Twins", NYM:"Mets", NYY:"Yankees", OAK:"Athletics", PHI:"Phillies", PIT:"Pirates", SD:"Padres", SEA:"Mariners", SF:"Giants", STL:"Cardinals", TB:"Rays", TEX:"Rangers", TOR:"Blue Jays", WSH:"Nationals" },
+  nba: { ATL:"Hawks", BKN:"Nets", BOS:"Celtics", CHA:"Hornets", CHI:"Bulls", CLE:"Cavaliers", DAL:"Mavericks", DEN:"Nuggets", DET:"Pistons", GS:"Warriors", HOU:"Rockets", IND:"Pacers", LAC:"Clippers", LAL:"Lakers", MEM:"Grizzlies", MIA:"Heat", MIL:"Bucks", MIN:"Timberwolves", NO:"Pelicans", NY:"Knicks", OKC:"Thunder", ORL:"Magic", PHI:"76ers", PHX:"Suns", POR:"Trail Blazers", SAC:"Kings", SA:"Spurs", TOR:"Raptors", UTAH:"Jazz", WSH:"Wizards" },
+  nhl: { ANA:"Ducks", BOS:"Bruins", BUF:"Sabres", CAR:"Hurricanes", CBJ:"Blue Jackets", CGY:"Flames", CHI:"Blackhawks", COL:"Avalanche", DAL:"Stars", DET:"Red Wings", EDM:"Oilers", FLA:"Panthers", LA:"Kings", MIN:"Wild", MTL:"Canadiens", NJ:"Devils", NSH:"Predators", NYI:"Islanders", NYR:"Rangers", OTT:"Senators", PHI:"Flyers", PIT:"Penguins", SEA:"Kraken", SJ:"Sharks", STL:"Blues", TB:"Lightning", TOR:"Maple Leafs", UTAH:"Mammoth", VAN:"Canucks", VGK:"Golden Knights", WPG:"Jets", WSH:"Capitals" },
 };
 const teamName = (sport, abbr) => TEAM_NAMES[sport]?.[abbr] || abbr;
 
-// ESPN team IDs (stable) — used to fetch full league rosters for the Players tab
+// ESPN team IDs (stable) — used to fetch full league rosters for the Players tab.
+// The league /teams list endpoint is CORS-blocked in the browser, so IDs are hardcoded.
 const ESPN_TEAM_IDS = {
   nfl: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","33","34"],
   mlb: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"],
+  nba: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"],
+  nhl: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","25","26","27","28","29","30","37","124292","129764"],
 };
 
 // Module-level roster cache so the Players tab only fetches once per session
-const rosterCache = { nfl: null, mlb: null };
+const rosterCache = { nfl: null, mlb: null, nba: null, nhl: null };
 
 async function loadFullRoster(sport, onProgress) {
   if (rosterCache[sport]) return rosterCache[sport];
-  const sportPath = sport === "mlb" ? "baseball/mlb" : "football/nfl";
+  const sportPath = SPORT_PATHS[sport] || SPORT_PATHS.nfl;
   const ids = ESPN_TEAM_IDS[sport] || [];
   const players = [];
   const seen = new Set();
@@ -43,18 +82,22 @@ async function loadFullRoster(sport, onProgress) {
       if (r.ok) {
         const d = await r.json();
         const abbr = d.team?.abbreviation || "";
-        (d.athletes || []).forEach((group) => {
-          (group.items || []).forEach((p) => {
-            const name = p.displayName;
-            if (!name || seen.has(name)) return;
-            seen.add(name);
-            players.push({
-              id: p.id || "",
-              name,
-              team: abbr,
-              position: p.position?.abbreviation || "",
-              headshot: p.headshot?.href || "",
-            });
+        // Grouped (NFL/MLB/NHL) vs flat (NBA) roster shapes — flatten both.
+        const athletes = [];
+        (d.athletes || []).forEach((entry) => {
+          if (entry && Array.isArray(entry.items)) athletes.push(...entry.items);
+          else if (entry && entry.displayName) athletes.push(entry);
+        });
+        athletes.forEach((p) => {
+          const name = p.displayName;
+          if (!name || seen.has(name)) return;
+          seen.add(name);
+          players.push({
+            id: p.id || "",
+            name,
+            team: abbr,
+            position: p.position?.abbreviation || "",
+            headshot: p.headshot?.href || "",
           });
         });
       }
@@ -67,13 +110,28 @@ async function loadFullRoster(sport, onProgress) {
 }
 
 
+// Each badge's `ck` receives a context: { logs (rated), reviews, sports (Set),
+// streak, rep, drops, mvpPicks }.
 const BADGES = [
-  { id: "first", n: "First Log", i: "🏈", d: "Log your first game", ck: (l) => l.length >= 1 },
-  { id: "five", n: "Starting 5", i: "⭐", d: "Log 5 games", ck: (l) => l.length >= 5 },
-  { id: "harsh", n: "Harsh Critic", i: "😤", d: "Rate ≤ 2", ck: (l) => l.some((x) => x.rating <= 2) },
-  { id: "fan", n: "True Fan", i: "❤️", d: "Give a 10", ck: (l) => l.some((x) => x.rating >= 10) },
-  { id: "writer", n: "Wordsmith", i: "✍️", d: "3+ reviews", ck: (l) => l.filter((x) => x.review).length >= 3 },
-  { id: "stad", n: "Live", i: "🏟️", d: "Watch at stadium", ck: (l) => l.some((x) => x.watchHow === "🏟️ Stadium") },
+  { id: "first", n: "First Log", i: "📝", d: "Log your first game", ck: (c) => c.logs.length >= 1 },
+  { id: "five", n: "Starting 5", i: "⭐", d: "Log 5 games", ck: (c) => c.logs.length >= 5 },
+  { id: "ten", n: "Double Digits", i: "🔟", d: "Log 10 games", ck: (c) => c.logs.length >= 10 },
+  { id: "fifty", n: "Half Century", i: "🏅", d: "Log 50 games", ck: (c) => c.logs.length >= 50 },
+  { id: "hundred", n: "Centurion", i: "💯", d: "Log 100 games", ck: (c) => c.logs.length >= 100 },
+  { id: "harsh", n: "Harsh Critic", i: "😤", d: "Rate a game ≤ 2", ck: (c) => c.logs.some((x) => x.rating <= 2) },
+  { id: "fan", n: "True Fan", i: "❤️", d: "Give a perfect 10", ck: (c) => c.logs.some((x) => x.rating >= 10) },
+  { id: "coaster", n: "Rollercoaster", i: "🎢", d: "Give both a ≤2 and a ≥9", ck: (c) => c.logs.some((x) => x.rating <= 2) && c.logs.some((x) => x.rating >= 9) },
+  { id: "writer", n: "Wordsmith", i: "✍️", d: "Write 3 reviews", ck: (c) => c.reviews >= 3 },
+  { id: "critic", n: "The Critic", i: "🎙️", d: "Write 15 reviews", ck: (c) => c.reviews >= 15 },
+  { id: "stad", n: "Live & Loud", i: "🏟️", d: "Watch one at the stadium", ck: (c) => c.logs.some((x) => x.watchHow === "🏟️ Stadium") },
+  { id: "scout", n: "Talent Scout", i: "🌟", d: "Pick 5 MVPs", ck: (c) => c.mvpPicks >= 5 },
+  { id: "multi", n: "Multi-Sport", i: "🔀", d: "Rate 2+ sports", ck: (c) => c.sports.size >= 2 },
+  { id: "omni", n: "Omnivore", i: "🏆", d: "Rate all 5 sports", ck: (c) => c.sports.size >= 5 },
+  { id: "streak3", n: "On Fire", i: "🔥", d: "3-day rating streak", ck: (c) => c.streak >= 3 },
+  { id: "streak7", n: "Unmissable", i: "📆", d: "7-day rating streak", ck: (c) => c.streak >= 7 },
+  { id: "vet", n: "Respected", i: "🎯", d: "Reach Veteran reputation", ck: (c) => c.rep >= 200 },
+  { id: "allstar", n: "All-Star", i: "🥇", d: "Reach All-Star reputation", ck: (c) => c.rep >= 500 },
+  { id: "roller", n: "High Roller", i: "🩸", d: "Earn 250 Drops", ck: (c) => c.drops >= 250 },
 ];
 
 const TOP_RATERS = [
@@ -192,12 +250,19 @@ async function fetchNflWeek(year, week) {
   } catch (e) { console.error(e); return []; }
 }
 
-async function fetchMlbDate(dateStr) {
+// Period count that signals overtime/extras, per date-based sport
+// (MLB = 9 innings, NBA = 4 quarters, NHL = 3 periods)
+const DATE_SPORT_OT = { mlb: 9, nba: 4, nhl: 3 };
+
+// Generic calendar-date scoreboard fetch — shared by MLB / NBA / NHL.
+async function fetchSportDate(sport, dateStr) {
   try {
+    const sportPath = SPORT_PATHS[sport] || SPORT_PATHS.mlb;
     // dateStr is YYYY-MM-DD; ESPN wants YYYYMMDD
     const dateParam = dateStr.replace(/-/g, "");
-    const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.mlb}/scoreboard?dates=${dateParam}`);
+    const r = await fetch(`${ESPN_BASE}/${sportPath}/scoreboard?dates=${dateParam}`);
     const d = await r.json();
+    const otThreshold = DATE_SPORT_OT[sport] ?? 4;
     return (d.events || []).map((e) => {
       const c = e.competitions?.[0];
       if (!c) return null;
@@ -210,7 +275,7 @@ async function fetchMlbDate(dateStr) {
       const dateStrLocal = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
       const timeStr = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       return {
-        id: e.id, sport: "mlb",
+        id: e.id, sport,
         // Synthesize "week" as day-of-year so existing sort logic still works
         week: Math.floor((dt - new Date(dt.getFullYear(), 0, 0)) / 86400000),
         season: dt.getFullYear(),
@@ -222,8 +287,7 @@ async function fetchMlbDate(dateStr) {
         isPre: st === "STATUS_SCHEDULED", isFinal: st === "STATUS_FINAL",
         home: { name: ho.team.displayName, abbr: ho.team.abbreviation, color: "#" + (ho.team.color || "333"), logo: ho.team.logo, record: ho.records?.[0]?.summary || "", score: parseInt(ho.score) || 0 },
         away: { name: aw.team.displayName, abbr: aw.team.abbreviation, color: "#" + (aw.team.color || "333"), logo: aw.team.logo, record: aw.records?.[0]?.summary || "", score: parseInt(aw.score) || 0 },
-        // MLB linescores are innings (usually 9, more for extras)
-        ot: (ho.linescores || []).length > 9,
+        ot: (ho.linescores || []).length > otThreshold,
         diff: Math.abs((parseInt(ho.score) || 0) - (parseInt(aw.score) || 0)),
         total: (parseInt(ho.score) || 0) + (parseInt(aw.score) || 0),
       };
@@ -238,11 +302,11 @@ function HomeContent() {
   const { user, profile, signOut, refreshProfile, loading: authLoading } = useAuth();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sport, setSportInternal] = useState("nfl"); // nfl | mlb
+  const [sport, setSportInternal] = useState("nfl"); // nfl | mlb | nba | nhl
   const [week, setWeek] = useState(18);
   const [year, setYear] = useState(2024);
-  // MLB uses a date string YYYY-MM-DD instead of week/year
-  const [mlbDate, setMlbDate] = useState(() => {
+  // Date-based sports (MLB/NBA/NHL) use a date string YYYY-MM-DD instead of week/year
+  const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   });
@@ -257,11 +321,19 @@ function HomeContent() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("nb_sport");
-      if (saved === "mlb" || saved === "nfl") { setSportInternal(saved); setProfileSport(saved); }
+      if (VALID_SPORTS.includes(saved)) { setSportInternal(saved); setProfileSport(saved); }
     } catch (e) {}
   }, []);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
+  // Onboarding: prompt new users (no favorite teams) to set up their profile
+  const [onboardDismissed, setOnboardDismissed] = useState(true);
+  useEffect(() => { try { setOnboardDismissed(localStorage.getItem("nb_onboard_done") === "1"); } catch (e) {} }, []);
+  const dismissOnboard = () => { setOnboardDismissed(true); try { localStorage.setItem("nb_onboard_done", "1"); } catch (e) {} };
+  // Notifications: new ratings from people you follow since your last visit
+  const [notifs, setNotifs] = useState([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") || "games";
@@ -278,6 +350,10 @@ function HomeContent() {
   const [logs, setLogs] = useState([]);
   const [pinned, setPinned] = useState([]);
   const [myPredictions, setMyPredictions] = useState([]);
+  const [likesReceived, setLikesReceived] = useState(0); // reactions on this user's comments (Drops + Rep)
+  const [commentsPosted, setCommentsPosted] = useState(0);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [buyingDrops, setBuyingDrops] = useState(null);  // pack id currently being purchased
   const [lists, setLists] = useState([]);
   const [listGames, setListGames] = useState({});
   const [selectedListId, setSelectedListId] = useState(null);
@@ -286,7 +362,8 @@ function HomeContent() {
   const [editHandle, setEditHandle] = useState("");
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editBio, setEditBio] = useState("");
-  const [editTeam, setEditTeam] = useState("");
+  // Favorite team per sport while editing: { nfl, mlb, nba, nhl } → abbr
+  const [editTeams, setEditTeams] = useState({});
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(null);
@@ -294,7 +371,7 @@ function HomeContent() {
   const [barDrilldown, setBarDrilldown] = useState(null); // { rating: int, games: [] }
   // Profile tab: which sport's stats to show (defaults to global sport)
   const [profileSport, setProfileSport] = useState("nfl");
-  const [editTeamMlb, setEditTeamMlb] = useState("");
+  const [wrappedSeason, setWrappedSeason] = useState("all"); // Season Wrapped drill-in
   const [handleError, setHandleError] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
   const [newListName, setNewListName] = useState("");
@@ -302,6 +379,7 @@ function HomeContent() {
   const [topRaters, setTopRaters] = useState([]);
   const [hotGames, setHotGames] = useState([]);
   const [topRatedGames, setTopRatedGames] = useState([]);
+  const [divisiveGames, setDivisiveGames] = useState([]);
   const [communityLists, setCommunityLists] = useState([]);
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [playersList, setPlayersList] = useState([]);
@@ -374,16 +452,21 @@ function HomeContent() {
         const data = await fetchNflWeek(year, week);
         if (cancelled) return;
         setGames((prev) => [...prev.filter((g) => !(g.sport === "nfl" && g.week === week && g.season === year)), ...data]);
-      } else if (sport === "mlb") {
-        const data = await fetchMlbDate(mlbDate);
+      } else if (sport === "tennis") {
+        const data = await fetchTennisMatches(selectedDate);
         if (cancelled) return;
-        setGames((prev) => [...prev.filter((g) => !(g.sport === "mlb" && g.gameDate === mlbDate)), ...data]);
+        setGames((prev) => [...prev.filter((g) => !(g.sport === "tennis" && g.gameDate === selectedDate)), ...data]);
+      } else {
+        // MLB / NBA / NHL — calendar-date based
+        const data = await fetchSportDate(sport, selectedDate);
+        if (cancelled) return;
+        setGames((prev) => [...prev.filter((g) => !(g.sport === sport && g.gameDate === selectedDate)), ...data]);
       }
       setLoading(false);
     }
     load();
     return () => { cancelled = true; };
-  }, [sport, week, year, mlbDate]);
+  }, [sport, week, year, selectedDate]);
 
   useEffect(() => {
     const urlTab = searchParams.get("tab");
@@ -411,13 +494,38 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [tab, user]);
 
+  // Reputation/Drops inputs: comments posted, reactions received, followers
+  useEffect(() => {
+    if (tab !== "profile" || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cRes = await sbFetch(`comments?user_id=eq.${user.id}&select=id`);
+        const myComments = await sbJson(cRes);
+        const ids = myComments.map((c) => c.id);
+        if (!cancelled) setCommentsPosted(ids.length);
+        if (ids.length > 0) {
+          const rRes = await sbFetch(`comment_reactions?comment_id=in.(${ids.join(",")})&select=user_id`);
+          const reacts = await sbJson(rRes);
+          if (!cancelled) setLikesReceived(reacts.filter((r) => r.user_id !== user.id).length);
+        } else if (!cancelled) setLikesReceived(0);
+        const fRes = await sbFetch(`follows?following_id=eq.${user.id}&select=follower_id`);
+        const followers = await sbJson(fRes);
+        if (!cancelled) setFollowerCount(followers.length);
+      } catch (e) { /* leave at defaults */ }
+    })();
+    return () => { cancelled = true; };
+  }, [tab, user]);
+
+  // Build the per-sport favorite-team map from a profile row
+  const teamsFromProfile = (p) => Object.fromEntries(FAV_SPORTS.map((s) => [s.id, p?.[favKey(s.id)] || ""]));
+
   useEffect(() => {
     if (profile) {
       setEditHandle(profile.handle || "");
       setEditDisplayName(profile.display_name || "");
       setEditBio(profile.bio || "");
-      setEditTeam(profile.favorite_team || "");
-      setEditTeamMlb(profile.favorite_team_mlb || "");
+      setEditTeams(teamsFromProfile(profile));
       setEditAvatarUrl(profile.avatar_url || "");
     }
   }, [profile]);
@@ -428,8 +536,7 @@ function HomeContent() {
       setEditHandle(profile.handle || "");
       setEditDisplayName(profile.display_name || "");
       setEditBio(profile.bio || "");
-      setEditTeam(profile.favorite_team || "");
-      setEditTeamMlb(profile.favorite_team_mlb || "");
+      setEditTeams(teamsFromProfile(profile));
       setEditAvatarUrl(profile.avatar_url || "");
       setAvatarPreview(null);
       setHandleError("");
@@ -531,6 +638,8 @@ function HomeContent() {
             review: r.review || "",
             week: r.week || 0,
             season: r.season || 0,
+            gameDate: r.game_date || "",
+            createdAt: r.created_at || "",
           }));
           setLogs(mapped);
           setPinned(mapped.filter(l => l.pinned).map(l => l.gameId));
@@ -610,16 +719,27 @@ function HomeContent() {
             game_id: gid, count: d.count, avg: (d.sum / d.count).toFixed(1), sample: d.sample,
           })).sort((a, b) => b.count - a.count).slice(0, 5));
 
-          // Highest Rated Of All Time
+          // Highest Rated Of All Time + Most Divisive (rating spread)
           const byGameAll = {};
           allRatings.forEach(r => {
-            if (!byGameAll[r.game_id]) byGameAll[r.game_id] = { count: 0, sum: 0, sample: r };
+            if (!byGameAll[r.game_id]) byGameAll[r.game_id] = { count: 0, sum: 0, vals: [], sample: r };
             byGameAll[r.game_id].count++;
             byGameAll[r.game_id].sum += parseFloat(r.rating);
+            byGameAll[r.game_id].vals.push(parseFloat(r.rating));
           });
           setTopRatedGames(Object.entries(byGameAll).map(([gid, d]) => ({
             game_id: gid, count: d.count, avg: (d.sum / d.count).toFixed(1), sample: d.sample,
           })).sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg)).slice(0, 5));
+
+          // Most Divisive — highest standard deviation among games with 3+ raters
+          const stdev = (vals, mean) => Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length);
+          setDivisiveGames(Object.entries(byGameAll)
+            .filter(([, d]) => d.count >= 3)
+            .map(([gid, d]) => { const avg = d.sum / d.count; return { game_id: gid, count: d.count, avg: avg.toFixed(1), spread: stdev(d.vals, avg), sample: d.sample }; })
+            .sort((a, b) => b.spread - a.spread)
+            .slice(0, 5));
+        } else {
+          setDivisiveGames([]);
         }
 
         // Community Lists
@@ -767,6 +887,66 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [user]);
 
+  // Notifications — recent ratings from people you follow. Polls while the app
+  // is open and fires a native browser notification for genuinely-new activity
+  // (if the user opted in). Background push when the app is CLOSED needs server
+  // infra (VAPID keys) — see notes.
+  useEffect(() => {
+    if (!user || following.length === 0) { setNotifs([]); setNotifUnread(0); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await sbFetch(`ratings?user_id=in.(${following.join(",")})&public=eq.true&rating=not.is.null&order=created_at.desc&limit=20&select=id,user_id,game_id,sport,away_team,home_team,away_score,home_score,rating,created_at,game_date`);
+        const rows = await sbJson(r);
+        if (cancelled) return;
+        const uids = [...new Set(rows.map((x) => x.user_id))];
+        let profs = [];
+        if (uids.length) profs = await sbJson(await sbFetch(`profiles?user_id=in.(${uids.join(",")})&select=user_id,handle,display_name,avatar_url`));
+        const pmap = {};
+        profs.forEach((p) => { pmap[p.user_id] = p; });
+        const enriched = rows.map((x) => ({ ...x, profile: pmap[x.user_id] }));
+        if (cancelled) return;
+        setNotifs(enriched);
+        let seen = "";
+        try { seen = localStorage.getItem("nb_notif_seen") || ""; } catch (e) {}
+        setNotifUnread(enriched.filter((x) => !seen || x.created_at > seen).length);
+
+        // Fire an OS notification for new activity since we last fired (opt-in)
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          let firedAt = "";
+          try { firedAt = localStorage.getItem("nb_notif_fired") || ""; } catch (e) {}
+          const fresh = enriched.filter((x) => x.created_at > firedAt);
+          if (firedAt && fresh.length > 0) {
+            const top = fresh[0];
+            const who = top.profile?.display_name || (top.profile?.handle ? `@${top.profile.handle}` : "Someone you follow");
+            try {
+              new Notification("🩸 The Nosebleeds", {
+                body: fresh.length === 1 ? `${who} rated ${top.away_team}–${top.home_team}` : `${fresh.length} new ratings from people you follow`,
+                tag: "nb-follows",
+              });
+            } catch (e) {}
+          }
+          if (enriched[0]) { try { localStorage.setItem("nb_notif_fired", enriched[0].created_at); } catch (e) {} }
+        }
+      } catch (e) { console.error("Notifications:", e); }
+    };
+    load();
+    const timer = setInterval(load, 90000); // poll every 90s while open
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [user, following]);
+
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  const enableNotifs = async () => {
+    if (typeof Notification === "undefined") return;
+    try { const p = await Notification.requestPermission(); setNotifPerm(p); } catch (e) {}
+  };
+
+  const openNotifs = () => {
+    setShowNotifs(true);
+    setNotifUnread(0);
+    try { localStorage.setItem("nb_notif_seen", new Date().toISOString()); } catch (e) {}
+  };
+
   // Load Friends tab data
   useEffect(() => {
     if (tab !== "friends" || !user) return;
@@ -847,51 +1027,108 @@ function HomeContent() {
   };
 
   // Game-detail href that carries sport so the page hits the right ESPN endpoint
-  const gh = (gameId, gameSport) => {
-    const s = gameSport || sport;
-    return s === "mlb" ? `/game/${gameId}?sport=mlb` : `/game/${gameId}`;
-  };
+  const gh = (gameId, gameSport) => gameHref(gameId, gameSport || sport);
+
+  // Is this game in the currently-selected scope (NFL week/season, or a date)?
+  const inCurrentScope = (x) => sport === "nfl"
+    ? (x.sport === "nfl" && x.week === week && x.season === year)
+    : (x.sport === sport && x.gameDate === selectedDate);
 
   const filtered = useMemo(() => {
-    let g = games.filter((x) => sport === "nfl"
-      ? (x.sport === "nfl" && x.week === week && x.season === year)
-      : (x.sport === "mlb" && x.gameDate === mlbDate)
-    );
+    let g = games.filter(inCurrentScope);
     if (search) {
       const s = search.toLowerCase();
-      g = g.filter((x) => x.away.name.toLowerCase().includes(s) || x.home.name.toLowerCase().includes(s) || x.away.abbr.toLowerCase().includes(s) || x.home.abbr.toLowerCase().includes(s));
+      g = g.filter((x) => x.sport === "tennis"
+        ? `${x.p1?.name || ""} ${x.p2?.name || ""}`.toLowerCase().includes(s)
+        : (x.away.name.toLowerCase().includes(s) || x.home.name.toLowerCase().includes(s) || x.away.abbr.toLowerCase().includes(s) || x.home.abbr.toLowerCase().includes(s)));
     }
-    if (myTeams.length > 0) g = g.filter((x) => myTeams.includes(x.away.abbr) || myTeams.includes(x.home.abbr));
+    if (myTeams.length > 0) g = g.filter((x) => x.sport === "tennis" ? true : (myTeams.includes(x.away.abbr) || myTeams.includes(x.home.abbr)));
     if (gameStatus === "upcoming") g = g.filter((x) => x.status === "STATUS_SCHEDULED");
     else if (gameStatus === "live") g = g.filter((x) => x.status === "STATUS_IN_PROGRESS" || x.status === "STATUS_HALFTIME" || x.status === "STATUS_END_PERIOD" || x.status === "STATUS_END_OF_INNING");
     else if (gameStatus === "finished") g = g.filter((x) => x.status === "STATUS_FINAL");
     if (sort === "score") g = [...g].sort((a, b) => b.total - a.total);
     else if (sort === "close") g = [...g].sort((a, b) => a.diff - b.diff);
     return g;
-  }, [games, sport, week, year, mlbDate, search, sort, myTeams, gameStatus]);
+  }, [games, sport, week, year, selectedDate, search, sort, myTeams, gameStatus]);
 
   // Counts for status pills
   const statusCounts = useMemo(() => {
-    const inScope = games.filter((x) => sport === "nfl"
-      ? (x.sport === "nfl" && x.week === week && x.season === year)
-      : (x.sport === "mlb" && x.gameDate === mlbDate)
-    );
+    const inScope = games.filter(inCurrentScope);
     return {
       all: inScope.length,
       upcoming: inScope.filter(g => g.status === "STATUS_SCHEDULED").length,
       live: inScope.filter(g => g.status === "STATUS_IN_PROGRESS" || g.status === "STATUS_HALFTIME" || g.status === "STATUS_END_PERIOD" || g.status === "STATUS_END_OF_INNING").length,
       finished: inScope.filter(g => g.status === "STATUS_FINAL").length,
     };
-  }, [games, sport, week, year, mlbDate]);
+  }, [games, sport, week, year, selectedDate]);
 
   const ratedLogs = logs.filter(l => l.rating > 0);
   // Sport-filtered logs for the Profile tab (default 'nfl' for rows without sport set)
   const sportLogs = logs.filter(l => (l.sport || "nfl") === profileSport);
   const sportRatedLogs = sportLogs.filter(l => l.rating > 0);
-  const earned = BADGES.filter((b) => b.ck(ratedLogs));
   const gl = (id) => logs.find((l) => l.gameId === id);
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
+
+  // 🩸 Drops currency — earned from activity, spent on unlocked emote packs.
+  // `unlocked` only exists once the migration has run; absence = store dormant.
+  const dropsUnlocked = profile?.unlocked || [];
+  const dropsStoreReady = !!profile && "unlocked" in profile;
+  const reviewCount = logs.filter((l) => l.review).length;
+  const dropsEarnedTotal = dropsEarned({ ratings: ratedLogs.length, reviews: reviewCount, likes: likesReceived });
+  const dropsBalance = dropsEarnedTotal - dropsSpent(dropsUnlocked);
+
+  // Reputation (derived standing). Tier shown on profile + as comment flair.
+  const myRep = repScore({ ratings: ratedLogs.length, reviews: reviewCount, comments: commentsPosted, likes: likesReceived, followers: followerCount });
+  const myTier = repTier(myRep);
+  const myNextTier = nextTier(myRep);
+
+  // Daily rating streak — consecutive days (ending today or yesterday) with a rating
+  const ratingStreak = (() => {
+    const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    const days = new Set(ratedLogs.map((l) => (l.createdAt || "").slice(0, 10)).filter(Boolean));
+    if (days.size === 0) return 0;
+    const cur = new Date();
+    let streak = 0;
+    if (!days.has(ymd(cur))) { cur.setDate(cur.getDate() - 1); if (!days.has(ymd(cur))) return 0; }
+    while (days.has(ymd(cur))) { streak++; cur.setDate(cur.getDate() - 1); }
+    return streak;
+  })();
+
+  // Achievements — earned badges, computed from a rich activity context
+  const badgeCtx = {
+    logs: ratedLogs,
+    reviews: reviewCount,
+    sports: new Set(ratedLogs.map((l) => l.sport || "nfl")),
+    streak: ratingStreak,
+    rep: myRep,
+    drops: dropsEarnedTotal,
+    mvpPicks: ratedLogs.filter((l) => l.mvp).length,
+  };
+  const earned = BADGES.filter((b) => b.ck(badgeCtx));
+
+  // "On This Day" — your own ratings logged on this calendar date in past years
+  const onThisDay = (() => {
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return ratedLogs
+      .filter((l) => l.createdAt && l.createdAt.slice(5, 10) === mmdd && new Date(l.createdAt).getFullYear() < now.getFullYear())
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  })();
+
+  const buyPack = async (pack) => {
+    if (!user) { router.push("/login"); return; }
+    if (!dropsStoreReady || dropsUnlocked.includes(pack.id) || dropsBalance < pack.cost) return;
+    setBuyingDrops(pack.id);
+    try {
+      const res = await sbFetch(`profiles?user_id=eq.${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ unlocked: [...dropsUnlocked, pack.id] }),
+      });
+      if (res.ok) await refreshProfile();
+    } catch (e) { console.error("buyPack:", e); }
+    setBuyingDrops(null);
+  };
 
   return (
     <div className="min-h-screen pb-24">
@@ -901,19 +1138,74 @@ function HomeContent() {
           <h1 className="text-xl font-extrabold text-white">
             <span className="text-red-600">🩸</span> The Nosebleeds
           </h1>
-          {/* Sport switcher - hidden on Diary/Profile which have their own profileSport toggle */}
-          {tab !== "diary" && tab !== "profile" && (
-            <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-              <button onClick={() => setSport("nfl")} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === "nfl" ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>🏈 NFL</button>
-              <button onClick={() => setSport("mlb")} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === "mlb" ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>⚾ MLB</button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Notifications bell */}
+            {user && (
+              <button onClick={openNotifs} className="relative w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm hover:border-zinc-600 transition-colors shrink-0">
+                🔔
+                {notifUnread > 0 && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">{notifUnread > 9 ? "9+" : notifUnread}</span>}
+              </button>
+            )}
+            {/* Sport switcher - hidden on Diary/Profile which have their own profileSport toggle */}
+            {tab !== "diary" && tab !== "profile" && (
+              <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
+                {SPORTS.map((s) => (
+                  <button key={s.id} onClick={() => setSport(s.id)}
+                    className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>
+                    {s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-3">
-        {/* Players banner — Games tab. Players moved out of the bottom nav. */}
-        {tab === "games" && (
+        {/* Onboarding — nudge new users to pick favorite teams */}
+        {tab === "games" && user && profile && !onboardDismissed && !FAV_SPORTS.some((s) => profile[favKey(s.id)]) && (
+          <div className="rounded-2xl p-4 mb-3 bg-gradient-to-br from-red-900/50 via-zinc-900 to-zinc-900 border border-red-600/30">
+            <div className="flex items-start gap-3">
+              <div className="text-2xl">👋</div>
+              <div className="flex-1">
+                <div className="text-sm font-bold text-white">Welcome to The Nosebleeds!</div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">Pick your favorite teams to personalize your feed and unlock fandom filters.</div>
+                <div className="flex gap-2 mt-2.5">
+                  <button onClick={() => { setTab("profile"); setShowEditProfile(true); }} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold">Set up profile →</button>
+                  <button onClick={dismissOnboard} className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold">Maybe later</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* On This Day — your ratings from this date in past years */}
+        {tab === "games" && onThisDay.length > 0 && (
+          <div className="rounded-2xl p-3 mb-3 bg-zinc-900 border border-zinc-800">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">📆</span>
+              <span className="text-sm font-bold text-white">On This Day</span>
+            </div>
+            <div className="space-y-1.5">
+              {onThisDay.slice(0, 3).map((l) => {
+                const yrsAgo = new Date().getFullYear() - new Date(l.createdAt).getFullYear();
+                return (
+                  <Link key={l.gameId} href={gameHref(l.gameId, l.sport, l.gameDate)} className="flex items-center gap-2.5 p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors">
+                    <span className="w-9 h-9 flex items-center justify-center rounded-lg text-white font-extrabold text-sm shrink-0" style={{ backgroundColor: rc(l.rating) }}>{l.rating}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-white truncate">{l.awayTeam} {l.awayScore} — {l.homeTeam} {l.homeScore}</div>
+                      <div className="text-[10px] text-zinc-500">{sportEmoji(l.sport)} {yrsAgo} {yrsAgo === 1 ? "year" : "years"} ago today</div>
+                    </div>
+                    <span className="text-zinc-600 text-xs shrink-0">→</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Players banner — Games tab (team sports only; tennis has no roster) */}
+        {tab === "games" && sport !== "tennis" && (
           <button onClick={() => setTab("players")} className="block w-full mb-3 text-left">
             <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
               <div className="text-2xl">🧢</div>
@@ -942,16 +1234,16 @@ function HomeContent() {
           </Link>
         )}
 
-        {/* MLB Daily Recap banner — links to yesterday's recap */}
-        {tab === "games" && sport === "mlb" && (() => {
+        {/* Daily Recap banner — team date-sports link to yesterday's recap (no tennis recap) */}
+        {tab === "games" && isDateSport(sport) && sport !== "tennis" && (() => {
           const d = new Date();
           d.setDate(d.getDate() - 1);
           const yday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
           const ydayLabel = d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
           return (
-            <Link href={`/recap/mlb/${yday}`} className="block mb-3">
+            <Link href={`/recap/${sport}/${yday}`} className="block mb-3">
               <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
-                <div className="text-2xl">⚾</div>
+                <div className="text-2xl">{sportEmoji(sport)}</div>
                 <div className="flex-1">
                   <div className="text-sm font-bold text-white">Yesterday's Recap</div>
                   <div className="text-[10px] text-zinc-500">{ydayLabel} — best games, top MVPs, biggest letdowns</div>
@@ -987,9 +1279,9 @@ function HomeContent() {
               </>
             )}
 
-            {sport === "mlb" && (() => {
+            {isDateSport(sport) && (() => {
               // Build a +/- 3 day window around the chosen date for quick nav
-              const base = new Date(mlbDate + "T12:00:00");
+              const base = new Date(selectedDate + "T12:00:00");
               const days = [];
               for (let i = -3; i <= 3; i++) {
                 const d = new Date(base);
@@ -1000,9 +1292,9 @@ function HomeContent() {
                 days.push({ ds, isToday, label: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) });
               }
               const shiftDay = (delta) => {
-                const d = new Date(mlbDate + "T12:00:00");
+                const d = new Date(selectedDate + "T12:00:00");
                 d.setDate(d.getDate() + delta);
-                setMlbDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
+                setSelectedDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
               };
               const today = new Date();
               const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -1010,17 +1302,17 @@ function HomeContent() {
                 <div className="mb-3">
                   <div className="flex items-center gap-2 mb-2">
                     <button onClick={() => shiftDay(-1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">← Prev</button>
-                    <input type="date" value={mlbDate} onChange={(e) => setMlbDate(e.target.value)}
+                    <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
                       className="flex-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 text-center" />
                     <button onClick={() => shiftDay(1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">Next →</button>
-                    {mlbDate !== todayStr && (
-                      <button onClick={() => setMlbDate(todayStr)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-600 text-white shrink-0">Today</button>
+                    {selectedDate !== todayStr && (
+                      <button onClick={() => setSelectedDate(todayStr)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-600 text-white shrink-0">Today</button>
                     )}
                   </div>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     {days.map(d => (
-                      <button key={d.ds} onClick={() => setMlbDate(d.ds)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${mlbDate === d.ds ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>
+                      <button key={d.ds} onClick={() => setSelectedDate(d.ds)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${selectedDate === d.ds ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>
                         {d.isToday ? "Today" : d.label}
                       </button>
                     ))}
@@ -1036,10 +1328,12 @@ function HomeContent() {
                     className={`px-3 py-1 rounded-full text-xs font-semibold ${sort === s.id ? "bg-red-600/10 text-red-400" : "text-zinc-500"}`}>{s.l}</button>
                 ))}
               </div>
-              <button onClick={() => setShowTeams(!showTeams)}
-                className={`px-3 py-1 rounded-full text-[10px] font-bold border ${myTeams.length ? "bg-red-600/10 text-red-400 border-red-600/30" : "text-zinc-500 border-zinc-800"}`}>
-                {myTeams.length ? `My Teams (${myTeams.length})` : "My Teams"}
-              </button>
+              {sport !== "tennis" && (
+                <button onClick={() => setShowTeams(!showTeams)}
+                  className={`px-3 py-1 rounded-full text-[10px] font-bold border ${myTeams.length ? "bg-red-600/10 text-red-400 border-red-600/30" : "text-zinc-500 border-zinc-800"}`}>
+                  {myTeams.length ? `My Teams (${myTeams.length})` : "My Teams"}
+                </button>
+              )}
             </div>
 
             {/* Live/Finished/Upcoming filter - only show when there's variety */}
@@ -1058,7 +1352,7 @@ function HomeContent() {
               </div>
             )}
 
-            {showTeams && (
+            {showTeams && sport !== "tennis" && (
               <div className="rounded-xl p-3 bg-zinc-900 border border-zinc-800 mb-3">
                 <div className="flex justify-between mb-2">
                   <span className="text-xs font-semibold text-white">Follow Teams</span>
@@ -1073,9 +1367,24 @@ function HomeContent() {
               </div>
             )}
 
-            {loading && <div className="text-center py-16 text-zinc-500">Loading {year} Week {week}...</div>}
+            {loading && (
+              <div className="animate-pulse">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-2xl bg-zinc-900 border border-zinc-800 mb-3 overflow-hidden">
+                    <div className="h-[3px] bg-zinc-800" />
+                    <div className="p-3.5">
+                      <div className="h-3 w-32 rounded bg-zinc-800 mb-3" />
+                      <div className="flex items-center gap-2.5 mb-2"><div className="w-7 h-7 rounded-lg bg-zinc-800" /><div className="h-3.5 flex-1 max-w-[140px] rounded bg-zinc-800" /><div className="w-6 h-5 rounded bg-zinc-800" /></div>
+                      <div className="flex items-center gap-2.5"><div className="w-7 h-7 rounded-lg bg-zinc-800" /><div className="h-3.5 flex-1 max-w-[120px] rounded bg-zinc-800" /><div className="w-6 h-5 rounded bg-zinc-800" /></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
-            {filtered.map((g) => <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />)}
+            {filtered.map((g) => g.sport === "tennis"
+              ? <TennisCard key={g.id} match={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />
+              : <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />)}
           </div>
         )}
 
@@ -1125,6 +1434,29 @@ function HomeContent() {
               </div>
             )}
 
+            {/* Most Divisive */}
+            {divisiveGames.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-base font-bold text-white mb-1">⚔️ Most Divisive</h3>
+                <p className="text-xs text-zinc-500 mb-3">Games the community can't agree on</p>
+                {divisiveGames.map((g, i) => (
+                  <Link key={g.game_id} href={gh(g.game_id, g.sample?.sport)} className="block">
+                    <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                      <span className="text-base font-extrabold w-5 text-center" style={{ color: i === 0 ? "#a855f7" : "#52525b" }}>{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-white">{g.sample.away_team} {g.sample.away_score} — {g.sample.home_team} {g.sample.home_score}</div>
+                        <div className="text-[10px] text-zinc-500">{g.count} {g.count === 1 ? "rater" : "raters"} · avg {g.avg} · ±{g.spread.toFixed(1)} spread</div>
+                      </div>
+                      <div className="w-11 h-11 flex flex-col items-center justify-center font-bold rounded-xl text-purple-300 bg-purple-500/15 border border-purple-500/30 shrink-0">
+                        <span className="text-sm leading-none">±{g.spread.toFixed(1)}</span>
+                        <span className="text-[8px] text-purple-400/70 leading-none mt-0.5">SPLIT</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
             {/* Top Raters */}
             {topRaters.length > 0 && (
               <div className="mb-5">
@@ -1160,7 +1492,7 @@ function HomeContent() {
               <div className="mb-5">
                 <h3 className="text-base font-bold text-white mb-3">📋 Community Lists</h3>
                 {communityLists.map(l => (
-                  <Link key={l.id} href={l.profile?.handle ? `/u/${l.profile.handle}` : "#"} className="block">
+                  <Link key={l.id} href={`/list/${l.id}`} className="block">
                     <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
                       <span className="text-2xl">{l.icon || "📋"}</span>
                       <div className="flex-1">
@@ -1229,7 +1561,7 @@ function HomeContent() {
           return (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xl font-extrabold text-white">{sport === "mlb" ? "⚾" : "🏈"} Players</h2>
+                <h2 className="text-xl font-extrabold text-white">{sportEmoji(sport)} Players</h2>
                 {!playersLoading && <span className="text-[10px] text-zinc-600 font-semibold">{playersList.length} players</span>}
               </div>
               <p className="text-xs text-zinc-500 mb-3">Search any player in the league, or browse the most-picked below.</p>
@@ -1238,7 +1570,7 @@ function HomeContent() {
               <input
                 value={playerSearch}
                 onChange={(e) => setPlayerSearch(e.target.value)}
-                placeholder={`Search all ${sport === "mlb" ? "MLB" : "NFL"} players…`}
+                placeholder={`Search all ${sportLabel(sport)} players…`}
                 className="w-full px-3 py-2.5 mb-3 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 placeholder:text-zinc-600"
               />
 
@@ -1399,35 +1731,93 @@ function HomeContent() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-extrabold text-white">Your Diary</h2>
               <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-                <button onClick={() => setProfileSport("nfl")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "nfl" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏈 NFL</button>
-                <button onClick={() => setProfileSport("mlb")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "mlb" ? "bg-red-600 text-white" : "text-zinc-500"}`}>⚾ MLB</button>
+                {SPORTS.map((s) => (
+                  <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
+                ))}
               </div>
             </div>
             {sportRatedLogs.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-5xl mb-3">📓</div>
-                <div className="text-base font-bold text-white">No {profileSport === "mlb" ? "MLB" : "NFL"} games logged yet</div>
-                <div className="text-sm text-zinc-500 mt-1">Rate {profileSport === "mlb" ? "MLB" : "NFL"} games to build your diary</div>
+                <div className="text-base font-bold text-white">No {sportLabel(profileSport)} games logged yet</div>
+                <div className="text-sm text-zinc-500 mt-1">Rate {sportLabel(profileSport)} games to build your diary</div>
                 <button onClick={() => { setSport(profileSport); setTab("games"); }} className="mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
               </div>
             )}
+            {/* Activity heatmap — last 26 weeks, colored by that day's avg rating */}
+            {sportRatedLogs.length > 0 && (() => {
+              const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+              const byDay = {};
+              sportRatedLogs.forEach((l) => {
+                const d = (l.createdAt || "").slice(0, 10);
+                if (!d) return;
+                if (!byDay[d]) byDay[d] = { sum: 0, n: 0 };
+                byDay[d].sum += l.rating; byDay[d].n++;
+              });
+              const WEEKS = 26;
+              const today = new Date();
+              // Start on the Sunday WEEKS-1 weeks before this week
+              const start = new Date(today);
+              start.setDate(start.getDate() - start.getDay() - (WEEKS - 1) * 7);
+              const cols = [];
+              let monthMarks = [];
+              for (let w = 0; w < WEEKS; w++) {
+                const col = [];
+                for (let dow = 0; dow < 7; dow++) {
+                  const cell = new Date(start);
+                  cell.setDate(cell.getDate() + w * 7 + dow);
+                  const key = ymd(cell);
+                  const day = byDay[key];
+                  col.push({ key, future: cell > today, avg: day ? day.sum / day.n : null, n: day ? day.n : 0 });
+                  if (dow === 0) monthMarks.push(cell.getDate() <= 7 ? cell.toLocaleDateString("en-US", { month: "short" }) : "");
+                }
+                cols.push(col);
+              }
+              const activeDays = Object.keys(byDay).length;
+              return (
+                <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-white">📅 Activity</h3>
+                    <span className="text-[10px] text-zinc-500">{activeDays} active {activeDays === 1 ? "day" : "days"} · 26 wks</span>
+                  </div>
+                  <div className="overflow-x-auto pb-1">
+                    <div className="flex gap-[3px] min-w-max">
+                      {cols.map((col, wi) => (
+                        <div key={wi} className="flex flex-col gap-[3px]">
+                          {col.map((cell) => (
+                            <div key={cell.key} title={cell.n > 0 ? `${cell.key}: ${cell.n} rated · avg ${cell.avg.toFixed(1)}` : cell.key}
+                              className="w-[10px] h-[10px] rounded-[2px]"
+                              style={{ backgroundColor: cell.future ? "transparent" : cell.avg != null ? rc(cell.avg) : "#27272a" }} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5 mt-2 text-[9px] text-zinc-600">
+                    <span>Low</span>
+                    {[2, 4, 6, 8, 10].map((r) => <span key={r} className="w-[10px] h-[10px] rounded-[2px]" style={{ backgroundColor: rc(r) }} />)}
+                    <span>High</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {[...sportRatedLogs].sort((a, b) => (b.season || 0) - (a.season || 0) || (b.week || 0) - (a.week || 0)).map((l) => {
               const g = games.find((x) => x.id === l.gameId);
-              const gameHref = l.sport === "mlb" ? `/game/${l.gameId}?sport=mlb` : `/game/${l.gameId}`;
               return (
-                <Link key={l.gameId} href={gameHref} className="block">
+                <Link key={l.gameId} href={gameHref(l.gameId, l.sport, l.gameDate)} className="block">
                 <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
                   <Bdg r={l.rating} />
                   <div className="flex-1">
                     {g ? (
                       <>
                         <div className="text-sm font-bold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
-                        <div className="text-[10px] text-zinc-600">{l.sport === "mlb" ? g.shortDate : `Wk ${g.week} · ${g.shortDate}`}</div>
+                        <div className="text-[10px] text-zinc-600">{isDateSport(l.sport) ? g.shortDate : `Wk ${g.week} · ${g.shortDate}`}</div>
                       </>
                     ) : (
                       <>
                         <div className="text-sm font-bold text-white">{l.awayTeam && l.homeTeam ? `${l.awayTeam} ${l.awayScore} — ${l.homeTeam} ${l.homeScore}` : "Game rated"}</div>
-                        <div className="text-[10px] text-zinc-600">{l.sport === "mlb" ? (l.season || "") : `Wk ${l.week || "?"} · ${l.season || ""}`}</div>
+                        <div className="text-[10px] text-zinc-600">{isDateSport(l.sport) ? (l.season || "") : `Wk ${l.week || "?"} · ${l.season || ""}`}</div>
                       </>
                     )}
                     <div className="flex gap-2 mt-1 flex-wrap">
@@ -1471,7 +1861,7 @@ function HomeContent() {
                 </div>
                 {/* Name & handle */}
                 <div className="text-center mb-1">
-                  <div className="text-xl font-extrabold text-white">{profile?.display_name || user?.user_metadata?.full_name || "User"}</div>
+                  <div className="text-xl font-extrabold" style={{ color: nameColor(profile?.unlocked) || "#fafafa" }}>{profile?.display_name || user?.user_metadata?.full_name || "User"}</div>
                   {profile?.handle ? (
                     <div className="text-sm text-red-400 mt-0.5">@{profile.handle}</div>
                   ) : (
@@ -1479,26 +1869,29 @@ function HomeContent() {
                   )}
                 </div>
                 {/* Team badges */}
-                {(profile?.favorite_team || profile?.favorite_team_mlb) && (
+                {FAV_SPORTS.some((s) => profile?.[favKey(s.id)]) && (
                   <div className="flex justify-center gap-1.5 mb-2 flex-wrap">
-                    {profile?.favorite_team && (
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">🏈 {teamName("nfl", profile.favorite_team)}</span>
-                    )}
-                    {profile?.favorite_team_mlb && (
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">⚾ {teamName("mlb", profile.favorite_team_mlb)}</span>
-                    )}
+                    {FAV_SPORTS.filter((s) => profile?.[favKey(s.id)]).map((s) => (
+                      <span key={s.id} className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-600/15 text-red-300 border border-red-600/30">{s.emoji} {teamName(s.id, profile[favKey(s.id)])}</span>
+                    ))}
                   </div>
                 )}
                 {/* Bio */}
                 {profile?.bio && <div className="text-sm text-zinc-400 text-center mb-3 max-w-xs mx-auto">{profile.bio}</div>}
-                {/* Joined date */}
+                {/* Streak + Joined date */}
+                {ratingStreak > 1 && (
+                  <div className="flex justify-center mb-2">
+                    <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">🔥 {ratingStreak}-day rating streak</span>
+                  </div>
+                )}
                 {profile?.created_at && (
                   <div className="text-[10px] text-zinc-600 text-center mb-3">Joined {new Date(profile.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
                 )}
                 {/* Profile sport switcher */}
                 <div className="flex gap-0.5 p-0.5 mb-3 rounded-full bg-zinc-950 border border-zinc-800 mx-auto w-fit">
-                  <button onClick={() => setProfileSport("nfl")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "nfl" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏈 NFL</button>
-                  <button onClick={() => setProfileSport("mlb")} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "mlb" ? "bg-red-600 text-white" : "text-zinc-500"}`}>⚾ MLB</button>
+                  {SPORTS.map((s) => (
+                    <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
+                  ))}
                 </div>
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-2 text-center mb-3">
@@ -1524,6 +1917,7 @@ function HomeContent() {
                     ✏️ Edit Profile
                   </button>
                 </div>
+                <Link href="/about" className="block w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all text-center">ℹ️ How It Works</Link>
                 <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all">Sign Out</button>
               </div>
             </div>
@@ -1569,11 +1963,11 @@ function HomeContent() {
                     {recent.map(p => {
                       const s = statusStyle(p.status);
                       return (
-                        <Link key={p.id} href={p.sport === "mlb" ? `/game/${p.game_id}?sport=mlb` : `/game/${p.game_id}`}
+                        <Link key={p.id} href={gameHref(p.game_id, p.sport)}
                           className="flex items-center gap-2.5 p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors">
                           <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-extrabold shrink-0 ${s.bg} ${s.tx}`}>{s.lbl}</span>
                           <span className="text-xs font-semibold text-white flex-1 truncate">{p.pick_label}</span>
-                          <span className="text-[9px] text-zinc-600">{p.sport === "mlb" ? "⚾" : "🏈"}</span>
+                          <span className="text-[9px] text-zinc-600">{sportEmoji(p.sport)}</span>
                         </Link>
                       );
                     })}
@@ -1584,6 +1978,113 @@ function HomeContent() {
                 </div>
               );
             })()}
+
+            {/* 🏅 Reputation */}
+            <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-white">🏅 Reputation</h3>
+                <span className="text-xs font-extrabold px-2.5 py-1 rounded-full" style={{ background: myTier.color + "22", color: myTier.color }}>{myTier.emoji} {myTier.name}</span>
+              </div>
+              <div className="flex items-end justify-between mb-1">
+                <div className="text-3xl font-extrabold text-white">{myRep.toLocaleString()}<span className="text-sm font-bold text-zinc-500 ml-1">Cred</span></div>
+                {myNextTier && <div className="text-[10px] text-zinc-500 text-right">{(myNextTier.min - myRep).toLocaleString()} to {myNextTier.emoji} {myNextTier.name}</div>}
+              </div>
+              {/* Progress to next tier */}
+              <div className="h-2 rounded-full bg-zinc-950 overflow-hidden mb-3">
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(tierProgress(myRep) * 100)}%`, backgroundColor: myTier.color }} />
+              </div>
+              {/* Breakdown */}
+              <div className="grid grid-cols-5 gap-1.5 text-center">
+                {[
+                  { v: ratedLogs.length, l: "Rated" },
+                  { v: reviewCount, l: "Reviews" },
+                  { v: commentsPosted, l: "Comments" },
+                  { v: likesReceived, l: "Likes" },
+                  { v: followerCount, l: "Followers" },
+                ].map((s) => (
+                  <div key={s.l} className="rounded-lg bg-zinc-950 p-2">
+                    <div className="text-base font-extrabold text-white">{s.v}</div>
+                    <div className="text-[8px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Earn Cred from rating games, writing reviews, and the likes your comments get.</div>
+            </div>
+
+            {/* 🩸 Drops — currency + emote store */}
+            <div className="rounded-2xl p-4 bg-gradient-to-br from-red-950/40 via-zinc-900 to-zinc-900 border border-zinc-800 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-white">🩸 Drops</h3>
+                <div className="text-right">
+                  <div className="text-2xl font-extrabold text-white leading-none">{dropsBalance.toLocaleString()}</div>
+                  <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Balance</div>
+                </div>
+              </div>
+              {/* Earning breakdown */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {[
+                  { v: ratedLogs.length, l: "Ratings", sub: `+${DROPS.perRating} ea` },
+                  { v: reviewCount, l: "Reviews", sub: `+${DROPS.perReview} ea` },
+                  { v: likesReceived, l: "Likes", sub: `+${DROPS.perLike} ea` },
+                ].map((s) => (
+                  <div key={s.l} className="rounded-xl bg-zinc-950 p-2.5 text-center">
+                    <div className="text-lg font-extrabold text-white">{s.v}</div>
+                    <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
+                    <div className="text-[9px] text-red-400/80 font-semibold">{s.sub}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Emote Store</div>
+              <div className="space-y-2">
+                {EMOTE_PACKS.map((pack) => {
+                  const owned = dropsUnlocked.includes(pack.id);
+                  const affordable = dropsBalance >= pack.cost;
+                  return (
+                    <div key={pack.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-zinc-950">
+                      <div className="text-xl shrink-0">{pack.emoji}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold text-white">{pack.name}</div>
+                        <div className="text-sm tracking-wide">{pack.emotes.join(" ")}</div>
+                      </div>
+                      <button
+                        onClick={() => buyPack(pack)}
+                        disabled={owned || !dropsStoreReady || !affordable || buyingDrops === pack.id}
+                        className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${owned ? "bg-green-600/15 text-green-400" : affordable && dropsStoreReady ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-800 text-zinc-500"}`}
+                      >
+                        {owned ? "✓ Owned" : buyingDrops === pack.id ? "…" : `🩸 ${pack.cost}`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Unlocked emotes become extra reactions on game comments.</div>
+
+              {/* Name flair */}
+              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Name Flair</div>
+              <div className="flex flex-wrap gap-2">
+                {NAME_FLAIR.map((f) => {
+                  const owned = dropsUnlocked.includes(f.id);
+                  const affordable = dropsBalance >= f.cost;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => buyPack(f)}
+                      disabled={owned || !dropsStoreReady || !affordable || buyingDrops === f.id}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${owned ? "border-current" : "border-zinc-800 bg-zinc-950"}`}
+                      style={{ color: f.color }}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: f.color }} />
+                      {f.name}
+                      <span className="text-[10px] text-zinc-500">{owned ? "✓" : `🩸${f.cost}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Your priciest unlocked flair colors your name everywhere.</div>
+              {!dropsStoreReady && (
+                <div className="text-[10px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
+              )}
+            </div>
 
             {/* Pinned */}
             {pinned.length > 0 && (
@@ -1628,6 +2129,7 @@ function HomeContent() {
                       <div className="text-sm font-bold text-white">{l.icon} {l.name}</div>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-zinc-600">{games.length} games</span>
+                        <Link href={`/list/${l.id}`} onClick={(e) => e.stopPropagation()} className="text-[11px] text-red-400 hover:text-red-300 font-semibold">Open ↗</Link>
                         <span className="text-zinc-600 text-xs">{selectedListId === l.id ? "▼" : "▶"}</span>
                       </div>
                     </div>
@@ -1680,27 +2182,71 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* Season Wrapped */}
-            {logs.length >= 3 && (
-              <div className="rounded-2xl p-5 mb-4 bg-gradient-to-br from-red-600 via-red-800 to-red-950 text-white relative overflow-hidden">
-                <div className="absolute -top-5 -right-5 text-8xl opacity-5">🏈</div>
-                <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">Season Wrapped</div>
-                <div className="text-lg font-extrabold mt-1 mb-3">Your {year} Season</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { v: logs.length, l: "Games" },
-                    { v: (logs.reduce((s, l) => s + l.rating, 0) / logs.length).toFixed(1), l: "Avg Rating" },
-                    { v: logs.filter((l) => l.worthIt === "yes").length, l: "Worth It" },
-                    { v: earned.length + "/" + BADGES.length, l: "Badges" },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-white/10 rounded-lg p-2">
-                      <div className="text-xl font-extrabold">{s.v}</div>
-                      <div className="text-[10px] opacity-80">{s.l}</div>
+            {/* Season Wrapped — reflects the selected profile sport, drillable by season */}
+            {sportRatedLogs.length >= 3 && (() => {
+              // Seasons this sport has ratings in (most recent first)
+              const seasons = [...new Set(sportRatedLogs.map((l) => l.season).filter(Boolean))].sort((a, b) => b - a);
+              const wrapLogs = wrappedSeason === "all" ? sportRatedLogs : sportRatedLogs.filter((l) => String(l.season) === String(wrappedSeason));
+              if (wrapLogs.length === 0) return null;
+              const avg = (wrapLogs.reduce((s, l) => s + l.rating, 0) / wrapLogs.length).toFixed(1);
+              const best = [...wrapLogs].sort((a, b) => b.rating - a.rating)[0];
+              const mvpCounts = {};
+              wrapLogs.forEach((l) => { if (l.mvp) mvpCounts[l.mvp] = (mvpCounts[l.mvp] || 0) + 1; });
+              const topMvp = Object.entries(mvpCounts).sort((a, b) => b[1] - a[1])[0];
+              const label = wrappedSeason === "all" ? "All-Time" : wrappedSeason;
+              return (
+                <div className="rounded-2xl p-5 mb-4 bg-gradient-to-br from-red-600 via-red-800 to-red-950 text-white relative overflow-hidden">
+                  <div className="absolute -top-5 -right-5 text-8xl opacity-5">{sportEmoji(profileSport)}</div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">{sportEmoji(profileSport)} {sportLabel(profileSport)} Wrapped</div>
+                      <div className="text-lg font-extrabold mt-0.5">Your {label} {wrappedSeason === "all" ? "Recap" : "Season"}</div>
                     </div>
-                  ))}
+                  </div>
+                  {/* Season selector */}
+                  {seasons.length > 1 && (
+                    <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
+                      <button onClick={() => setWrappedSeason("all")} className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all ${wrappedSeason === "all" ? "bg-white text-red-700" : "bg-white/15 text-white"}`}>All-Time</button>
+                      {seasons.map((yr) => (
+                        <button key={yr} onClick={() => setWrappedSeason(yr)} className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all ${String(wrappedSeason) === String(yr) ? "bg-white text-red-700" : "bg-white/15 text-white"}`}>{yr}</button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { v: wrapLogs.length, l: "Games" },
+                      { v: avg, l: "Avg Rating" },
+                      { v: wrapLogs.filter((l) => l.worthIt === "yes").length, l: "Worth It" },
+                      { v: wrappedSeason === "all" ? `${earned.length}/${BADGES.length}` : wrapLogs.filter((l) => l.review).length, l: wrappedSeason === "all" ? "Badges" : "Reviews" },
+                    ].map((s, i) => (
+                      <div key={i} className="bg-white/10 rounded-lg p-2">
+                        <div className="text-xl font-extrabold">{s.v}</div>
+                        <div className="text-[10px] opacity-80">{s.l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Highlights */}
+                  {(best || topMvp) && (
+                    <div className="mt-2 space-y-1.5">
+                      {best && (
+                        <Link href={gameHref(best.gameId, best.sport, best.gameDate)} className="flex items-center gap-2 bg-white/10 rounded-lg p-2 hover:bg-white/15 transition-colors">
+                          <span className="text-[9px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Top game</span>
+                          <span className="text-xs font-bold flex-1 truncate">{best.awayTeam} {best.awayScore}–{best.homeTeam} {best.homeScore}</span>
+                          <span className="text-sm font-extrabold shrink-0">{best.rating}</span>
+                        </Link>
+                      )}
+                      {topMvp && (
+                        <Link href={`/player/${encodeURIComponent(topMvp[0])}`} className="flex items-center gap-2 bg-white/10 rounded-lg p-2 hover:bg-white/15 transition-colors">
+                          <span className="text-[9px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Your MVP</span>
+                          <span className="text-xs font-bold flex-1 truncate">🌟 {topMvp[0]}</span>
+                          <span className="text-[10px] opacity-80 shrink-0">×{topMvp[1]}</span>
+                        </Link>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Your Stats */}
             {logs.filter(l => l.rating > 0).length > 0 && (() => {
@@ -2012,32 +2558,25 @@ function HomeContent() {
               <div className="text-xs text-zinc-600 mt-1">{editBio.length}/160</div>
             </div>
 
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">🏈 Favorite NFL Team</label>
-                <span className="text-xs font-bold text-red-400">{editTeam ? teamName("nfl", editTeam) : "Not set"}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
-                <button onClick={() => setEditTeam("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeam === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
-                {ALL_TEAMS.map(t => (
-                  <button key={t} onClick={() => setEditTeam(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeam === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">⚾ Favorite MLB Team</label>
-                <span className="text-xs font-bold text-red-400">{editTeamMlb ? teamName("mlb", editTeamMlb) : "Not set"}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
-                <button onClick={() => setEditTeamMlb("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeamMlb === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
-                {ALL_MLB_TEAMS.map(t => (
-                  <button key={t} onClick={() => setEditTeamMlb(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${editTeamMlb === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
-                ))}
-              </div>
-              <div className="text-[10px] text-zinc-600 mt-1">Used for fandom filters on each sport's games.</div>
-            </div>
+            {FAV_SPORTS.map((s) => {
+              const sel = editTeams[s.id] || "";
+              const pick = (t) => setEditTeams((prev) => ({ ...prev, [s.id]: t }));
+              return (
+                <div key={s.id} className="mb-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">{s.emoji} Favorite {s.label} Team</label>
+                    <span className="text-xs font-bold text-red-400">{sel ? teamName(s.id, sel) : "Not set"}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 mt-1 rounded-xl bg-zinc-900 border border-zinc-800">
+                    <button onClick={() => pick("")} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${sel === "" ? "bg-zinc-700 text-white border-zinc-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>None</button>
+                    {(TEAMS_BY_SPORT[s.id] || []).map((t) => (
+                      <button key={t} onClick={() => pick(t)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${sel === t ? "bg-red-600 text-white border-red-600" : "bg-zinc-950 text-zinc-500 border-transparent"}`}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <div className="text-[10px] text-zinc-600 mb-4 -mt-2">Used for fandom filters on each sport's games.</div>
 
             <div className="flex gap-2">
               <button onClick={() => setShowEditProfile(false)} className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Cancel</button>
@@ -2065,8 +2604,7 @@ function HomeContent() {
                       handle: editHandle,
                       display_name: editDisplayName || null,
                       bio: editBio || null,
-                      favorite_team: editTeam || null,
-                      favorite_team_mlb: editTeamMlb || null,
+                      ...Object.fromEntries(FAV_SPORTS.map((s) => [favKey(s.id), editTeams[s.id] || null])),
                       avatar_url: editAvatarUrl || null,
                       updated_at: new Date().toISOString(),
                     }),
@@ -2117,6 +2655,51 @@ function HomeContent() {
               }}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-bold text-sm">Create</button>
               <button onClick={() => setShowNewList(false)} className="px-4 py-2.5 bg-zinc-800 text-zinc-400 rounded-xl font-semibold text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications panel */}
+      {showNotifs && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto" onClick={() => setShowNotifs(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[85vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-zinc-950 px-5 pt-4 pb-3 border-b border-zinc-800 flex items-center justify-between">
+              <div className="text-base font-bold text-white">🔔 Notifications</div>
+              <button onClick={() => setShowNotifs(false)} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
+            </div>
+            <div className="p-4">
+              {notifPerm === "default" && (
+                <button onClick={enableNotifs} className="w-full mb-3 py-2.5 rounded-xl bg-red-600/10 border border-red-600/30 text-red-400 text-xs font-bold">
+                  🔔 Enable browser alerts for new activity
+                </button>
+              )}
+              {notifPerm === "denied" && (
+                <div className="mb-3 text-[10px] text-zinc-600 text-center">Browser alerts are blocked — enable them in your browser's site settings.</div>
+              )}
+              {notifs.length === 0 ? (
+                <div className="text-center py-10">
+                  <div className="text-4xl mb-2">🔕</div>
+                  <div className="text-sm font-bold text-white">Nothing yet</div>
+                  <div className="text-xs text-zinc-500 mt-1">Follow people on the Friends tab to see their ratings here.</div>
+                </div>
+              ) : notifs.map((n) => (
+                <Link key={n.id} href={gameHref(n.game_id, n.sport, n.game_date)} onClick={() => setShowNotifs(false)} className="block">
+                  <div className="flex items-center gap-3 p-2.5 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                    {n.profile?.avatar_url ? (
+                      <img src={n.profile.avatar_url} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-xs font-bold text-white shrink-0">{(n.profile?.display_name || n.profile?.handle || "?")[0]?.toUpperCase()}</div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-white"><span className="font-bold">{n.profile?.display_name || `@${n.profile?.handle || "someone"}`}</span> <span className="text-zinc-500">rated</span></div>
+                      <div className="text-sm font-bold text-white truncate">{n.away_team} {n.away_score} — {n.home_team} {n.home_score}</div>
+                      <div className="text-[10px] text-zinc-600">{new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                    </div>
+                    <div className="w-9 h-9 flex items-center justify-center text-white font-extrabold rounded-lg text-sm shrink-0" style={{ backgroundColor: rc(parseFloat(n.rating)) }}>{parseFloat(n.rating).toFixed(1)}</div>
+                  </div>
+                </Link>
+              ))}
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@
 import { use } from "react";
 import DailyRecap from "@/components/DailyRecap";
 
-export default function MlbRecapPage({ params }) {
+export default function NbaRecapPage({ params }) {
   const { date } = use(params);
-  return <DailyRecap sport="mlb" date={date} />;
+  return <DailyRecap sport="nba" date={date} />;
 }

@@ -19,14 +19,17 @@ function rc(r) {
   return "#15803d";
 }
 
-const SPORT_PATHS = { nfl: "football/nfl", mlb: "baseball/mlb" };
+const SPORT_PATHS = { nfl: "football/nfl", mlb: "baseball/mlb", nba: "basketball/nba", nhl: "hockey/nhl" };
+const ALL_SPORTS = ["nfl", "mlb", "nba", "nhl"];
 const ESPN_TEAM_IDS = {
   nfl: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","33","34"],
   mlb: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"],
+  nba: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"],
+  nhl: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","25","26","27","28","29","30","37","124292","129764"],
 };
 
 // Module-level cache: sport -> { playerName: { id, sport, team, position, headshot } }
-const playerIndexCache = { nfl: null, mlb: null };
+const playerIndexCache = { nfl: null, mlb: null, nba: null, nhl: null };
 
 async function buildPlayerIndex(sport) {
   if (playerIndexCache[sport]) return playerIndexCache[sport];
@@ -39,18 +42,23 @@ async function buildPlayerIndex(sport) {
       if (!r.ok) continue;
       const d = await r.json();
       const abbr = d.team?.abbreviation || "";
-      (d.athletes || []).forEach((group) => {
-        (group.items || []).forEach((p) => {
-          if (p.displayName && p.id) {
-            index[p.displayName] = {
-              id: p.id,
-              sport,
-              team: abbr,
-              position: p.position?.abbreviation || "",
-              headshot: p.headshot?.href || "",
-            };
-          }
-        });
+      // Rosters come in two shapes: grouped (NFL/MLB/NHL: [{position, items:[…]}])
+      // or flat (NBA: [player, player, …]). Flatten either into a player list.
+      const athletes = [];
+      (d.athletes || []).forEach((entry) => {
+        if (entry && Array.isArray(entry.items)) athletes.push(...entry.items);
+        else if (entry && entry.displayName) athletes.push(entry);
+      });
+      athletes.forEach((p) => {
+        if (p.displayName && p.id) {
+          index[p.displayName] = {
+            id: p.id,
+            sport,
+            team: abbr,
+            position: p.position?.abbreviation || "",
+            headshot: p.headshot?.href || "",
+          };
+        }
       });
     } catch (e) { /* skip */ }
   }
@@ -65,6 +73,32 @@ function buildStatLine(sport, labels, stats) {
     return i >= 0 ? stats[i] : null;
   };
   const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+  if (sport === "nba") {
+    const pts = get("PTS"), reb = get("REB"), ast = get("AST");
+    const bits = [];
+    if (pts != null) bits.push(`${pts} PTS`);
+    if (reb != null && num(reb)) bits.push(`${reb} REB`);
+    if (ast != null && num(ast)) bits.push(`${ast} AST`);
+    return bits.join(" · ") || "—";
+  }
+  if (sport === "nhl") {
+    // Goalie line if save stats present, otherwise skater line
+    const sv = get("SV") ?? get("SAVES"), ga = get("GA"), svpct = get("SV%");
+    if (sv != null || svpct != null) {
+      const bits = [];
+      if (sv != null) bits.push(`${sv} SV`);
+      if (ga != null) bits.push(`${ga} GA`);
+      if (svpct != null) bits.push(`${svpct} SV%`);
+      return bits.join(" · ") || "—";
+    }
+    const g = get("G"), a = get("A"), s = get("S") ?? get("SOG"), pm = get("+/-");
+    const bits = [];
+    if (g != null) bits.push(`${g} G`);
+    if (a != null) bits.push(`${a} A`);
+    if (s != null && num(s)) bits.push(`${s} S`);
+    if (pm != null && bits.length === 0) bits.push(`${pm} +/-`);
+    return bits.join(" · ") || "—";
+  }
   if (sport === "mlb") {
     const ab = get("AB"), ip = get("IP");
     if (ip != null) {
@@ -187,16 +221,19 @@ export default function PlayerPage({ params }) {
           if (r.letdown === playerName) c.letdown++;
         });
 
-        // 2. Resolve player to an ESPN athlete id
+        // 2. Resolve player to an ESPN athlete id — try the sport from their
+        // community picks first, then fall back across the other leagues.
         const pickSport = pickRows[0]?.sport;
-        const sportsToTry = pickSport ? [pickSport, pickSport === "mlb" ? "nfl" : "mlb"] : ["nfl", "mlb"];
+        const sportsToTry = pickSport
+          ? [pickSport, ...ALL_SPORTS.filter((s) => s !== pickSport)]
+          : ALL_SPORTS;
 
         let resolved = null;
         for (let si = 0; si < sportsToTry.length && !resolved; si++) {
           const sp = sportsToTry[si];
           const index = await buildPlayerIndex(sp);
           if (cancelled) return;
-          setResolveProgress(50 * (si + 1));
+          setResolveProgress(Math.round((100 * (si + 1)) / sportsToTry.length));
           if (index[playerName]) resolved = index[playerName];
         }
 
@@ -287,7 +324,7 @@ export default function PlayerPage({ params }) {
     ? (ratedGames.reduce((s, g) => s + g.communityAvg, 0) / ratedGames.length).toFixed(1)
     : null;
 
-  const sportEmoji = meta?.sport === "mlb" ? "⚾" : meta?.sport === "nfl" ? "🏈" : "🏟️";
+  const sportEmoji = { nfl: "🏈", mlb: "⚾", nba: "🏀", nhl: "🏒" }[meta?.sport] || "🏟️";
 
   if (loading) {
     return (
@@ -405,7 +442,7 @@ export default function PlayerPage({ params }) {
                 <div className="text-xs text-zinc-600 text-center py-3">No games found</div>
               )}
               {gameLog.map((g) => {
-                const href = g.sport === "mlb" ? `/game/${g.eventId}?sport=mlb` : `/game/${g.eventId}`;
+                const href = g.sport && g.sport !== "nfl" ? `/game/${g.eventId}?sport=${g.sport}` : `/game/${g.eventId}`;
                 const dateStr = g.date
                   ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
                   : "";

@@ -10,6 +10,18 @@ function autoMoods(g) {
     if (g.diff >= 8) m.push("💨 Blowout");
     if (g.ot) m.push("🔟 Extras");
     if (g.total <= 4 && g.isFinal) m.push("⚡ Pitcher's Duel");
+  } else if (g.sport === "nba") {
+    if (g.total >= 240) m.push("🔥 Shootout");
+    if (g.diff <= 3 && g.isFinal) m.push("🎯 Clutch");
+    if (g.diff >= 20) m.push("💨 Blowout");
+    if (g.ot) m.push("⏱️ OT");
+    if (g.total <= 190 && g.isFinal) m.push("🛡️ Defensive");
+  } else if (g.sport === "nhl") {
+    if (g.total >= 9) m.push("🚨 Goal Fest");
+    if (g.diff <= 1 && g.isFinal) m.push("🎯 Nail-biter");
+    if (g.diff >= 5) m.push("💨 Blowout");
+    if (g.ot) m.push("⏱️ OT");
+    if (g.total <= 3 && g.isFinal) m.push("🥅 Goalie Duel");
   } else {
     // NFL moods (default)
     if (g.total >= 55) m.push("🔥 Shootout");
@@ -30,8 +42,11 @@ function isLive(g) {
 export default function GameCard({ game: g, logged }) {
   const moods = autoMoods(g);
   const live = isLive(g);
-  // Build link with ?sport=mlb so game page knows which ESPN endpoint to hit
-  const href = g.sport === "mlb" ? `/game/${g.id}?sport=mlb` : `/game/${g.id}`;
+  const dateBased = g.sport && g.sport !== "nfl"; // mlb/nba/nhl are shown by date, not week
+  // Carry ?sport= so the game page hits the right ESPN endpoint
+  const href = dateBased ? `/game/${g.id}?sport=${g.sport}` : `/game/${g.id}`;
+  // Low-scoring sports (MLB/NHL) are "close" within 1; high-scoring within 3
+  const closeWithin = (g.sport === "mlb" || g.sport === "nhl") ? 1 : 3;
 
   return (
     <Link href={href} className="block">
@@ -42,7 +57,7 @@ export default function GameCard({ game: g, logged }) {
             <div className="flex items-center gap-1.5 min-w-0">
               {g.ot && <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 font-bold shrink-0">{g.sport === "mlb" ? "EXTRAS" : "OT"}</span>}
               <span className="text-[10px] font-bold text-zinc-500 tracking-wide uppercase truncate">
-                {g.sport === "mlb"
+                {dateBased
                   ? `${g.shortDate}${g.net ? " · " + g.net : ""}`
                   : `Wk ${g.week} · ${g.net} · ${g.shortDate}`}
               </span>
@@ -53,8 +68,7 @@ export default function GameCard({ game: g, logged }) {
                   🔴 {g.statusDetail || "LIVE"}
                 </span>
               )}
-              {g.diff <= 3 && g.isFinal && g.sport !== "mlb" && <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-600/10 text-red-400 font-bold">CLOSE</span>}
-              {g.diff <= 1 && g.isFinal && g.sport === "mlb" && <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-600/10 text-red-400 font-bold">CLOSE</span>}
+              {g.diff <= closeWithin && g.isFinal && <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-600/10 text-red-400 font-bold">CLOSE</span>}
               {logged && <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-bold">✓</span>}
             </div>
           </div>

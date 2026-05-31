@@ -5,7 +5,10 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
-const SPORT_PATHS = { nfl: "football/nfl", mlb: "baseball/mlb" };
+const SPORT_PATHS = { nfl: "football/nfl", mlb: "baseball/mlb", nba: "basketball/nba", nhl: "hockey/nhl" };
+const SPORT_EMOJI = { nfl: "🏈", mlb: "⚾", nba: "🏀", nhl: "🏒" };
+// Sports whose daily slate we pull team-to-win props from (NFL is weekly, still works by date)
+const STREAK_SPORTS = ["mlb", "nba", "nhl", "nfl"];
 
 // Local calendar day (user timezone)
 function localDay(iso) {
@@ -65,7 +68,8 @@ export default function StreakPage() {
     catch (e) { return []; }
   };
 
-  // ---- Build today's prop pool: MLB only. Hitter-to-get-a-hit + competitive team-win props ----
+  // ---- Build today's prop pool across sports. Team-to-win for all; plus the
+  // signature MLB hitter-to-get-a-hit props. ----
   useEffect(() => {
     let cancelled = false;
     async function loadProps() {
@@ -73,88 +77,119 @@ export default function StreakPage() {
       try {
         const all = [];
         const d = new Date();
-        const mlbDate = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
-        const sbR = await fetch(`${ESPN_BASE}/${SPORT_PATHS.mlb}/scoreboard?dates=${mlbDate}`);
-        if (!sbR.ok) { if (!cancelled) { setProps([]); setLoading(false); } return; }
-        const sbd = await sbR.json();
-        const scheduled = [];
-        (sbd.events || []).forEach(e => {
-          const c = e.competitions?.[0];
-          if (!c || c.status?.type?.name !== "STATUS_SCHEDULED") return;
-          const ho = (c.competitors || []).find(t => t.homeAway === "home");
-          const aw = (c.competitors || []).find(t => t.homeAway === "away");
-          if (!ho || !aw) return;
-          scheduled.push({ e, ho, aw });
-        });
-        scheduled.sort((a, b) => new Date(a.e.date) - new Date(b.e.date));
-        const toFetch = scheduled.slice(0, 20); // cap summary fetches
+        const dateParam = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
 
-        for (const item of toFetch) {
-          const { e, ho, aw } = item;
-          if (cancelled) return;
-          let homeML = null, awayML = null;
+        // Pull every sport's slate in parallel
+        const slates = await Promise.all(STREAK_SPORTS.map(async (sp) => {
           try {
-            const sumR = await fetch(`${ESPN_BASE}/${SPORT_PATHS.mlb}/summary?event=${e.id}`);
-            if (!sumR.ok) continue;
-            const sd = await sumR.json();
-
-            // --- Moneylines for team-win props ---
-            const pc = sd.pickcenter?.[0];
-            if (pc) {
-              if (pc.homeTeamOdds?.moneyLine != null) homeML = pc.homeTeamOdds.moneyLine;
-              if (pc.awayTeamOdds?.moneyLine != null) awayML = pc.awayTeamOdds.moneyLine;
-            }
-            [
-              { side: ho, ml: homeML, opp: aw },
-              { side: aw, ml: awayML, opp: ho },
-            ].forEach(({ side, ml, opp }) => {
-              const prob = mlToProb(ml);
-              if (prob == null || prob < 0.30 || prob > 0.70) return;
-              all.push({
-                key: `${e.id}-${side.team.abbreviation}-win`,
-                propClass: "team", game_id: e.id, sport: "mlb", date: e.date,
-                pick_type: "team_win", pick_value: side.team.abbreviation,
-                pick_label: `${side.team.displayName} to beat ${opp.team.abbreviation}`,
-                teamAbbr: side.team.abbreviation, teamName: side.team.displayName,
-                teamLogo: side.team.logo, oppAbbr: opp.team.abbreviation,
-                prob, moneyline: ml,
-              });
+            const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS[sp]}/scoreboard?dates=${dateParam}`);
+            if (!r.ok) return { sport: sp, scheduled: [] };
+            const d2 = await r.json();
+            const scheduled = [];
+            (d2.events || []).forEach(e => {
+              const c = e.competitions?.[0];
+              if (!c || c.status?.type?.name !== "STATUS_SCHEDULED") return;
+              const ho = (c.competitors || []).find(t => t.homeAway === "home");
+              const aw = (c.competitors || []).find(t => t.homeAway === "away");
+              if (!ho || !aw) return;
+              scheduled.push({ e, ho, aw, comp: c });
             });
+            return { sport: sp, scheduled };
+          } catch (e) { return { sport: sp, scheduled: [] }; }
+        }));
+        if (cancelled) return;
 
-            // --- Hitter-to-get-a-hit props (from batting-average leaders) ---
-            (sd.leaders || []).forEach(teamL => {
-              const teamAbbr = teamL.team?.abbreviation;
-              const teamLogo = teamL.team?.logos?.[0]?.href || teamL.team?.logo;
-              const oppAbbr = teamAbbr === ho.team.abbreviation ? aw.team.abbreviation : ho.team.abbreviation;
-              const avgCat = (teamL.leaders || []).find(c => c.name === "avg");
-              (avgCat?.leaders || []).slice(0, 1).forEach(l => {
-                const ath = l.athlete;
-                if (!ath) return;
-                const avg = parseFloat(l.displayValue);
-                if (isNaN(avg)) return;
-                // Per-game hit probability ≈ 1 - (1-avg)^(avg-bats). With ~3.8 ABs:
-                // P(>=1 hit) = 1 - (1 - avg)^3.8
-                const hitProb = 1 - Math.pow(1 - avg, 3.8);
+        for (const { sport, scheduled } of slates) {
+          scheduled.sort((a, b) => new Date(a.e.date) - new Date(b.e.date));
+
+          if (sport === "mlb") {
+            // MLB keeps the richer two-pass: summary per game for moneylines + hitters
+            for (const { e, ho, aw } of scheduled.slice(0, 20)) {
+              if (cancelled) return;
+              let homeML = null, awayML = null;
+              try {
+                const sumR = await fetch(`${ESPN_BASE}/${SPORT_PATHS.mlb}/summary?event=${e.id}`);
+                if (!sumR.ok) continue;
+                const sd = await sumR.json();
+                const pc = sd.pickcenter?.[0];
+                if (pc) {
+                  if (pc.homeTeamOdds?.moneyLine != null) homeML = pc.homeTeamOdds.moneyLine;
+                  if (pc.awayTeamOdds?.moneyLine != null) awayML = pc.awayTeamOdds.moneyLine;
+                }
+                [
+                  { side: ho, ml: homeML, opp: aw },
+                  { side: aw, ml: awayML, opp: ho },
+                ].forEach(({ side, ml, opp }) => {
+                  const prob = mlToProb(ml);
+                  if (prob == null || prob < 0.30 || prob > 0.70) return;
+                  all.push({
+                    key: `${e.id}-${side.team.abbreviation}-win`,
+                    propClass: "team", game_id: e.id, sport: "mlb", date: e.date,
+                    pick_type: "team_win", pick_value: side.team.abbreviation,
+                    pick_label: `${side.team.displayName} to beat ${opp.team.abbreviation}`,
+                    teamAbbr: side.team.abbreviation, teamName: side.team.displayName,
+                    teamLogo: side.team.logo, oppAbbr: opp.team.abbreviation,
+                    prob, moneyline: ml,
+                  });
+                });
+                (sd.leaders || []).forEach(teamL => {
+                  const teamAbbr = teamL.team?.abbreviation;
+                  const teamLogo = teamL.team?.logos?.[0]?.href || teamL.team?.logo;
+                  const oppAbbr = teamAbbr === ho.team.abbreviation ? aw.team.abbreviation : ho.team.abbreviation;
+                  const avgCat = (teamL.leaders || []).find(c => c.name === "avg");
+                  (avgCat?.leaders || []).slice(0, 1).forEach(l => {
+                    const ath = l.athlete;
+                    if (!ath) return;
+                    const avg = parseFloat(l.displayValue);
+                    if (isNaN(avg)) return;
+                    const hitProb = 1 - Math.pow(1 - avg, 3.8);
+                    all.push({
+                      key: `${e.id}-${ath.id}-hit`,
+                      propClass: "hitter", game_id: e.id, sport: "mlb", date: e.date,
+                      pick_type: "hitter_hit", pick_value: String(ath.id),
+                      pick_label: `${ath.displayName} to get a hit`,
+                      playerName: ath.displayName, playerId: String(ath.id),
+                      playerAvg: l.displayValue, playerPos: ath.position?.abbreviation || "",
+                      teamAbbr, teamName: teamL.team?.displayName, teamLogo, oppAbbr,
+                      headshot: ath.headshot?.href || `https://a.espncdn.com/i/headshots/mlb/players/full/${ath.id}.png`,
+                      prob: hitProb,
+                    });
+                  });
+                });
+              } catch (err) { /* skip game */ }
+            }
+          } else {
+            // NFL / NBA / NHL: team-win props from scoreboard-level odds (one fetch, no per-game summaries)
+            for (const { e, ho, aw, comp } of scheduled) {
+              const odds = (comp.odds || [])[0] || {};
+              [
+                { side: ho, opp: aw, ml: odds.homeTeamOdds?.moneyLine },
+                { side: aw, opp: ho, ml: odds.awayTeamOdds?.moneyLine },
+              ].forEach(({ side, opp, ml }) => {
+                const prob = mlToProb(ml);
                 all.push({
-                  key: `${e.id}-${ath.id}-hit`,
-                  propClass: "hitter", game_id: e.id, sport: "mlb", date: e.date,
-                  pick_type: "hitter_hit", pick_value: String(ath.id),
-                  pick_label: `${ath.displayName} to get a hit`,
-                  playerName: ath.displayName, playerId: String(ath.id),
-                  playerAvg: l.displayValue, playerPos: ath.position?.abbreviation || "",
-                  teamAbbr, teamName: teamL.team?.displayName, teamLogo, oppAbbr,
-                  headshot: ath.headshot?.href || `https://a.espncdn.com/i/headshots/mlb/players/full/${ath.id}.png`,
-                  prob: hitProb,
+                  key: `${e.id}-${side.team.abbreviation}-win`,
+                  propClass: "team", game_id: e.id, sport, date: e.date,
+                  pick_type: "team_win", pick_value: side.team.abbreviation,
+                  pick_label: `${side.team.displayName} to beat ${opp.team.abbreviation}`,
+                  teamAbbr: side.team.abbreviation, teamName: side.team.displayName,
+                  teamLogo: side.team.logo, oppAbbr: opp.team.abbreviation,
+                  prob, moneyline: ml,
                 });
               });
-            });
-          } catch (err) { /* skip game */ }
+            }
+          }
         }
-        // Hitters first (the signature prop), then by closeness to a coin flip
+
+        // Hitters first (the signature prop); within a class, surface the strongest plays
         all.sort((a, b) => {
           if (a.propClass !== b.propClass) return a.propClass === "hitter" ? -1 : 1;
-          if (a.propClass === "hitter") return b.prob - a.prob; // best hitters first
-          return Math.abs(a.prob - 0.5) - Math.abs(b.prob - 0.5);
+          if (a.propClass === "hitter") return b.prob - a.prob;
+          // team props: known favorites first, then unknown-odds games
+          if (a.prob == null && b.prob == null) return 0;
+          if (a.prob == null) return 1;
+          if (b.prob == null) return -1;
+          return b.prob - a.prob;
         });
         if (!cancelled) setProps(all);
       } catch (e) { console.error("Streak props:", e); }
@@ -329,12 +364,12 @@ export default function StreakPage() {
         <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-orange-900/50 via-zinc-900 to-zinc-900 border border-orange-600/30 p-5 mb-4 text-center">
           <div className="text-[10px] font-bold text-orange-400 tracking-widest uppercase">Current Streak</div>
           <div className="text-6xl font-extrabold text-white mt-1 mb-1">{curStreak}<span className="text-2xl text-orange-500">🔥</span></div>
-          <div className="text-[11px] text-zinc-500">Best ever: {bestStreak} · {settled.filter(p => p.status === "won").length} total correct</div>
+          <div className="text-[11px] text-zinc-500">Best ever: {bestStreak} · {settled.filter(p => p.status === "won").length} correct all-time</div>
         </div>
 
         {/* How it works */}
         <div className="rounded-xl bg-zinc-900/60 border border-zinc-800 p-3 mb-4 text-center">
-          <span className="text-[11px] text-zinc-400">One pick per day from the MLB slate. Pick a hot hitter to get a hit, or a team to win. Hit it and your streak grows — miss and you're back to zero. ⚾</span>
+          <span className="text-[11px] text-zinc-400">One pick per day across all sports. Pick a team to win — or a hot MLB hitter to get a hit. Hit it and your streak grows; miss and you're back to zero. 🔥</span>
         </div>
 
         {/* Today's pick status */}
@@ -363,13 +398,13 @@ export default function StreakPage() {
           <Link href="/leaderboard" className="text-[10px] font-bold text-orange-400 hover:text-orange-300">🏆 Streak leaders ›</Link>
         </div>
 
-        {loading && <div className="text-center py-12 text-zinc-500 text-sm">Loading today's MLB slate…</div>}
+        {loading && <div className="text-center py-12 text-zinc-500 text-sm">Loading today's slate…</div>}
 
         {!loading && props.length === 0 && (
           <div className="text-center py-16">
-            <div className="text-5xl mb-3">⚾</div>
+            <div className="text-5xl mb-3">🔥</div>
             <div className="text-base font-bold text-white">No games on the board today</div>
-            <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">Beat the Streak runs on the daily MLB slate. Check back on a game day for hitters and matchups to pick.</div>
+            <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">Beat the Streak runs on each day's slate across NFL, MLB, NBA & NHL. Check back on a game day for matchups to pick.</div>
           </div>
         )}
 
@@ -380,8 +415,7 @@ export default function StreakPage() {
           const renderProp = (prop) => {
             const selected = todaysPick && todaysPick.game_id === prop.game_id && todaysPick.pick_value === prop.pick_value;
             const isSaving = saving === prop.key;
-            const probPct = Math.round(prop.prob * 100);
-            const gameHref = `/game/${prop.game_id}?sport=mlb`;
+                const gameHref = prop.sport === "nfl" ? `/game/${prop.game_id}` : `/game/${prop.game_id}?sport=${prop.sport}`;
             return (
               <div key={prop.key}
                 className={`rounded-2xl border-2 p-3.5 mb-2.5 transition-all ${selected ? "bg-orange-500/15 border-orange-500/60" : "bg-zinc-900 border-zinc-800"}`}>
@@ -405,14 +439,11 @@ export default function StreakPage() {
                     ) : (
                       <>
                         <div className="text-sm font-bold text-white truncate">{prop.teamName} <span className="text-zinc-500 font-normal">to win</span></div>
-                        <div className="text-[10px] text-zinc-500">⚾ vs {prop.oppAbbr} · {fmtTime(prop.date)}</div>
+                        <div className="text-[10px] text-zinc-500">{SPORT_EMOJI[prop.sport] || ""} vs {prop.oppAbbr} · {fmtTime(prop.date)}</div>
                       </>
                     )}
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-lg font-extrabold" style={{ color: "#f97316" }}>{probPct}%</div>
-                    <div className="text-[8px] text-zinc-600 font-bold tracking-wider">{prop.propClass === "hitter" ? "HIT ODDS" : "WIN ODDS"}</div>
-                  </div>
+                  <span className="text-zinc-600 text-xs shrink-0">→</span>
                 </Link>
                 {/* Pick / selected button */}
                 <button onClick={() => pickProp(prop)} disabled={isSaving}
@@ -431,12 +462,12 @@ export default function StreakPage() {
                   {hitters.map(renderProp)}
                 </div>
               )}
-              {teams.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-[10px] font-bold text-orange-400 tracking-widest uppercase mb-2">🏆 Team to win</div>
-                  {teams.map(renderProp)}
+              {STREAK_SPORTS.filter((sp) => teams.some((t) => t.sport === sp)).map((sp) => (
+                <div key={sp} className="mb-4">
+                  <div className="text-[10px] font-bold text-orange-400 tracking-widest uppercase mb-2">{SPORT_EMOJI[sp]} {sp.toUpperCase()} — teams to win</div>
+                  {teams.filter((t) => t.sport === sp).map(renderProp)}
                 </div>
-              )}
+              ))}
             </>
           );
         })()}

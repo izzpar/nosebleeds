@@ -135,7 +135,7 @@ export default function BreakdownPage() {
               const u = parseFloat(p.units) || 0;
               const s = statusStyle(p.status);
               return (
-                <Link key={p.id} href={p.sport === "mlb" ? `/game/${p.game_id}?sport=mlb` : `/game/${p.game_id}`}
+                <Link key={p.id} href={p.sport && p.sport !== "nfl" ? `/game/${p.game_id}?sport=${p.sport}` : `/game/${p.game_id}`}
                   className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold text-white truncate">{p.pick_label}</div>
@@ -164,7 +164,7 @@ export default function BreakdownPage() {
             {pickem.map(p => {
               const s = statusStyle(p.status);
               return (
-                <Link key={p.id} href={p.sport === "mlb" ? `/game/${p.game_id}?sport=mlb` : `/game/${p.game_id}`}
+                <Link key={p.id} href={p.sport && p.sport !== "nfl" ? `/game/${p.game_id}?sport=${p.sport}` : `/game/${p.game_id}`}
                   className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold text-white truncate">{p.pick_label}</div>

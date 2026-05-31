@@ -4,12 +4,20 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
+import { emotesFor, nameColor } from "@/lib/drops";
+import { makeRatingCard } from "@/lib/shareCard";
+import { repScore, repTier } from "@/lib/reputation";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
   nfl: "football/nfl",
   mlb: "baseball/mlb",
+  nba: "basketball/nba",
+  nhl: "hockey/nhl",
 };
+const ALL_SPORTS = ["nfl", "mlb", "nba", "nhl"];
+// Period count that signals overtime/extras (MLB innings, NBA quarters, NHL periods)
+const OT_THRESHOLD = { mlb: 9, nba: 4, nhl: 3, nfl: 4 };
 const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy
 
 // NFL stadium coordinates for weather lookups (Open-Meteo)
@@ -113,6 +121,18 @@ function autoMoods(g) {
     if (g.diff >= 8) m.push("💨 Blowout");
     if (g.ot) m.push("🔟 Extras");
     if (g.total <= 4 && g.isFinal) m.push("⚡ Pitcher's Duel");
+  } else if (g?.sport === "nba") {
+    if (g.total >= 240) m.push("🔥 Shootout");
+    if (g.diff <= 3 && g.isFinal) m.push("🎯 Clutch");
+    if (g.diff >= 20) m.push("💨 Blowout");
+    if (g.ot) m.push("⏱️ OT");
+    if (g.total <= 190 && g.isFinal) m.push("🛡️ Defensive");
+  } else if (g?.sport === "nhl") {
+    if (g.total >= 9) m.push("🚨 Goal Fest");
+    if (g.diff <= 1 && g.isFinal) m.push("🎯 Nail-biter");
+    if (g.diff >= 5) m.push("💨 Blowout");
+    if (g.ot) m.push("⏱️ OT");
+    if (g.total <= 3 && g.isFinal) m.push("🥅 Goalie Duel");
   } else {
     if (g.total >= 55) m.push("🔥 Shootout");
     if (g.diff <= 3 && g.isFinal) m.push("🎯 Clutch");
@@ -124,9 +144,9 @@ function autoMoods(g) {
 }
 
 async function fetchGame(id, sport = "nfl") {
-  // Try requested sport, then fall back to the other one (handles cases where
-  // user lands on /game/X without ?sport= param and the rating was for MLB)
-  const order = sport === "mlb" ? ["mlb", "nfl"] : ["nfl", "mlb"];
+  // Try the requested sport first, then fall back to the others (handles cases
+  // where the user lands on /game/X without a matching ?sport= param)
+  const order = [sport, ...ALL_SPORTS.filter((s) => s !== sport)];
   for (const trySport of order) {
     const result = await fetchGameForSport(id, trySport);
     if (result) return result;
@@ -195,13 +215,15 @@ async function fetchGameForSport(id, sport) {
       });
     });
 
-    // Full player stats by category, per team (NFL uses category.name, MLB uses category.type)
+    // Full player stats by category, per team. NFL uses category.name (passing/
+    // rushing/…), MLB category.type (batting/pitching), NHL category.name
+    // (forwards/defenses/goalies). NBA is a single, often-unnamed flat category.
     const fullPlayerStats = { away: {}, home: {} };
     (d.boxscore?.players || []).forEach((team) => {
       const abbr = team.team?.abbreviation;
       const side = abbr === ho.team?.abbreviation ? "home" : "away";
       (team.statistics || []).forEach((category) => {
-        const catName = category.name || category.type;
+        const catName = category.name || category.type || (sport === "nba" ? "stats" : "");
         const players = (category.athletes || []).map(a => ({
           name: a.athlete?.displayName || "",
           jersey: a.athlete?.jersey || "",
@@ -212,7 +234,7 @@ async function fetchGameForSport(id, sport) {
           fullPlayerStats[side][catName] = {
             label: category.text || category.name || category.type,
             keys: category.keys || [],
-            labels: category.labels || category.descriptions || [],
+            labels: category.labels || category.names || category.descriptions || [],
             players,
           };
         }
@@ -295,6 +317,31 @@ async function fetchGameForSport(id, sport) {
             if (er != null) bits.push(`${er} ER`);
             return bits.join(" · ");
           }
+        } else if (sport === "nba") {
+          // Flat box score — headline with points / rebounds / assists
+          const pts = get("PTS"), reb = get("REB"), ast = get("AST");
+          const bits = [];
+          if (pts != null) bits.push(`${pts} PTS`);
+          if (reb != null && reb !== "0") bits.push(`${reb} REB`);
+          if (ast != null && ast !== "0") bits.push(`${ast} AST`);
+          return bits.join(" · ");
+        } else if (sport === "nhl") {
+          if (catName === "goalies") {
+            const sv = get("SV") ?? get("SAVES"), ga = get("GA"), svpct = get("SV%");
+            const bits = [];
+            if (sv != null) bits.push(`${sv} SV`);
+            if (ga != null) bits.push(`${ga} GA`);
+            if (svpct != null) bits.push(`${svpct} SV%`);
+            return bits.join(" · ");
+          } else {
+            // Skaters (forwards / defenses): goals, assists, shots
+            const g_ = get("G"), a = get("A"), sog = get("SOG") ?? get("S");
+            const bits = [];
+            if (g_ != null && g_ !== "0") bits.push(`${g_} G`);
+            if (a != null && a !== "0") bits.push(`${a} A`);
+            if (sog != null && sog !== "0") bits.push(`${sog} SOG`);
+            return bits.join(" · ") || `${g_ || 0}G ${a || 0}A`;
+          }
         } else {
           if (catName === "passing") {
             const ca = get("C/ATT"), yds = get("YDS"), td = get("TD"), int = get("INT");
@@ -335,6 +382,10 @@ async function fetchGameForSport(id, sport) {
       // Priority categories first (the "skill" positions)
       const catOrder = sport === "mlb"
         ? ["batting", "pitching"]
+        : sport === "nba"
+        ? Object.keys(cats)
+        : sport === "nhl"
+        ? ["forwards", "defenses", "goalies"]
         : ["passing", "rushing", "receiving", "defensive"];
       catOrder.forEach((catName) => {
         const cat = cats[catName];
@@ -419,7 +470,7 @@ async function fetchGameForSport(id, sport) {
       atsRecords,
       standingsPos,
       probablePitchers,
-      ot: (ho.linescores || []).length > (sport === "mlb" ? 9 : 4),
+      ot: (ho.linescores || []).length > (OT_THRESHOLD[sport] ?? 4),
       diff: Math.abs((parseInt(ho.score) || 0) - (parseInt(aw.score) || 0)),
       total: (parseInt(ho.score) || 0) + (parseInt(aw.score) || 0),
       odds: d.pickcenter?.[0]?.details || "", ou: d.pickcenter?.[0]?.overUnder || "",
@@ -429,7 +480,7 @@ async function fetchGameForSport(id, sport) {
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "😂", "😡"];
 
-function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply }) {
+function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyText, setReplyText, onPostReply, onDelete, onReact, submitting, isReply, teamEmoji = "🏈", reactionEmojis = REACTION_EMOJIS, repMap = {} }) {
   const c = comment;
   const [showPicker, setShowPicker] = useState(false);
   // Group reactions by emoji
@@ -470,11 +521,14 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
         </Link>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400">
+            <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400" style={nameColor(c.profile?.unlocked) ? { color: nameColor(c.profile.unlocked) } : undefined}>
               {c.profile?.display_name || (c.profile?.handle ? `@${c.profile.handle}` : "Anonymous")}
             </Link>
+            {repMap[c.user_id] && (
+              <span title={`${repMap[c.user_id].name} · reputation`} className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: repMap[c.user_id].color + "22", color: repMap[c.user_id].color }}>{repMap[c.user_id].emoji} {repMap[c.user_id].name}</span>
+            )}
             {c.profile?.favorite_team && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-600/20 text-red-300 border border-red-600/30">🏈 {c.profile.favorite_team}</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-600/20 text-red-300 border border-red-600/30">{teamEmoji} {c.profile.favorite_team}</span>
             )}
             <span className="text-[10px] text-zinc-600">
               {new Date(c.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -503,8 +557,8 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
                 {showPicker ? "×" : "+ 😀"}
               </button>
               {showPicker && (
-                <div className="absolute bottom-full left-0 mb-1 flex bg-zinc-800 border border-zinc-700 rounded-full px-2 py-1.5 gap-1 z-20 shadow-xl">
-                  {REACTION_EMOJIS.map(emoji => (
+                <div className="absolute bottom-full left-0 mb-1 flex flex-wrap max-w-[240px] bg-zinc-800 border border-zinc-700 rounded-2xl px-2 py-1.5 gap-1 z-20 shadow-xl">
+                  {reactionEmojis.map(emoji => (
                     <button key={emoji} onClick={(e) => { e.stopPropagation(); pickReaction(emoji); }} className="text-lg hover:scale-125 transition-transform px-1">{emoji}</button>
                   ))}
                 </div>
@@ -559,6 +613,9 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
               onReact={onReact}
               submitting={submitting}
               isReply={true}
+              teamEmoji={teamEmoji}
+              reactionEmojis={reactionEmojis}
+              repMap={repMap}
             />
           ))}
         </div>
@@ -570,7 +627,13 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
 export default function GamePage({ params }) {
   const { id } = use(params);
   const searchParams = useSearchParams();
-  const sport = searchParams.get("sport") === "mlb" ? "mlb" : "nfl";
+  const sportParam = searchParams.get("sport");
+  const sport = ALL_SPORTS.includes(sportParam) ? sportParam : "nfl";
+  // Fandom filters key off the favorite team for THIS sport. NFL lives in
+  // `favorite_team`; others in `favorite_team_<sport>`. Alias it back to
+  // `favorite_team` via PostgREST so downstream filtering stays uniform.
+  const favSelect = sport === "nfl" ? "favorite_team" : `favorite_team:favorite_team_${sport}`;
+  const sportTeamEmoji = { nfl: "🏈", mlb: "⚾", nba: "🏀", nhl: "🏒" }[sport] || "🏈";
   const { user, profile } = useAuth();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -620,6 +683,7 @@ export default function GamePage({ params }) {
   const [showWiz, setShowWiz] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [cardBusy, setCardBusy] = useState(false);
   const [step, setStep] = useState(0);
 
   // Rating state
@@ -645,6 +709,12 @@ export default function GamePage({ params }) {
   const [savingHype, setSavingHype] = useState(false);
   const [communityHype, setCommunityHype] = useState([]); // array of anticipation values
 
+  // Rooting poll ("who are you rooting for?"). rootingReady=false hides the
+  // feature gracefully when the `rooting_for` column hasn't been added yet.
+  const [rootingFor, setRootingFor] = useState("");       // this user's pick (team abbr)
+  const [rootingCounts, setRootingCounts] = useState({}); // { abbr: count }
+  const [rootingReady, setRootingReady] = useState(false);
+
   // Lists
   const [lists, setLists] = useState([]);
   const [selectedLists, setSelectedLists] = useState([]);
@@ -666,6 +736,8 @@ export default function GamePage({ params }) {
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
+  const [commentRep, setCommentRep] = useState({}); // user_id -> rep tier (for comment flair)
+  const [commentSort, setCommentSort] = useState("top"); // 'top' (most reactions) | 'new'
 
   // Load game
   useEffect(() => {
@@ -709,6 +781,7 @@ export default function GamePage({ params }) {
           setFav(rData.favorited || false);
           setPinned(rData.pinned || false);
           setUserMoods(rData.moods || []);
+          if (rData.rooting_for) setRootingFor(rData.rooting_for);
           if (rData.anticipation != null) {
             setHype(parseFloat(rData.anticipation));
             setHypeDraft(parseFloat(rData.anticipation));
@@ -739,7 +812,7 @@ export default function GamePage({ params }) {
         if (data && data.length > 0) {
           // Fetch profiles to get favorite_team for each rater
           const userIds = [...new Set(data.map(r => r.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,favorite_team`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -770,12 +843,28 @@ export default function GamePage({ params }) {
         }
       } catch (e) {}
     })();
+    // Rooting poll counts — dormant until the `rooting_for` column is added
+    (async () => {
+      try {
+        const res = await sbFetch(`ratings?game_id=eq.${id}&public=eq.true&rooting_for=not.is.null&select=rooting_for`);
+        if (!res.ok) { if (!cancelled) setRootingReady(false); return; }
+        const rows = await sbJson(res);
+        if (cancelled) return;
+        const counts = {};
+        rows.forEach(r => { if (r.rooting_for) counts[r.rooting_for] = (counts[r.rooting_for] || 0) + 1; });
+        setRootingCounts(counts);
+        setRootingReady(true);
+      } catch (e) { if (!cancelled) setRootingReady(false); }
+    })();
     return () => { cancelled = true; };
   }, [id]);
 
-  // Weather loader for Pre-Game card (uses Open-Meteo, no API key)
+  // Weather loader for Pre-Game card (uses Open-Meteo, no API key).
+  // Only outdoor leagues (NFL/MLB) — NBA/NHL play in arenas, and their team
+  // abbreviations can collide with the NFL/MLB stadium-coords table.
   useEffect(() => {
     if (!game) return;
+    if (sport !== "nfl" && sport !== "mlb") { setWeather(null); return; }
     const homeAbbr = game.home?.abbr;
     const coords = STADIUM_COORDS[homeAbbr];
     if (!coords) { setWeather(null); return; }
@@ -869,7 +958,7 @@ export default function GamePage({ params }) {
         if (cancelled) return;
         if (cData && cData.length > 0) {
           const userIds = [...new Set(cData.map(c => c.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,favorite_team`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,unlocked,${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -885,6 +974,31 @@ export default function GamePage({ params }) {
           });
 
           setComments(cData.map(c => ({ ...c, profile: pmap[c.user_id], reactions: rmap[c.id] || [] })));
+
+          // Compute commenter reputation tiers (flair next to names) in the
+          // background, so comments render immediately and tiers pop in after.
+          (async () => {
+            try {
+              const stats = {};
+              userIds.forEach((u) => { stats[u] = { ratings: 0, reviews: 0, comments: 0, likes: 0, followers: 0 }; });
+              const rt = await sbJson(await sbFetch(`ratings?user_id=in.(${userIds.join(",")})&select=user_id,review,rating`));
+              rt.forEach((r) => { if (!stats[r.user_id]) return; if (r.rating != null) stats[r.user_id].ratings++; if (r.review) stats[r.user_id].reviews++; });
+              const cm = await sbJson(await sbFetch(`comments?user_id=in.(${userIds.join(",")})&select=id,user_id`));
+              const ownerByComment = {};
+              cm.forEach((c) => { if (stats[c.user_id]) { stats[c.user_id].comments++; ownerByComment[c.id] = c.user_id; } });
+              const allCommentIds = Object.keys(ownerByComment);
+              if (allCommentIds.length > 0) {
+                const rx = await sbJson(await sbFetch(`comment_reactions?comment_id=in.(${allCommentIds.join(",")})&select=comment_id,user_id`));
+                rx.forEach((r) => { const owner = ownerByComment[r.comment_id]; if (owner && r.user_id !== owner && stats[owner]) stats[owner].likes++; });
+              }
+              const fl = await sbJson(await sbFetch(`follows?following_id=in.(${userIds.join(",")})&select=following_id`));
+              fl.forEach((f) => { if (stats[f.following_id]) stats[f.following_id].followers++; });
+              if (cancelled) return;
+              const tiers = {};
+              userIds.forEach((u) => { tiers[u] = repTier(repScore(stats[u])); });
+              setCommentRep(tiers);
+            } catch (e) { /* flair is best-effort */ }
+          })();
         } else {
           setComments([]);
         }
@@ -980,6 +1094,8 @@ export default function GamePage({ params }) {
   );
 
   const g = game, a = g.away, h = g.home;
+  // Default reactions + any emote packs this user has unlocked with Drops
+  const reactionPalette = [...new Set([...REACTION_EMOJIS, ...emotesFor(profile?.unlocked)])];
 
   // Fandom filter: filter community ratings by selected lens
   const filterByFandom = (items) => {
@@ -997,7 +1113,11 @@ export default function GamePage({ params }) {
   // Comment count by fandom
   const filteredComments = filterByFandom(comments.map(c => ({ ...c, favorite_team: c.profile?.favorite_team })));
   const moods = autoMoods(g);
-  const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(sport === "mlb" ? `${a.name} vs ${h.name} ${g.season} highlights MLB` : `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL`)}`;
+  // Hot take — your rating is far from the community consensus
+  const allAvg = allCommunityRatings.length > 0 ? allCommunityRatings.reduce((s, r) => s + parseFloat(r.rating), 0) / allCommunityRatings.length : null;
+  const isHotTake = logged && allCommunityRatings.length >= 3 && allAvg != null && Math.abs(rating - allAvg) >= 3;
+  const leagueLabel = { nfl: "NFL", mlb: "MLB", nba: "NBA", nhl: "NHL" }[sport] || "";
+  const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(sport === "nfl" ? `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL` : `${a.name} vs ${h.name} ${g.season} highlights ${leagueLabel}`)}`;
   const steps = ["Rating", "Details", "MVP", "Extras"];
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/game/${id}` : "";
   const shareText = `I rated ${a.abbr} ${a.score} - ${h.abbr} ${h.score} ${logged ? `a ${rating}/10` : ""} on The Nosebleeds 🩸`;
@@ -1051,6 +1171,20 @@ export default function GamePage({ params }) {
     } catch (e) {
       setSaveStatus(`Error: ${e.message}`);
     }
+  };
+
+  const pickRooting = async (abbr) => {
+    if (!requireAuth()) return;
+    const prev = rootingFor;
+    const next = rootingFor === abbr ? "" : abbr; // tap your team again to clear
+    setRootingFor(next);
+    setRootingCounts((c) => {
+      const n = { ...c };
+      if (prev) n[prev] = Math.max(0, (n[prev] || 0) - 1);
+      if (next) n[next] = (n[next] || 0) + 1;
+      return n;
+    });
+    await upsertRating({ rooting_for: next || null }, next ? "Rooting locked in 🙌" : "Cleared");
   };
 
   const toggleFav = async () => { const next = !fav; setFav(next); await upsertRating({ favorited: next }, next ? "Favorited" : "Unfavorited"); };
@@ -1140,7 +1274,7 @@ export default function GamePage({ params }) {
         const refreshed = await sbJson(cRes);
         if (refreshed && refreshed.length > 0) {
           const userIds = [...new Set(refreshed.map(r => r.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,favorite_team`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -1167,6 +1301,30 @@ export default function GamePage({ params }) {
     } else copyShareLink();
   };
 
+  // Generate a PNG rating card and share it (or download as a fallback)
+  const saveRatingCard = async () => {
+    if (cardBusy) return;
+    setCardBusy(true);
+    try {
+      const { blob, dataUrl } = await makeRatingCard({
+        title: sport === "nfl" ? `NFL · Week ${g.week} · ${g.season}` : `${leagueLabel} · ${g.season}`,
+        leftLabel: a.abbr, leftScore: g.isPre ? null : a.score, leftColor: a.color,
+        rightLabel: h.abbr, rightScore: g.isPre ? null : h.score, rightColor: h.color,
+        rating, ratingLabel: ratingLabel(rating),
+        handle: profile?.handle || "",
+      });
+      const file = blob ? new File([blob], "nosebleeds-rating.png", { type: "image/png" }) : null;
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], text: shareText });
+      } else {
+        const link = document.createElement("a");
+        link.href = dataUrl; link.download = "nosebleeds-rating.png";
+        document.body.appendChild(link); link.click(); link.remove();
+      }
+    } catch (e) { console.error("rating card:", e); }
+    setCardBusy(false);
+  };
+
   return (
     <div className="min-h-screen pb-24">
       {/* Header */}
@@ -1191,7 +1349,7 @@ export default function GamePage({ params }) {
               <div className="text-center flex-1">
                 {a.logo && <img src={a.logo} className="w-14 h-14 object-contain mx-auto" />}
                 <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: a.score < h.score ? "#52525b" : "#fafafa" }}>{g.isPre ? "—" : a.score}</div>
-                <div className="text-sm font-semibold text-zinc-400 mt-1">{a.name}</div>
+                <Link href={`/team/${sport}/${a.abbr}`} className="text-sm font-semibold text-zinc-400 mt-1 hover:text-white transition-colors inline-block">{a.name}</Link>
                 <div className="text-[10px] text-zinc-600">{a.record}</div>
               </div>
               <div className="text-[10px] font-bold tracking-widest">
@@ -1206,7 +1364,7 @@ export default function GamePage({ params }) {
               <div className="text-center flex-1">
                 {h.logo && <img src={h.logo} className="w-14 h-14 object-contain mx-auto" />}
                 <div className="text-4xl font-extrabold mt-2 tabular-nums" style={{ color: h.score > a.score ? "#fafafa" : "#52525b" }}>{g.isPre ? "—" : h.score}</div>
-                <div className="text-sm font-semibold text-zinc-400 mt-1">{h.name}</div>
+                <Link href={`/team/${sport}/${h.abbr}`} className="text-sm font-semibold text-zinc-400 mt-1 hover:text-white transition-colors inline-block">{h.name}</Link>
                 <div className="text-[10px] text-zinc-600">{h.record}</div>
               </div>
             </div>
@@ -1217,7 +1375,11 @@ export default function GamePage({ params }) {
                   let label;
                   if (sport === "mlb") {
                     label = String(i + 1); // Innings: 1, 2, 3...
+                  } else if (sport === "nhl") {
+                    // 3 periods, then OT, then shootout
+                    label = i < 3 ? `P${i + 1}` : i === 3 ? "OT" : "SO";
                   } else {
+                    // NFL / NBA: 4 quarters, then OT
                     label = i < 4 ? `Q${i + 1}` : "OT";
                   }
                   return (
@@ -1321,6 +1483,54 @@ export default function GamePage({ params }) {
             <span className="text-[11px] text-zinc-500">⏳ This game hasn't happened yet — rate your <span className="text-orange-400 font-bold">anticipation</span> now, then come back to rate the game after.</span>
           </div>
         )}
+
+        {/* Rooting poll — who's pulling for who */}
+        {rootingReady && (() => {
+          const awayRoot = rootingCounts[a.abbr] || 0;
+          const homeRoot = rootingCounts[h.abbr] || 0;
+          const totalRoot = awayRoot + homeRoot;
+          const awayPct = totalRoot > 0 ? Math.round((awayRoot / totalRoot) * 100) : 50;
+          const homePct = 100 - awayPct;
+          const canPick = !g.isFinal;
+          return (
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4">
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {g.isFinal ? "Who fans rooted for" : "Who are you rooting for?"}</div>
+                <div className="text-[10px] text-zinc-600">{totalRoot} {totalRoot === 1 ? "fan" : "fans"}</div>
+              </div>
+              {/* Split bar */}
+              <div className="flex h-2.5 rounded-full overflow-hidden bg-zinc-950 mb-2">
+                {totalRoot > 0 ? (
+                  <>
+                    <div style={{ width: `${awayPct}%`, backgroundColor: a.color }} />
+                    <div style={{ width: `${homePct}%`, backgroundColor: h.color }} />
+                  </>
+                ) : <div className="w-full bg-zinc-800/40" />}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[{ team: a, count: awayRoot, pct: awayPct }, { team: h, count: homeRoot, pct: homePct }].map(({ team, count, pct }) => {
+                  const mine = rootingFor === team.abbr;
+                  return (
+                    <button
+                      key={team.abbr}
+                      onClick={() => canPick && pickRooting(team.abbr)}
+                      disabled={!canPick}
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 transition-all ${mine ? "border-red-600 bg-red-600/10" : "border-zinc-800 bg-zinc-950"} ${canPick ? "hover:border-zinc-600" : "cursor-default"}`}
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        {team.logo && <img src={team.logo} alt="" className="w-5 h-5 object-contain shrink-0" />}
+                        <span className="text-sm font-bold text-white truncate">{team.abbr}</span>
+                        {mine && <span className="text-[10px] text-red-400 font-bold shrink-0">✓</span>}
+                      </span>
+                      <span className="text-xs font-extrabold shrink-0" style={{ color: team.color === "#333" ? "#a1a1aa" : team.color }}>{totalRoot > 0 ? `${pct}%` : "—"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {!user && <div className="text-[10px] text-zinc-600 text-center mt-2">Sign in to pick your side</div>}
+            </div>
+          );
+        })()}
 
         {/* Community rating distribution with embedded fandom filter */}
         <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4">
@@ -1521,7 +1731,7 @@ export default function GamePage({ params }) {
             )}
 
             {/* Injury Reports - NFL only for now */}
-            {sport === "nfl" && (g.injuries?.away.length > 0 || g.injuries?.home.length > 0) && (() => {
+            {(g.injuries?.away.length > 0 || g.injuries?.home.length > 0) && (() => {
               const statusColor = (status) => {
                 if (status === "Out" || status === "IR") return { bg: "#dc2626", text: "#fecaca" };
                 if (status === "Doubtful") return { bg: "#ea580c", text: "#fed7aa" };
@@ -1709,8 +1919,23 @@ export default function GamePage({ params }) {
               {!commentLoading && comments.length === 0 && (
                 <div className="text-center py-6 text-zinc-600 text-sm">No comments yet</div>
               )}
+              {/* Sort toggle */}
+              {filteredComments.filter(c => !c.parent_id).length > 1 && (
+                <div className="flex gap-1 mb-3">
+                  {[{ id: "top", l: "🔝 Top" }, { id: "new", l: "🕐 Newest" }].map((o) => (
+                    <button key={o.id} onClick={() => setCommentSort(o.id)} className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all ${commentSort === o.id ? "bg-red-600 text-white" : "bg-zinc-950 text-zinc-500 border border-zinc-800"}`}>{o.l}</button>
+                  ))}
+                </div>
+              )}
               <div className="space-y-3">
-                {filteredComments.filter(c => !c.parent_id).map((c) => {
+                {(() => {
+                  const reactionTotal = (c) => (c.reactions || []).length;
+                  const topLevel = filteredComments.filter(c => !c.parent_id);
+                  const sorted = commentSort === "top"
+                    ? [...topLevel].sort((a, b) => reactionTotal(b) - reactionTotal(a) || new Date(b.created_at) - new Date(a.created_at))
+                    : [...topLevel].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                  return sorted;
+                })().map((c) => {
                   const replies = filteredComments.filter(r => r.parent_id === c.id);
                   return (
                     <CommentItem
@@ -1726,6 +1951,9 @@ export default function GamePage({ params }) {
                       onDelete={deleteComment}
                       onReact={toggleReaction}
                       submitting={commentSubmitting}
+                      teamEmoji={sportTeamEmoji}
+                      reactionEmojis={reactionPalette}
+                      repMap={commentRep}
                     />
                   );
                 })}
@@ -1753,27 +1981,68 @@ export default function GamePage({ params }) {
             {/* Box Score */}
             {(() => {
               // Sport-specific team-stat comparison keys
-              const compareKeys = sport === "mlb" ? [
-                { key: "hits", label: "Hits" },
-                { key: "runs", label: "Runs" },
-                { key: "homeRuns", label: "Home Runs" },
-                { key: "RBIs", label: "RBIs" },
-                { key: "doubles", label: "Doubles" },
-                { key: "walks", label: "Walks" },
-                { key: "strikeouts", label: "Strikeouts", lowerBetter: true },
-                { key: "stolenBases", label: "Stolen Bases" },
-                { key: "runnersLeftOnBase", label: "Left on Base", lowerBetter: true },
-                { key: "totalBases", label: "Total Bases" },
-              ] : [
-                { key: "firstDowns", label: "1st Downs" },
-                { key: "totalYards", label: "Total Yards" },
-                { key: "netPassingYards", label: "Pass Yards" },
-                { key: "rushingYards", label: "Rush Yards" },
-                { key: "turnovers", label: "Turnovers", lowerBetter: true },
-                { key: "thirdDownEff", label: "3rd Down" },
-                { key: "totalPenaltiesYards", label: "Penalties", lowerBetter: true },
-                { key: "possessionTime", label: "Possession" },
-              ];
+              const CURATED_TEAM_KEYS = {
+                mlb: [
+                  { key: "hits", label: "Hits" },
+                  { key: "runs", label: "Runs" },
+                  { key: "homeRuns", label: "Home Runs" },
+                  { key: "RBIs", label: "RBIs" },
+                  { key: "doubles", label: "Doubles" },
+                  { key: "walks", label: "Walks" },
+                  { key: "strikeouts", label: "Strikeouts", lowerBetter: true },
+                  { key: "stolenBases", label: "Stolen Bases" },
+                  { key: "runnersLeftOnBase", label: "Left on Base", lowerBetter: true },
+                  { key: "totalBases", label: "Total Bases" },
+                ],
+                nba: [
+                  { key: "fieldGoalsMade-fieldGoalsAttempted", label: "FG" },
+                  { key: "fieldGoalPct", label: "FG%" },
+                  { key: "threePointFieldGoalsMade-threePointFieldGoalsAttempted", label: "3PT" },
+                  { key: "freeThrowsMade-freeThrowsAttempted", label: "FT" },
+                  { key: "totalRebounds", label: "Rebounds" },
+                  { key: "offensiveRebounds", label: "Off Reb" },
+                  { key: "assists", label: "Assists" },
+                  { key: "steals", label: "Steals" },
+                  { key: "blocks", label: "Blocks" },
+                  { key: "totalTurnovers", label: "Turnovers", lowerBetter: true },
+                ],
+                nhl: [
+                  { key: "goals", label: "Goals" },
+                  { key: "assists", label: "Assists" },
+                  { key: "shotsTotal", label: "Shots" },
+                  { key: "powerPlayGoals", label: "PP Goals" },
+                  { key: "faceoffsWon", label: "Faceoffs Won" },
+                  { key: "penaltyMinutes", label: "Penalty Min", lowerBetter: true },
+                  { key: "hits", label: "Hits" },
+                  { key: "blockedShots", label: "Blocked Shots" },
+                  { key: "takeaways", label: "Takeaways" },
+                  { key: "giveaways", label: "Giveaways", lowerBetter: true },
+                  { key: "saves", label: "Saves" },
+                ],
+                nfl: [
+                  { key: "firstDowns", label: "1st Downs" },
+                  { key: "totalYards", label: "Total Yards" },
+                  { key: "netPassingYards", label: "Pass Yards" },
+                  { key: "rushingYards", label: "Rush Yards" },
+                  { key: "turnovers", label: "Turnovers", lowerBetter: true },
+                  { key: "thirdDownEff", label: "3rd Down" },
+                  { key: "totalPenaltiesYards", label: "Penalties", lowerBetter: true },
+                  { key: "possessionTime", label: "Possession" },
+                ],
+              };
+              let compareKeys = CURATED_TEAM_KEYS[sport] || CURATED_TEAM_KEYS.nfl;
+              // NBA/NHL key names are less predictable across ESPN versions — keep
+              // only curated keys that exist, and if too few survive, fall back to
+              // showing every team stat ESPN provided (labeled from the data).
+              if (sport === "nba" || sport === "nhl") {
+                const present = compareKeys.filter((ck) => g.teamStats?.away?.[ck.key] || g.teamStats?.home?.[ck.key]);
+                if (present.length >= 3) {
+                  compareKeys = present;
+                } else {
+                  const allKeys = [...new Set([...Object.keys(g.teamStats?.away || {}), ...Object.keys(g.teamStats?.home || {})])];
+                  compareKeys = allKeys.map((k) => ({ key: k, label: g.teamStats?.away?.[k]?.label || g.teamStats?.home?.[k]?.label || k }));
+                }
+              }
               const hasTeamStats = g.teamStats && (Object.keys(g.teamStats.away).length > 0 || Object.keys(g.teamStats.home).length > 0);
               const hasFullStats = g.fullPlayerStats && (Object.keys(g.fullPlayerStats.away).length > 0 || Object.keys(g.fullPlayerStats.home).length > 0);
               if (!hasTeamStats && !hasFullStats) {
@@ -1809,6 +2078,14 @@ export default function GamePage({ params }) {
                 if (cats.includes("batting")) tabs.push({ id: "batting", label: "Batting", emoji: "🏏" });
                 if (cats.includes("pitching")) tabs.push({ id: "pitching", label: "Pitching", emoji: "⚾" });
                 if (cats.includes("fielding")) tabs.push({ id: "fielding", label: "Fielding", emoji: "🥎" });
+              } else if (sport === "nba") {
+                // Single flat category (id varies by ESPN version) — one Player Stats tab
+                cats.forEach((cn) => tabs.push({ id: cn, label: "Player Stats", emoji: "🏀" }));
+              } else if (sport === "nhl") {
+                const nhlMeta = { forwards: { label: "Forwards", emoji: "🏒" }, defenses: { label: "Defense", emoji: "🛡️" }, goalies: { label: "Goalies", emoji: "🥅" } };
+                ["forwards", "defenses", "goalies"].forEach((k) => { if (cats.includes(k)) tabs.push({ id: k, ...nhlMeta[k] }); });
+                // Fallback if ESPN labels the skater groups differently
+                if (tabs.length === 1) cats.forEach((cn) => tabs.push({ id: cn, label: cn.charAt(0).toUpperCase() + cn.slice(1), emoji: "🏒" }));
               } else {
                 if (cats.includes("passing")) tabs.push({ id: "passing", label: "Passing", emoji: "🎯" });
                 if (cats.includes("rushing")) tabs.push({ id: "rushing", label: "Rushing", emoji: "🏃" });
@@ -1819,7 +2096,15 @@ export default function GamePage({ params }) {
               const renderCategoryTable = (catName) => {
                 const awayCategory = g.fullPlayerStats?.away?.[catName];
                 const homeCategory = g.fullPlayerStats?.home?.[catName];
-                const labels = (awayCategory?.labels && awayCategory.labels.length > 0 ? awayCategory.labels : homeCategory?.labels) || [];
+                const rawLabels = (awayCategory?.labels && awayCategory.labels.length > 0 ? awayCategory.labels : homeCategory?.labels) || [];
+                // For NHL skaters, lead with the stats fans care about: Goals, Assists, Shots, Hits.
+                // NB: ESPN's "S" is shots (shotsTotal); "SOG" is shootout goals, not shots on goal.
+                const priority = (sport === "nhl" && (catName === "forwards" || catName === "defenses")) ? ["G", "A", "S", "HT"] : [];
+                const front = [];
+                priority.forEach((tok) => { const idx = rawLabels.indexOf(tok); if (idx >= 0 && !front.includes(idx)) front.push(idx); });
+                // `order` reorders both the header labels and each player's stat cells in lockstep
+                const order = [...front, ...rawLabels.map((_, i) => i).filter((i) => !front.includes(i))];
+                const labels = order.map((i) => rawLabels[i]);
                 return (
                   <div className="space-y-4">
                     {[
@@ -1850,8 +2135,8 @@ export default function GamePage({ params }) {
                                     {p.name}
                                     {p.position && <span className="text-[9px] text-zinc-600 ml-1">{p.position}</span>}
                                   </Link>
-                                  {p.stats.map((stat, idx) => (
-                                    <div key={idx} className="w-11 shrink-0 text-[11px] font-bold text-zinc-300 text-right tabular-nums">{stat || "—"}</div>
+                                  {order.map((oi, idx) => (
+                                    <div key={idx} className="w-11 shrink-0 text-[11px] font-bold text-zinc-300 text-right tabular-nums">{p.stats[oi] || "—"}</div>
                                   ))}
                                 </div>
                               ))}
@@ -1937,6 +2222,10 @@ export default function GamePage({ params }) {
               <div className="flex gap-1.5 flex-wrap">
                 {(sport === "mlb"
                   ? ["💣 Slugfest", "⚡ Pitcher's Duel", "🔟 Extras", "💪 Comeback", "🎯 Nail-biter", "💨 Blowout", "🌟 Classic", "😤 Controversial"]
+                  : sport === "nba"
+                  ? ["🔥 Shootout", "💪 Comeback", "⏱️ OT", "🛡️ Defensive", "💨 Blowout", "🎯 Clutch", "🌟 Classic", "😤 Controversial"]
+                  : sport === "nhl"
+                  ? ["🚨 Goal Fest", "💪 Comeback", "⏱️ OT", "🥅 Goalie Duel", "💨 Blowout", "🎯 Nail-biter", "🌟 Classic", "😤 Controversial"]
                   : ["🔥 Shootout", "💪 Comeback", "⏱️ OT", "🛡️ Defensive", "💨 Blowout", "🎯 Clutch", "🌟 Classic", "😤 Controversial"]
                 ).map((m) => {
                   const userSel = userMoods.includes(m);
@@ -1955,7 +2244,10 @@ export default function GamePage({ params }) {
             {/* Logged summary card */}
             {logged && !showWiz && (
               <div onClick={() => setShowWiz(true)} className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 cursor-pointer hover:border-red-600/40 transition-all">
-                <div className="text-[10px] font-bold tracking-widest uppercase text-red-400 mb-2">Your Rating · Tap to edit ✏️</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] font-bold tracking-widest uppercase text-red-400">Your Rating · Tap to edit ✏️</div>
+                  {isHotTake && <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">🌶️ Hot Take</span>}
+                </div>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[{ l: "Overall", v: rating }, { l: sport === "mlb" ? "Umpires" : "Refs", v: refR }, { l: "Entertain", v: entR }].map((x) => (
                     <div key={x.l} className="text-center p-2.5 rounded-xl bg-zinc-950">
@@ -2182,7 +2474,7 @@ export default function GamePage({ params }) {
                   <div className="mb-4">
                     <div className="text-sm font-semibold text-white mb-2">📺 How did you watch?</div>
                     <div className="flex gap-1.5 flex-wrap">
-                      {["🛋️ Couch", "🍺 Bar", "🏟️ Stadium", "📱 Phone", "📺 RedZone", "🎬 Highlights"].map((w) => (
+                      {["🛋️ Couch", "🍺 Bar", "🏟️ Stadium", "📱 Phone", ...(sport === "nfl" ? ["📺 RedZone"] : []), "🎬 Highlights"].map((w) => (
                         <button key={w} onClick={() => setWatchHow(watchHow === w ? "" : w)}
                           className={`px-3.5 py-2 rounded-full text-xs font-semibold border-2 ${watchHow === w ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-900 text-zinc-500 border-transparent"}`}>{w}</button>
                       ))}
@@ -2290,6 +2582,11 @@ export default function GamePage({ params }) {
               </button>
               <button onClick={nativeShare} className="py-3 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">📤 Share</button>
             </div>
+            {/* Image rating card */}
+            <button onClick={saveRatingCard} disabled={cardBusy} className="w-full py-3 rounded-xl bg-gradient-to-r from-red-600 to-red-800 text-white text-sm font-bold hover:opacity-90 transition-opacity mb-3 flex items-center justify-center gap-2 disabled:opacity-60">
+              {cardBusy && <span className="inline-block w-3.5 h-3.5 border-2 border-red-300 border-t-white rounded-full animate-spin" />}
+              {cardBusy ? "Making card…" : "🖼️ Rating Card Image"}
+            </button>
             <div className="grid grid-cols-3 gap-2">
               <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 rounded-xl bg-zinc-900 text-center text-xs font-bold text-white hover:bg-zinc-800 transition-colors">𝕏 Tweet</a>
               <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 rounded-xl bg-zinc-900 text-center text-xs font-bold text-white hover:bg-zinc-800 transition-colors">f Facebook</a>
