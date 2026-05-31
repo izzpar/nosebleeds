@@ -415,8 +415,7 @@ export default function StreakPage() {
           const renderProp = (prop) => {
             const selected = todaysPick && todaysPick.game_id === prop.game_id && todaysPick.pick_value === prop.pick_value;
             const isSaving = saving === prop.key;
-            const probPct = prop.prob != null ? Math.round(prop.prob * 100) : null;
-            const gameHref = prop.sport === "nfl" ? `/game/${prop.game_id}` : `/game/${prop.game_id}?sport=${prop.sport}`;
+                const gameHref = prop.sport === "nfl" ? `/game/${prop.game_id}` : `/game/${prop.game_id}?sport=${prop.sport}`;
             return (
               <div key={prop.key}
                 className={`rounded-2xl border-2 p-3.5 mb-2.5 transition-all ${selected ? "bg-orange-500/15 border-orange-500/60" : "bg-zinc-900 border-zinc-800"}`}>
@@ -444,16 +443,7 @@ export default function StreakPage() {
                       </>
                     )}
                   </div>
-                  <div className="text-right shrink-0">
-                    {probPct != null ? (
-                      <>
-                        <div className="text-lg font-extrabold" style={{ color: "#f97316" }}>{probPct}%</div>
-                        <div className="text-[8px] text-zinc-600 font-bold tracking-wider">{prop.propClass === "hitter" ? "HIT ODDS" : "WIN ODDS"}</div>
-                      </>
-                    ) : (
-                      <div className="text-[8px] text-zinc-600 font-bold tracking-wider">PICK 'EM</div>
-                    )}
-                  </div>
+                  <span className="text-zinc-600 text-xs shrink-0">→</span>
                 </Link>
                 {/* Pick / selected button */}
                 <button onClick={() => pickProp(prop)} disabled={isSaving}
