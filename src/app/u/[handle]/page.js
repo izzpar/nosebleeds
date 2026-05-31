@@ -36,6 +36,7 @@ export default function PublicProfile({ params }) {
   const [commentsPosted, setCommentsPosted] = useState(0);
   const [likesReceived, setLikesReceived] = useState(0);
   const [tasteMatch, setTasteMatch] = useState(null); // { pct, common } vs the viewer
+  const [sharedGames, setSharedGames] = useState([]); // head-to-head: games both rated
 
   const sbFetch = async (path, options = {}) => {
     const tokenKey = Object.keys(localStorage).find(k => k.includes("auth-token"));
@@ -100,19 +101,28 @@ export default function PublicProfile({ params }) {
           const fcheckArr = await fcheckRes.json();
           setIsFollowing(fcheckArr && fcheckArr.length > 0);
 
-          // Taste match: compare ratings on games both have rated
+          // Taste match + head-to-head: compare ratings on games both have rated
           try {
             const myRes = await sbFetch(`ratings?user_id=eq.${user.id}&rating=not.is.null&select=game_id,rating`);
             const mine = await myRes.json();
             const myMap = {};
             (Array.isArray(mine) ? mine : []).forEach((r) => { myMap[r.game_id] = parseFloat(r.rating); });
-            const diffs = [];
+            const shared = [];
             (Array.isArray(ratingsData) ? ratingsData : []).forEach((r) => {
-              if (myMap[r.game_id] != null) diffs.push(Math.abs(parseFloat(r.rating) - myMap[r.game_id]));
+              if (myMap[r.game_id] != null) {
+                const theirs = parseFloat(r.rating);
+                shared.push({
+                  game_id: r.game_id, sport: r.sport, away_team: r.away_team, home_team: r.home_team,
+                  away_score: r.away_score, home_score: r.home_score,
+                  mine: myMap[r.game_id], theirs, diff: Math.abs(theirs - myMap[r.game_id]),
+                });
+              }
             });
-            if (diffs.length >= 3) {
-              const avg = diffs.reduce((s, d) => s + d, 0) / diffs.length;
-              setTasteMatch({ pct: Math.round(100 - (avg / 9) * 100), common: diffs.length });
+            if (shared.length >= 3) {
+              const avg = shared.reduce((s, x) => s + x.diff, 0) / shared.length;
+              setTasteMatch({ pct: Math.round(100 - (avg / 9) * 100), common: shared.length });
+              // Show biggest disagreements first — those are the fun ones
+              setSharedGames(shared.sort((a, b) => b.diff - a.diff));
             }
           } catch (e) {}
         }
@@ -229,6 +239,31 @@ export default function PublicProfile({ params }) {
             <div className="text-[10px] text-zinc-500 font-bold">AVG</div>
           </div>
         </div>
+
+        {/* Head-to-head — your ratings vs theirs on shared games */}
+        {sharedGames.length > 0 && (
+          <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-base font-bold text-white">⚔️ You vs {profile.display_name || `@${profile.handle}`}</h3>
+              <span className="text-xs font-extrabold" style={{ color: tasteMatch?.pct >= 50 ? "#22c55e" : "#f97316" }}>{tasteMatch?.pct}% match</span>
+            </div>
+            <p className="text-[10px] text-zinc-500 mb-3">{sharedGames.length} games you both rated · biggest disagreements first</p>
+            {sharedGames.slice(0, 6).map((s) => (
+              <Link key={s.game_id} href={s.sport && s.sport !== "nfl" ? `/game/${s.game_id}?sport=${s.sport}` : `/game/${s.game_id}`} className="block">
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-zinc-950 mb-2 hover:bg-zinc-800 transition-colors">
+                  <span className="w-9 h-9 flex items-center justify-center rounded-lg text-white font-extrabold text-sm shrink-0" style={{ backgroundColor: rc(s.mine) }}>{s.mine}</span>
+                  <span className="text-[9px] font-bold text-zinc-600">YOU</span>
+                  <div className="flex-1 min-w-0 text-center">
+                    <div className="text-xs font-bold text-white truncate">{s.away_team} {s.away_score}—{s.home_team} {s.home_score}</div>
+                    {s.diff >= 4 && <div className="text-[9px] font-bold text-orange-400">😬 {s.diff.toFixed(1)} apart</div>}
+                  </div>
+                  <span className="text-[9px] font-bold text-zinc-600">THEM</span>
+                  <span className="w-9 h-9 flex items-center justify-center rounded-lg text-white font-extrabold text-sm shrink-0" style={{ backgroundColor: rc(s.theirs) }}>{s.theirs}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
 
         {/* Top Rated */}
         {topRated.length > 0 && (

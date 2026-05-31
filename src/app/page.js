@@ -6,7 +6,7 @@ import GameCard from "@/components/GameCard";
 import TennisCard from "@/components/TennisCard";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
-import { DROPS, EMOTE_PACKS, NAME_FLAIR, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
+import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
 
@@ -1070,6 +1070,41 @@ function HomeContent() {
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
 
+  // Quick-rate from a game card: upsert the rating and update local logs.
+  const quickRate = async (g, rating) => {
+    if (!user) { router.push("/login"); return; }
+    const existing = gl(g.id);
+    const base = {
+      game_id: g.id, user_id: user.id, sport: g.sport,
+      away_team: g.away.abbr, home_team: g.home.abbr,
+      away_score: g.away.score, home_score: g.home.score,
+      season: g.season, week: g.week,
+      game_date: g.gameDate || null,
+      rating,
+    };
+    try {
+      const rows = await sbJson(await sbFetch(`ratings?game_id=eq.${g.id}&user_id=eq.${user.id}&select=id`));
+      if (rows.length > 0) {
+        await sbFetch(`ratings?id=eq.${rows[0].id}`, { method: "PATCH", body: JSON.stringify({ rating }) });
+      } else {
+        await sbFetch(`ratings`, { method: "POST", body: JSON.stringify(base) });
+      }
+      // Update local logs so the card + diary reflect it immediately
+      setLogs((prev) => {
+        if (prev.some((l) => l.gameId === g.id)) {
+          return prev.map((l) => l.gameId === g.id ? { ...l, rating } : l);
+        }
+        return [...prev, {
+          gameId: g.id, sport: g.sport, awayTeam: g.away.abbr, homeTeam: g.home.abbr,
+          awayScore: g.away.score, homeScore: g.home.score, favorited: false, pinned: false,
+          rating, refRating: 5, entRating: 7, mvp: "", letdown: "", watchHow: "", worthIt: "",
+          review: "", week: g.week || 0, season: g.season || 0, gameDate: g.gameDate || "",
+          createdAt: new Date().toISOString(),
+        }];
+      });
+    } catch (e) { console.error("Quick rate:", e); }
+  };
+
   // 🩸 Drops currency — earned from activity, spent on unlocked emote packs.
   // `unlocked` only exists once the migration has run; absence = store dormant.
   const dropsUnlocked = profile?.unlocked || [];
@@ -1384,7 +1419,9 @@ function HomeContent() {
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
             {filtered.map((g) => g.sport === "tennis"
               ? <TennisCard key={g.id} match={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />
-              : <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />)}
+              : <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)}
+                  myRating={user ? (gl(g.id)?.rating > 0 ? gl(g.id).rating : null) : null}
+                  onQuickRate={user ? quickRate : null} />)}
           </div>
         )}
 
@@ -2081,6 +2118,29 @@ function HomeContent() {
                 })}
               </div>
               <div className="text-[10px] text-zinc-600 mt-2">Your priciest unlocked flair colors your name everywhere.</div>
+
+              {/* Accent themes */}
+              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Accent Theme</div>
+              <div className="flex flex-wrap gap-2">
+                {THEMES.map((t) => {
+                  const owned = dropsUnlocked.includes(t.id);
+                  const affordable = dropsBalance >= t.cost;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => buyPack(t)}
+                      disabled={owned || !dropsStoreReady || !affordable || buyingDrops === t.id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all border-zinc-800 bg-zinc-950"
+                      style={{ color: t.color }}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
+                      {t.name}
+                      <span className="text-[10px] text-zinc-500">{owned ? "✓" : `🩸${t.cost}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Recolors the app's accent. Priciest unlocked theme wins.</div>
               {!dropsStoreReady && (
                 <div className="text-[10px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
               )}

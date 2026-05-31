@@ -29,8 +29,23 @@ export const NAME_FLAIR = [
   { id: "flair_violet", name: "Violet", color: "#a855f7", cost: 700 },
 ];
 
+// Unlockable accent themes — recolor the app's primary accent (default = red).
+export const THEMES = [
+  { id: "theme_ocean", name: "Ocean", color: "#0ea5e9", cost: 500 },
+  { id: "theme_forest", name: "Forest", color: "#16a34a", cost: 500 },
+  { id: "theme_sunset", name: "Sunset", color: "#f59e0b", cost: 800 },
+  { id: "theme_grape", name: "Grape", color: "#9333ea", cost: 800 },
+];
+
 // Every purchasable item (used to total spend regardless of type).
-const ALL_ITEMS = [...EMOTE_PACKS, ...NAME_FLAIR];
+const ALL_ITEMS = [...EMOTE_PACKS, ...NAME_FLAIR, ...THEMES];
+
+// The accent color to apply (priciest unlocked theme wins), or null for default red.
+export function accentColor(unlocked = []) {
+  let color = null, best = -1;
+  (unlocked || []).forEach((id) => { const t = THEMES.find((x) => x.id === id); if (t && t.cost > best) { color = t.color; best = t.cost; } });
+  return color;
+}
 
 // Total Drops spent, derived from the list of unlocked item ids.
 export function dropsSpent(unlocked = []) {

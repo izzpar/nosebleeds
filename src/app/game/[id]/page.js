@@ -742,6 +742,7 @@ export default function GamePage({ params }) {
   const [replyText, setReplyText] = useState("");
   const [commentRep, setCommentRep] = useState({}); // user_id -> rep tier (for comment flair)
   const [commentSort, setCommentSort] = useState("top"); // 'top' (most reactions) | 'new'
+  const [reviewsOnly, setReviewsOnly] = useState(false); // show only rating-tagged review comments
 
   // Load game
   useEffect(() => {
