@@ -6,7 +6,7 @@ import GameCard from "@/components/GameCard";
 import TennisCard from "@/components/TennisCard";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
-import { DROPS, EMOTE_PACKS, NAME_FLAIR, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
+import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
 
@@ -2118,6 +2118,29 @@ function HomeContent() {
                 })}
               </div>
               <div className="text-[10px] text-zinc-600 mt-2">Your priciest unlocked flair colors your name everywhere.</div>
+
+              {/* Accent themes */}
+              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Accent Theme</div>
+              <div className="flex flex-wrap gap-2">
+                {THEMES.map((t) => {
+                  const owned = dropsUnlocked.includes(t.id);
+                  const affordable = dropsBalance >= t.cost;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => buyPack(t)}
+                      disabled={owned || !dropsStoreReady || !affordable || buyingDrops === t.id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all border-zinc-800 bg-zinc-950"
+                      style={{ color: t.color }}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
+                      {t.name}
+                      <span className="text-[10px] text-zinc-500">{owned ? "✓" : `🩸${t.cost}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2">Recolors the app's accent. Priciest unlocked theme wins.</div>
               {!dropsStoreReady && (
                 <div className="text-[10px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
               )}
