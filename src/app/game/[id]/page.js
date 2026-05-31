@@ -1956,18 +1956,27 @@ export default function GamePage({ params }) {
               {!commentLoading && comments.length === 0 && (
                 <div className="text-center py-6 text-zinc-600 text-sm">No comments yet</div>
               )}
-              {/* Sort toggle */}
-              {filteredComments.filter(c => !c.parent_id).length > 1 && (
-                <div className="flex gap-1 mb-3">
-                  {[{ id: "top", l: "🔝 Top" }, { id: "new", l: "🕐 Newest" }].map((o) => (
-                    <button key={o.id} onClick={() => setCommentSort(o.id)} className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all ${commentSort === o.id ? "bg-red-600 text-white" : "bg-zinc-950 text-zinc-500 border border-zinc-800"}`}>{o.l}</button>
-                  ))}
-                </div>
-              )}
+              {/* Sort + filter toggles */}
+              {(() => {
+                const reviewCount = filteredComments.filter(c => !c.parent_id && c.rating != null).length;
+                const topCount = filteredComments.filter(c => !c.parent_id).length;
+                if (topCount <= 1 && reviewCount === 0) return null;
+                return (
+                  <div className="flex gap-1 mb-3 flex-wrap">
+                    {[{ id: "top", l: "🔝 Top" }, { id: "new", l: "🕐 Newest" }].map((o) => (
+                      <button key={o.id} onClick={() => setCommentSort(o.id)} className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all ${commentSort === o.id ? "bg-red-600 text-white" : "bg-zinc-950 text-zinc-500 border border-zinc-800"}`}>{o.l}</button>
+                    ))}
+                    {reviewCount > 0 && (
+                      <button onClick={() => setReviewsOnly(v => !v)} className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all ml-auto ${reviewsOnly ? "bg-red-600 text-white" : "bg-zinc-950 text-zinc-500 border border-zinc-800"}`}>★ Reviews ({reviewCount})</button>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="space-y-3">
                 {(() => {
                   const reactionTotal = (c) => (c.reactions || []).length;
-                  const topLevel = filteredComments.filter(c => !c.parent_id);
+                  let topLevel = filteredComments.filter(c => !c.parent_id);
+                  if (reviewsOnly) topLevel = topLevel.filter(c => c.rating != null);
                   const sorted = commentSort === "top"
                     ? [...topLevel].sort((a, b) => reactionTotal(b) - reactionTotal(a) || new Date(b.created_at) - new Date(a.created_at))
                     : [...topLevel].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
