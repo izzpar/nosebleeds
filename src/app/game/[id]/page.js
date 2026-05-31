@@ -508,7 +508,8 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
   };
 
   return (
-    <div className={`p-3 rounded-xl bg-zinc-950 border border-zinc-800 ${isReply ? "mt-2" : ""}`}>
+    <div className={`p-3 rounded-xl bg-zinc-950 border ${c.rating != null ? "border-l-2" : "border-zinc-800"} ${isReply ? "mt-2" : ""}`}
+      style={c.rating != null ? { borderColor: "#27272a", borderLeftColor: rc(parseFloat(c.rating)) } : undefined}>
       <div className="flex items-start gap-2">
         <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="shrink-0">
           {c.profile?.avatar_url ? (
@@ -524,6 +525,9 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
             <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400" style={nameColor(c.profile?.unlocked) ? { color: nameColor(c.profile.unlocked) } : undefined}>
               {c.profile?.display_name || (c.profile?.handle ? `@${c.profile.handle}` : "Anonymous")}
             </Link>
+            {c.rating != null && (
+              <span title="Rated this game" className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md text-white" style={{ backgroundColor: rc(parseFloat(c.rating)) }}>★ {parseFloat(c.rating)}</span>
+            )}
             {repMap[c.user_id] && (
               <span title={`${repMap[c.user_id].name} · reputation`} className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: repMap[c.user_id].color + "22", color: repMap[c.user_id].color }}>{repMap[c.user_id].emoji} {repMap[c.user_id].name}</span>
             )}
@@ -1234,6 +1238,36 @@ export default function GamePage({ params }) {
     } catch (e) { setSaveStatus(`List error: ${e.message}`); }
   };
 
+  // Auto-post (or update) the user's review into the discussion as a comment
+  // tagged with their rating. A review-comment is identified by rating != null.
+  // Resilient: if the comments.rating column doesn't exist yet, it no-ops.
+  const syncReviewComment = async () => {
+    try {
+      const existing = await sbJson(await sbFetch(`comments?game_id=eq.${id}&user_id=eq.${user.id}&rating=not.is.null&select=id`));
+      const text = (review || "").trim();
+      if (!text) {
+        // Review cleared — remove any existing review-comment
+        for (const c of existing) await sbFetch(`comments?id=eq.${c.id}`, { method: "DELETE" });
+        setComments((prev) => prev.filter((c) => !(c.user_id === user.id && c.rating != null)));
+        return;
+      }
+      if (existing.length > 0) {
+        await sbFetch(`comments?id=eq.${existing[0].id}`, { method: "PATCH", body: JSON.stringify({ content: text.slice(0, 500), rating }) });
+        setComments((prev) => prev.map((c) => c.id === existing[0].id ? { ...c, content: text.slice(0, 500), rating } : c));
+      } else {
+        const res = await sbFetch(`comments`, {
+          method: "POST", headers: { Prefer: "return=representation" },
+          body: JSON.stringify({ game_id: id, user_id: user.id, content: text.slice(0, 500), rating, parent_id: null }),
+        });
+        if (res.ok) {
+          const created = (await sbJson(res))[0];
+          const myProf = profile ? { user_id: user.id, handle: profile.handle, display_name: profile.display_name, avatar_url: profile.avatar_url, unlocked: profile.unlocked } : null;
+          if (created) setComments((prev) => [...prev, { ...created, profile: myProf, reactions: [] }]);
+        }
+      }
+    } catch (e) { /* column not present yet — review still saved on the rating */ }
+  };
+
   const submitLog = async () => {
     if (!requireAuth()) return;
     setSaveStatus("Saving...");
@@ -1245,6 +1279,8 @@ export default function GamePage({ params }) {
         watch_how: watchHow || null, worth_it: worthIt || null,
         review: review || null,
       });
+      // Mirror the review into the discussion as a rating-tagged comment
+      await syncReviewComment();
       // Sync list assignments via direct fetch
       const linkRes = await sbFetch(`list_games?user_id=eq.${user.id}&game_id=eq.${id}&select=id,list_id`);
       const existingLinks = await sbJson(linkRes);
