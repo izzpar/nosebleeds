@@ -508,7 +508,8 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
   };
 
   return (
-    <div className={`p-3 rounded-xl bg-zinc-950 border border-zinc-800 ${isReply ? "mt-2" : ""}`}>
+    <div className={`p-3 rounded-xl bg-zinc-950 border ${c.rating != null ? "border-l-2" : "border-zinc-800"} ${isReply ? "mt-2" : ""}`}
+      style={c.rating != null ? { borderColor: "#27272a", borderLeftColor: rc(parseFloat(c.rating)) } : undefined}>
       <div className="flex items-start gap-2">
         <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="shrink-0">
           {c.profile?.avatar_url ? (
