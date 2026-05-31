@@ -371,6 +371,7 @@ function HomeContent() {
   const [barDrilldown, setBarDrilldown] = useState(null); // { rating: int, games: [] }
   // Profile tab: which sport's stats to show (defaults to global sport)
   const [profileSport, setProfileSport] = useState("nfl");
+  const [wrappedSeason, setWrappedSeason] = useState("all"); // Season Wrapped drill-in
   const [handleError, setHandleError] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
   const [newListName, setNewListName] = useState("");
@@ -2181,27 +2182,71 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* Season Wrapped — reflects the selected profile sport */}
-            {sportRatedLogs.length >= 3 && (
-              <div className="rounded-2xl p-5 mb-4 bg-gradient-to-br from-red-600 via-red-800 to-red-950 text-white relative overflow-hidden">
-                <div className="absolute -top-5 -right-5 text-8xl opacity-5">{sportEmoji(profileSport)}</div>
-                <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">{sportEmoji(profileSport)} {sportLabel(profileSport)} Wrapped</div>
-                <div className="text-lg font-extrabold mt-1 mb-3">Your {sportLabel(profileSport)} Season</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { v: sportRatedLogs.length, l: "Games" },
-                    { v: (sportRatedLogs.reduce((s, l) => s + l.rating, 0) / sportRatedLogs.length).toFixed(1), l: "Avg Rating" },
-                    { v: sportRatedLogs.filter((l) => l.worthIt === "yes").length, l: "Worth It" },
-                    { v: earned.length + "/" + BADGES.length, l: "Badges" },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-white/10 rounded-lg p-2">
-                      <div className="text-xl font-extrabold">{s.v}</div>
-                      <div className="text-[10px] opacity-80">{s.l}</div>
+            {/* Season Wrapped — reflects the selected profile sport, drillable by season */}
+            {sportRatedLogs.length >= 3 && (() => {
+              // Seasons this sport has ratings in (most recent first)
+              const seasons = [...new Set(sportRatedLogs.map((l) => l.season).filter(Boolean))].sort((a, b) => b - a);
+              const wrapLogs = wrappedSeason === "all" ? sportRatedLogs : sportRatedLogs.filter((l) => String(l.season) === String(wrappedSeason));
+              if (wrapLogs.length === 0) return null;
+              const avg = (wrapLogs.reduce((s, l) => s + l.rating, 0) / wrapLogs.length).toFixed(1);
+              const best = [...wrapLogs].sort((a, b) => b.rating - a.rating)[0];
+              const mvpCounts = {};
+              wrapLogs.forEach((l) => { if (l.mvp) mvpCounts[l.mvp] = (mvpCounts[l.mvp] || 0) + 1; });
+              const topMvp = Object.entries(mvpCounts).sort((a, b) => b[1] - a[1])[0];
+              const label = wrappedSeason === "all" ? "All-Time" : wrappedSeason;
+              return (
+                <div className="rounded-2xl p-5 mb-4 bg-gradient-to-br from-red-600 via-red-800 to-red-950 text-white relative overflow-hidden">
+                  <div className="absolute -top-5 -right-5 text-8xl opacity-5">{sportEmoji(profileSport)}</div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">{sportEmoji(profileSport)} {sportLabel(profileSport)} Wrapped</div>
+                      <div className="text-lg font-extrabold mt-0.5">Your {label} {wrappedSeason === "all" ? "Recap" : "Season"}</div>
                     </div>
-                  ))}
+                  </div>
+                  {/* Season selector */}
+                  {seasons.length > 1 && (
+                    <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
+                      <button onClick={() => setWrappedSeason("all")} className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all ${wrappedSeason === "all" ? "bg-white text-red-700" : "bg-white/15 text-white"}`}>All-Time</button>
+                      {seasons.map((yr) => (
+                        <button key={yr} onClick={() => setWrappedSeason(yr)} className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all ${String(wrappedSeason) === String(yr) ? "bg-white text-red-700" : "bg-white/15 text-white"}`}>{yr}</button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { v: wrapLogs.length, l: "Games" },
+                      { v: avg, l: "Avg Rating" },
+                      { v: wrapLogs.filter((l) => l.worthIt === "yes").length, l: "Worth It" },
+                      { v: wrappedSeason === "all" ? `${earned.length}/${BADGES.length}` : wrapLogs.filter((l) => l.review).length, l: wrappedSeason === "all" ? "Badges" : "Reviews" },
+                    ].map((s, i) => (
+                      <div key={i} className="bg-white/10 rounded-lg p-2">
+                        <div className="text-xl font-extrabold">{s.v}</div>
+                        <div className="text-[10px] opacity-80">{s.l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Highlights */}
+                  {(best || topMvp) && (
+                    <div className="mt-2 space-y-1.5">
+                      {best && (
+                        <Link href={gameHref(best.gameId, best.sport, best.gameDate)} className="flex items-center gap-2 bg-white/10 rounded-lg p-2 hover:bg-white/15 transition-colors">
+                          <span className="text-[9px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Top game</span>
+                          <span className="text-xs font-bold flex-1 truncate">{best.awayTeam} {best.awayScore}–{best.homeTeam} {best.homeScore}</span>
+                          <span className="text-sm font-extrabold shrink-0">{best.rating}</span>
+                        </Link>
+                      )}
+                      {topMvp && (
+                        <Link href={`/player/${encodeURIComponent(topMvp[0])}`} className="flex items-center gap-2 bg-white/10 rounded-lg p-2 hover:bg-white/15 transition-colors">
+                          <span className="text-[9px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Your MVP</span>
+                          <span className="text-xs font-bold flex-1 truncate">🌟 {topMvp[0]}</span>
+                          <span className="text-[10px] opacity-80 shrink-0">×{topMvp[1]}</span>
+                        </Link>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Your Stats */}
             {logs.filter(l => l.rating > 0).length > 0 && (() => {

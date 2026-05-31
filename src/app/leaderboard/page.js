@@ -11,7 +11,7 @@ const BOARDS = [
   { id: "rep", label: "Rep", icon: "🏅", blurb: "Highest community reputation (Cred)" },
   { id: "units", label: "Units", icon: "💰", blurb: "Most units won (odds-weighted profit)" },
   { id: "winpct", label: "Win %", icon: "🎯", blurb: `Best win rate (min ${MIN_PICKS_FOR_PCT} picks)` },
-  { id: "wins", label: "Wins", icon: "🏆", blurb: "Most correct picks all-time" },
+  { id: "wins", label: "Wins", icon: "🏆", blurb: "Most correct predictions all-time" },
   { id: "streak", label: "Streak", icon: "🔥", blurb: "Longest active win streak" },
   { id: "best", label: "Best", icon: "⚡", blurb: "Longest streak ever recorded" },
 ];
@@ -196,10 +196,10 @@ export default function LeaderboardPage() {
       const u = (row.units >= 0 ? "+" : "") + row.units.toFixed(2);
       return { big: `${u}u`, sub: `${row.wins}-${row.losses}${row.pushes ? `-${row.pushes}` : ""}`, color: row.units > 0 ? "#22c55e" : row.units < 0 ? "#ef4444" : "#a1a1aa" };
     }
-    if (board === "winpct") return { big: `${Math.round(row.winPct)}%`, sub: `${row.wins}-${row.losses}${row.pushes ? `-${row.pushes}` : ""}` };
-    if (board === "wins") return { big: `${row.wins}`, sub: `${Math.round(row.winPct)}% · ${row.decided} picks` };
-    if (board === "streak") return { big: `${row.curStreak}🔥`, sub: `${row.wins} total wins` };
-    return { big: `${row.bestStreak}⚡`, sub: `${row.wins} total wins` };
+    if (board === "winpct") return { big: `${Math.round(row.winPct)}%`, sub: `${row.wins}-${row.losses}${row.pushes ? `-${row.pushes}` : ""} record` };
+    if (board === "wins") return { big: `${row.wins}`, sub: `correct picks · ${Math.round(row.winPct)}% win rate` };
+    if (board === "streak") return { big: `${row.curStreak}🔥`, sub: `current streak · ${row.wins}-${row.losses} record` };
+    return { big: `${row.bestStreak}⚡`, sub: `best streak ever · ${row.wins}-${row.losses} record` };
   }
 
   const ranked = rankedRows();

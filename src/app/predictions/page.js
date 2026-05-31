@@ -469,8 +469,8 @@ export default function PredictionsPage() {
           <div className="rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-orange-900/50 via-zinc-900 to-zinc-900 border border-orange-600/30 hover:border-orange-600 transition-all">
             <div className="text-3xl">🔥</div>
             <div className="flex-1">
-              <div className="text-sm font-bold text-white">Beat the Streak <span className="text-[9px] font-bold text-orange-400/80">⚾ MLB</span></div>
-              <div className="text-[10px] text-zinc-400">Pick a hitter to get a hit. One pick a day — how long can you keep it alive?</div>
+              <div className="text-sm font-bold text-white">Beat the Streak <span className="text-[9px] font-bold text-orange-400/80">🏈⚾🏀🏒</span></div>
+              <div className="text-[10px] text-zinc-400">Pick a team to win (or an MLB hitter to get a hit). One pick a day — how long can you keep it alive?</div>
             </div>
             <span className="text-orange-400 text-sm font-bold">Play →</span>
           </div>
