@@ -2531,11 +2531,12 @@ function HomeContent() {
               </div>
             </>
           )}
-          <div className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 p-5">
-            <div className="flex items-center justify-between mb-4">
+          <div className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-zinc-950 px-5 pt-5 pb-3 border-b border-zinc-800 flex items-center justify-between">
               <div className="text-lg font-bold text-white">Edit Profile</div>
               <button onClick={() => setShowEditProfile(false)} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
             </div>
+            <div className="p-5">{/* scrollable body */}
 
             {/* Status banner */}
             {handleError && (
@@ -2684,6 +2685,7 @@ function HomeContent() {
                 {handleError === "Saving..." ? "Saving…" : "Save Changes"}
               </button>
             </div>
+            </div>{/* /scrollable body */}
           </div>
         </div>
       )}
