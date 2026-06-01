@@ -1473,6 +1473,17 @@ function HomeContent() {
             <h2 className="text-xl font-extrabold text-white mb-1">Discover</h2>
             <p className="text-sm text-zinc-500 mb-4">What the community is rating</p>
 
+            <Link href="/trending" className="block mb-4">
+              <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
+                <div className="text-2xl">📈</div>
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-white">Trending</div>
+                  <div className="text-[10px] text-zinc-400">Most-rated games across every sport — 24h / 48h / week</div>
+                </div>
+                <span className="text-zinc-500">→</span>
+              </div>
+            </Link>
+
             {discoverLoading && <div className="text-center py-8 text-zinc-500 text-sm">Loading community...</div>}
 
             {/* Hot This Week */}
