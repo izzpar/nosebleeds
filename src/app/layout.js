@@ -1,6 +1,7 @@
 import "./globals.css";
 import { Space_Grotesk } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
+import InstallPrompt from "@/components/InstallPrompt";
 
 const font = Space_Grotesk({
   subsets: ["latin"],
@@ -38,6 +39,7 @@ export default function RootLayout({ children }) {
       <body className={`${font.className} bg-[#09090b] text-white min-h-screen`}>
         <AuthProvider>
           {children}
+          <InstallPrompt />
         </AuthProvider>
       </body>
     </html>
