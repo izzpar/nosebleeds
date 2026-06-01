@@ -1,6 +1,20 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+// "starts in 2h 15m" countdown for upcoming games. Returns "" once started.
+function fmtCountdown(iso) {
+  if (!iso) return "";
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return "";
+  const mins = Math.floor(diff / 60000);
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  if (d > 0) return `starts in ${d}d ${h}h`;
+  if (h > 0) return `starts in ${h}h ${m}m`;
+  return `starts in ${m}m`;
+}
 
 function autoMoods(g) {
   const m = [];
@@ -70,6 +84,15 @@ export default function GameCard({ game: g, logged, myRating, onQuickRate }) {
   const [draft, setDraft] = useState(myRating || 7);
   const [saving, setSaving] = useState(false);
 
+  // Live countdown for upcoming games; re-ticks each minute.
+  const [countdown, setCountdown] = useState(() => (g.isPre ? fmtCountdown(g.startISO) : ""));
+  useEffect(() => {
+    if (!g.isPre || !g.startISO) { setCountdown(""); return; }
+    setCountdown(fmtCountdown(g.startISO));
+    const t = setInterval(() => setCountdown(fmtCountdown(g.startISO)), 60000);
+    return () => clearInterval(t);
+  }, [g.isPre, g.startISO]);
+
   const save = async () => {
     setSaving(true);
     try { await onQuickRate(g, draft); } finally { setSaving(false); setOpen(false); }
@@ -98,6 +121,7 @@ export default function GameCard({ game: g, logged, myRating, onQuickRate }) {
                   🔴 {g.statusDetail || "LIVE"}
                 </span>
               )}
+              {g.isPre && countdown && <span className="text-[9px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-bold">⏳ {countdown}</span>}
               {g.diff <= closeWithin && g.isFinal && <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-600/10 text-red-400 font-bold">CLOSE</span>}
               {logged && <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-bold">✓</span>}
             </div>
