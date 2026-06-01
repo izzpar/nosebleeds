@@ -304,6 +304,7 @@ function HomeContent() {
   const { user, profile, signOut, refreshProfile, loading: authLoading } = useAuth();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0); // bumped by pull-to-refresh to re-run the games load effect
   const [sport, setSportInternal] = useState("nfl"); // nfl | mlb | nba | nhl
   const [week, setWeek] = useState(18);
   const [year, setYear] = useState(2024);
