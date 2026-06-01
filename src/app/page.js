@@ -1263,6 +1263,20 @@ function HomeContent() {
           </div>
         )}
 
+        {/* Live Now banner — Games tab, all sports */}
+        {tab === "games" && (
+          <Link href="/live" className="block w-full mb-3">
+            <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
+              <div className="text-2xl">🔴</div>
+              <div className="flex-1">
+                <div className="text-sm font-bold text-white">Live Now</div>
+                <div className="text-[10px] text-zinc-400">Every in-progress game across all sports, one page</div>
+              </div>
+              <span className="text-zinc-500">→</span>
+            </div>
+          </Link>
+        )}
+
         {/* Players banner — Games tab (team sports only; tennis has no roster) */}
         {tab === "games" && sport !== "tennis" && (
           <button onClick={() => setTab("players")} className="block w-full mb-3 text-left">
