@@ -235,7 +235,7 @@ async function fetchNflWeek(year, week) {
       const dt = new Date(e.date);
       const st = c.status?.type?.name || "STATUS_FINAL";
       return {
-        id: e.id, sport: "nfl", week, season: year,
+        id: e.id, sport: "nfl", week, season: year, startISO: e.date,
         date: dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
         shortDate: dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
         net: c.broadcasts?.[0]?.names?.[0] || "", status: st,
@@ -276,7 +276,7 @@ async function fetchSportDate(sport, dateStr) {
       const dateStrLocal = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
       const timeStr = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       return {
-        id: e.id, sport,
+        id: e.id, sport, startISO: e.date,
         // Synthesize "week" as day-of-year so existing sort logic still works
         week: Math.floor((dt - new Date(dt.getFullYear(), 0, 0)) / 86400000),
         season: dt.getFullYear(),
