@@ -160,6 +160,7 @@ export default function PlayerPage({ params }) {
   const [mvpPicks, setMvpPicks] = useState(0);
   const [letdownPicks, setLetdownPicks] = useState(0);
   const [seasonName, setSeasonName] = useState("");
+  const [compareName, setCompareName] = useState("");
 
   const sbFetch = async (path, options = {}, retried = false) => {
     const tokenKey = Object.keys(localStorage).find(k => k.includes("auth-token"));
@@ -389,6 +390,21 @@ export default function PlayerPage({ params }) {
           </div>
         ) : (
           <>
+            {/* Compare with another player */}
+            <form
+              onSubmit={(e) => { e.preventDefault(); const n = compareName.trim(); if (n) window.location.href = `/compare/${encodeURIComponent(playerName)}/${encodeURIComponent(n)}`; }}
+              className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4 flex items-center gap-2"
+            >
+              <span className="text-lg shrink-0">⚖️</span>
+              <input
+                value={compareName}
+                onChange={(e) => setCompareName(e.target.value)}
+                placeholder="Compare with a player…"
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 placeholder:text-zinc-600"
+              />
+              <button type="submit" disabled={!compareName.trim()} className="shrink-0 px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-bold disabled:opacity-40">Compare</button>
+            </form>
+
             <div className="grid grid-cols-3 gap-2 mb-4">
               <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 text-center">
                 <div className="text-2xl font-extrabold text-green-400">{mvpPicks}</div>

@@ -893,41 +893,64 @@ function HomeContent() {
   // (if the user opted in). Background push when the app is CLOSED needs server
   // infra (VAPID keys) — see notes.
   useEffect(() => {
-    if (!user || following.length === 0) { setNotifs([]); setNotifUnread(0); return; }
+    if (!user) { setNotifs([]); setNotifUnread(0); return; }
     let cancelled = false;
     const load = async () => {
       try {
-        const r = await sbFetch(`ratings?user_id=in.(${following.join(",")})&public=eq.true&rating=not.is.null&order=created_at.desc&limit=20&select=id,user_id,game_id,sport,away_team,home_team,away_score,home_score,rating,created_at,game_date`);
-        const rows = await sbJson(r);
+        const items = [];
+        const profileIds = new Set();
+
+        // 1) Ratings from people you follow
+        if (following.length > 0) {
+          const rows = await sbJson(await sbFetch(`ratings?user_id=in.(${following.join(",")})&public=eq.true&rating=not.is.null&order=created_at.desc&limit=20&select=id,user_id,game_id,sport,away_team,home_team,away_score,home_score,rating,created_at,game_date`));
+          rows.forEach((x) => { items.push({ type: "rating", id: "r-" + x.id, actor: x.user_id, created_at: x.created_at, data: x }); profileIds.add(x.user_id); });
+        }
         if (cancelled) return;
-        const uids = [...new Set(rows.map((x) => x.user_id))];
+
+        // 2) New followers
+        const fr = await sbJson(await sbFetch(`follows?following_id=eq.${user.id}&order=created_at.desc&limit=20&select=id,follower_id,created_at`));
+        fr.forEach((f) => { items.push({ type: "follow", id: "f-" + f.id, actor: f.follower_id, created_at: f.created_at, data: f }); profileIds.add(f.follower_id); });
+        if (cancelled) return;
+
+        // 3) Reactions on your comments
+        const myComments = await sbJson(await sbFetch(`comments?user_id=eq.${user.id}&select=id`));
+        const myCommentIds = myComments.map((c) => c.id);
+        if (myCommentIds.length > 0) {
+          const rx = await sbJson(await sbFetch(`comment_reactions?comment_id=in.(${myCommentIds.join(",")})&order=created_at.desc&limit=20&select=id,comment_id,user_id,emoji,created_at`));
+          rx.filter((x) => x.user_id !== user.id).forEach((x) => { items.push({ type: "reaction", id: "x-" + x.id, actor: x.user_id, created_at: x.created_at, data: x }); profileIds.add(x.user_id); });
+        }
+        if (cancelled) return;
+
         let profs = [];
-        if (uids.length) profs = await sbJson(await sbFetch(`profiles?user_id=in.(${uids.join(",")})&select=user_id,handle,display_name,avatar_url`));
+        if (profileIds.size) profs = await sbJson(await sbFetch(`profiles?user_id=in.(${[...profileIds].join(",")})&select=user_id,handle,display_name,avatar_url`));
         const pmap = {};
         profs.forEach((p) => { pmap[p.user_id] = p; });
-        const enriched = rows.map((x) => ({ ...x, profile: pmap[x.user_id] }));
         if (cancelled) return;
-        setNotifs(enriched);
+
+        const merged = items
+          .map((it) => ({ ...it, profile: pmap[it.actor] }))
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 30);
+        setNotifs(merged);
+
         let seen = "";
         try { seen = localStorage.getItem("nb_notif_seen") || ""; } catch (e) {}
-        setNotifUnread(enriched.filter((x) => !seen || x.created_at > seen).length);
+        setNotifUnread(merged.filter((x) => !seen || x.created_at > seen).length);
 
         // Fire an OS notification for new activity since we last fired (opt-in)
         if (typeof Notification !== "undefined" && Notification.permission === "granted") {
           let firedAt = "";
           try { firedAt = localStorage.getItem("nb_notif_fired") || ""; } catch (e) {}
-          const fresh = enriched.filter((x) => x.created_at > firedAt);
+          const fresh = merged.filter((x) => x.created_at > firedAt);
           if (firedAt && fresh.length > 0) {
             const top = fresh[0];
-            const who = top.profile?.display_name || (top.profile?.handle ? `@${top.profile.handle}` : "Someone you follow");
-            try {
-              new Notification("🩸 The Nosebleeds", {
-                body: fresh.length === 1 ? `${who} rated ${top.away_team}–${top.home_team}` : `${fresh.length} new ratings from people you follow`,
-                tag: "nb-follows",
-              });
-            } catch (e) {}
+            const who = top.profile?.display_name || (top.profile?.handle ? `@${top.profile.handle}` : "Someone");
+            const body = top.type === "follow" ? `${who} followed you`
+              : top.type === "reaction" ? `${who} reacted ${top.data.emoji} to your comment`
+              : `${who} rated ${top.data.away_team}–${top.data.home_team}`;
+            try { new Notification("🩸 The Nosebleeds", { body: fresh.length === 1 ? body : `${fresh.length} new notifications`, tag: "nb-activity" }); } catch (e) {}
           }
-          if (enriched[0]) { try { localStorage.setItem("nb_notif_fired", enriched[0].created_at); } catch (e) {} }
+          if (merged[0]) { try { localStorage.setItem("nb_notif_fired", merged[0].created_at); } catch (e) {} }
         }
       } catch (e) { console.error("Notifications:", e); }
     };
@@ -1294,6 +1317,10 @@ function HomeContent() {
         {/* ===== GAMES TAB ===== */}
         {tab === "games" && (
           <div>
+            <PullToRefresh enabled={tab === "games"} onRefresh={async () => {
+              setRefreshKey((k) => k + 1);
+              await new Promise((r) => setTimeout(r, 900));
+            }} />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Search teams..."
               className="w-full px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 mb-3" />
 
