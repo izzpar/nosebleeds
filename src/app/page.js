@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
 import TennisCard from "@/components/TennisCard";
+import PullToRefresh from "@/components/PullToRefresh";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
 import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
@@ -466,7 +467,7 @@ function HomeContent() {
     }
     load();
     return () => { cancelled = true; };
-  }, [sport, week, year, selectedDate]);
+  }, [sport, week, year, selectedDate, refreshKey]);
 
   useEffect(() => {
     const urlTab = searchParams.get("tab");
