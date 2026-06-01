@@ -2771,25 +2771,57 @@ function HomeContent() {
                 <div className="text-center py-10">
                   <div className="text-4xl mb-2">🔕</div>
                   <div className="text-sm font-bold text-white">Nothing yet</div>
-                  <div className="text-xs text-zinc-500 mt-1">Follow people on the Friends tab to see their ratings here.</div>
+                  <div className="text-xs text-zinc-500 mt-1">Follow people, rate games, and join discussions to see activity here.</div>
                 </div>
-              ) : notifs.map((n) => (
-                <Link key={n.id} href={gameHref(n.game_id, n.sport, n.game_date)} onClick={() => setShowNotifs(false)} className="block">
-                  <div className="flex items-center gap-3 p-2.5 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
-                    {n.profile?.avatar_url ? (
-                      <img src={n.profile.avatar_url} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full shrink-0" />
-                    ) : (
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-xs font-bold text-white shrink-0">{(n.profile?.display_name || n.profile?.handle || "?")[0]?.toUpperCase()}</div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-white"><span className="font-bold">{n.profile?.display_name || `@${n.profile?.handle || "someone"}`}</span> <span className="text-zinc-500">rated</span></div>
-                      <div className="text-sm font-bold text-white truncate">{n.away_team} {n.away_score} — {n.home_team} {n.home_score}</div>
-                      <div className="text-[10px] text-zinc-600">{new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+              ) : notifs.map((n) => {
+                const name = n.profile?.display_name || `@${n.profile?.handle || "someone"}`;
+                const when = new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                const avatar = n.profile?.avatar_url ? (
+                  <img src={n.profile.avatar_url} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full shrink-0" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center text-xs font-bold text-white shrink-0">{(n.profile?.display_name || n.profile?.handle || "?")[0]?.toUpperCase()}</div>
+                );
+                if (n.type === "follow") {
+                  return (
+                    <Link key={n.id} href={n.profile?.handle ? `/u/${n.profile.handle}` : "#"} onClick={() => setShowNotifs(false)} className="block">
+                      <div className="flex items-center gap-3 p-2.5 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                        {avatar}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-white"><span className="font-bold">{name}</span><span className="text-zinc-500"> followed you</span></div>
+                          <div className="text-[10px] text-zinc-600">{when}</div>
+                        </div>
+                        <span className="text-lg shrink-0">👤</span>
+                      </div>
+                    </Link>
+                  );
+                }
+                if (n.type === "reaction") {
+                  return (
+                    <div key={n.id} className="flex items-center gap-3 p-2.5 rounded-xl mb-2 bg-zinc-900 border border-zinc-800">
+                      {avatar}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-white"><span className="font-bold">{name}</span><span className="text-zinc-500"> reacted to your comment</span></div>
+                        <div className="text-[10px] text-zinc-600">{when}</div>
+                      </div>
+                      <span className="text-xl shrink-0">{n.data.emoji}</span>
                     </div>
-                    <div className="w-9 h-9 flex items-center justify-center text-white font-extrabold rounded-lg text-sm shrink-0" style={{ backgroundColor: rc(parseFloat(n.rating)) }}>{parseFloat(n.rating).toFixed(1)}</div>
-                  </div>
-                </Link>
-              ))}
+                  );
+                }
+                const r = n.data;
+                return (
+                  <Link key={n.id} href={gameHref(r.game_id, r.sport, r.game_date)} onClick={() => setShowNotifs(false)} className="block">
+                    <div className="flex items-center gap-3 p-2.5 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
+                      {avatar}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-white"><span className="font-bold">{name}</span> <span className="text-zinc-500">rated</span></div>
+                        <div className="text-sm font-bold text-white truncate">{r.away_team} {r.away_score} — {r.home_team} {r.home_score}</div>
+                        <div className="text-[10px] text-zinc-600">{when}</div>
+                      </div>
+                      <div className="w-9 h-9 flex items-center justify-center text-white font-extrabold rounded-lg text-sm shrink-0" style={{ backgroundColor: rc(parseFloat(r.rating)) }}>{parseFloat(r.rating).toFixed(1)}</div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         </div>
