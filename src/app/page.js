@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
 import TennisCard from "@/components/TennisCard";
 import PullToRefresh from "@/components/PullToRefresh";
+import ScoresTicker from "@/components/ScoresTicker";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
 import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
@@ -1459,6 +1460,7 @@ function HomeContent() {
               </div>
             )}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
+            {!loading && sport !== "tennis" && <ScoresTicker games={filtered} />}
             {filtered.map((g) => g.sport === "tennis"
               ? <TennisCard key={g.id} match={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />
               : <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)}
