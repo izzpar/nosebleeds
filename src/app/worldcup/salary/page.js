@@ -42,7 +42,6 @@ function SalaryCapInner() {
   const [entries, setEntries] = useState([]);
   const [selEntryId, setSelEntryId] = useState(null);
   const [subs, setSubs] = useState([]);          // leagues the selected team is entered in
-  const [addOpen, setAddOpen] = useState(false);
 
   // The selected entry's lineup for the round being edited.
   const [squad, setSquad] = useState([]);       // player ids
@@ -111,18 +110,6 @@ function SalaryCapInner() {
     setSubs(rows);
   }, [user, selEntryId]);
   useEffect(() => { loadSubs(); }, [loadSubs]);
-
-  const addToLeague = async (groupId) => {
-    if (!selEntryId) return;
-    setAddOpen(false);
-    const { res } = await sbInsert("wc_salary_submissions", { entry_id: selEntryId, group_id: groupId, user_id: user.id });
-    if (res.ok || res.status === 409) { flash("Entered ✓"); await loadSubs(); }
-    else flash("Couldn't enter — run the entries SQL");
-  };
-  const removeFromLeague = async (subId) => {
-    await sbFetch(`wc_salary_submissions?id=eq.${subId}`, { method: "DELETE" });
-    await loadSubs();
-  };
 
   // Deep-link from the dedicated league/entry pages: /worldcup/salary?league=X&entry=Y
   useEffect(() => {
@@ -233,6 +220,8 @@ function SalaryCapInner() {
       display_name: profile?.display_name || profile?.handle || user.email?.split("@")[0],
       label: `Team ${entries.length + 1}`,
     });
+    // Auto-enter your FIRST team on the Global board; extra teams you add yourself.
+    if (rows[0] && entries.length === 0) await sbInsert("wc_salary_submissions", { entry_id: rows[0].id, group_id: null, user_id: user.id });
     await loadEntries();
     if (rows[0]) setSelEntryId(rows[0].id);
   };
@@ -385,29 +374,17 @@ function SalaryCapInner() {
                   />
                 )}
 
-                {/* Entered-in leagues */}
+                {/* Entered-in leagues (read-only — manage from each league page) */}
                 {selEntryId && (
                   <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Entered in</div>
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Counts in</div>
                     <div className="flex gap-1.5 flex-wrap items-center">
-                      {subs.length === 0 && <span className="text-[12px] text-zinc-600">Not entered in any league yet.</span>}
+                      {subs.length === 0 && <span className="text-[12px] text-zinc-600">Your first team auto-joins 🌍 Global.</span>}
                       {subs.map((s) => (
-                        <span key={s.id} className="text-[12px] bg-zinc-800 rounded-full pl-3 pr-1.5 py-1 flex items-center gap-1.5">
-                          {s.group_id ? (leagues.find((l) => l.id === s.group_id)?.name || "League") : "🌍 Global"}
-                          <button onClick={() => removeFromLeague(s.id)} className="text-zinc-500 hover:text-red-400 w-4 h-4 leading-none" title="Remove">✕</button>
-                        </span>
+                        <span key={s.id} className="text-[12px] bg-zinc-800 rounded-full px-3 py-1">{s.group_id ? (leagues.find((l) => l.id === s.group_id)?.name || "League") : "🌍 Global"}</span>
                       ))}
-                      {leagues.filter((l) => !subs.some((s) => (s.group_id || "global") === (l.id || "global"))).length > 0 && (
-                        <button onClick={() => setAddOpen((v) => !v)} className="text-[12px] font-bold px-3 py-1 rounded-full bg-red-600/20 text-red-300 border border-red-700/40">＋ Enter in a league</button>
-                      )}
                     </div>
-                    {addOpen && (
-                      <div className="mt-2 flex gap-1.5 flex-wrap">
-                        {leagues.filter((l) => !subs.some((s) => (s.group_id || "global") === (l.id || "global"))).map((l) => (
-                          <button key={l.id || "global"} onClick={() => addToLeague(l.id || null)} className="text-[12px] px-3 py-1 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200">{l.name}</button>
-                        ))}
-                      </div>
-                    )}
+                    <div className="text-[10px] text-zinc-600 mt-1.5">Add this team to private leagues from the <button onClick={() => setSubTab("leagues")} className="underline text-zinc-400">Leagues</button> tab.</div>
                   </div>
                 )}
 

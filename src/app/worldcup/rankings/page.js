@@ -27,7 +27,6 @@ function RankingsInner() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [celebrate, setCelebrate] = useState(0);
-  const [addOpen, setAddOpen] = useState(false);
   const [creatingLeague, setCreatingLeague] = useState(false);
   const [lgName, setLgName] = useState("");
   const [lgMax, setLgMax] = useState(1);
@@ -97,6 +96,9 @@ function RankingsInner() {
       display_name: profile?.display_name || profile?.handle || user.email?.split("@")[0],
       label: `Ranking ${entries.length + 1}`, ranking: [],
     });
+    // Auto-enter your FIRST ranking on the Global board; extra rankings you add to
+    // leagues yourself.
+    if (rows[0] && entries.length === 0) await sbInsert("wc_ranking_submissions", { entry_id: rows[0].id, group_id: null, user_id: user.id });
     await loadEntries();
     if (rows[0]) setSelEntryId(rows[0].id);
   };
@@ -122,19 +124,6 @@ function RankingsInner() {
     setEntries((es) => es.map((e) => (e.id === selEntryId ? { ...e, label } : e)));
   };
 
-  // Enter / remove the selected ranking in a league.
-  const addToLeague = async (groupId) => {
-    if (!selEntryId) return;
-    setAddOpen(false);
-    const { res } = await sbInsert("wc_ranking_submissions", { entry_id: selEntryId, group_id: groupId, user_id: user.id });
-    if (res.ok || res.status === 409) { flash("Entered ✓"); await loadSubs(); }
-    else flash("Couldn't enter — run the entries SQL");
-  };
-  const removeFromLeague = async (subId) => {
-    await sbFetch(`wc_ranking_submissions?id=eq.${subId}`, { method: "DELETE" });
-    await loadSubs();
-  };
-
   const createLeague = async () => {
     if (!lgName.trim()) return;
     const g = await createGroup(lgName, "ranking", user.id, profile, lgMax);
@@ -142,9 +131,7 @@ function RankingsInner() {
   };
 
   const selEntry = entries.find((e) => e.id === selEntryId);
-  const enteredGroupIds = new Set(subs.map((s) => s.group_id || "global"));
   const leagueName = (gid) => (gid ? (leagues.find((l) => l.id === gid)?.name || "League") : "🌍 Global");
-  const addableLeagues = leagues.filter((l) => !enteredGroupIds.has(l.id || "global"));
 
   return (
     <div className="min-h-screen pb-24">
@@ -231,28 +218,16 @@ function RankingsInner() {
                   />
                 )}
 
-                {/* Entered-in leagues */}
+                {/* Entered-in leagues (read-only — manage from each league page) */}
                 <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Entered in</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Counts in</div>
                   <div className="flex gap-1.5 flex-wrap items-center">
-                    {subs.length === 0 && <span className="text-[12px] text-zinc-600">Not entered in any league yet.</span>}
+                    {subs.length === 0 && <span className="text-[12px] text-zinc-600">Saving will enter it on 🌍 Global automatically.</span>}
                     {subs.map((s) => (
-                      <span key={s.id} className="text-[12px] bg-zinc-800 rounded-full pl-3 pr-1.5 py-1 flex items-center gap-1.5">
-                        {leagueName(s.group_id)}
-                        <button onClick={() => removeFromLeague(s.id)} className="text-zinc-500 hover:text-red-400 w-4 h-4 leading-none" title="Remove">✕</button>
-                      </span>
+                      <span key={s.id} className="text-[12px] bg-zinc-800 rounded-full px-3 py-1">{leagueName(s.group_id)}</span>
                     ))}
-                    {selEntryId && addableLeagues.length > 0 && (
-                      <button onClick={() => setAddOpen((v) => !v)} className="text-[12px] font-bold px-3 py-1 rounded-full bg-red-600/20 text-red-300 border border-red-700/40">＋ Enter in a league</button>
-                    )}
                   </div>
-                  {addOpen && (
-                    <div className="mt-2 flex gap-1.5 flex-wrap">
-                      {addableLeagues.map((l) => (
-                        <button key={l.id || "global"} onClick={() => addToLeague(l.id || null)} className="text-[12px] px-3 py-1 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200">{l.name}</button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="text-[10px] text-zinc-600 mt-1.5">Add this ranking to private leagues from the <button onClick={() => setSubTab("leagues")} className="underline text-zinc-400">Leagues</button> tab.</div>
                 </div>
 
                 <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline mb-3 block">
