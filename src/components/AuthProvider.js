@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const AuthContext = createContext({});
@@ -65,9 +66,23 @@ async function ensureProfile(user) {
 }
 
 export function AuthProvider({ children }) {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Finish a World Cup invite that started before sign-in: an invitee opens a
+  // league/group link logged out, we stash the code, send them to log in, and
+  // once authenticated (anywhere in the app) drop them onto the join page.
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const pl = localStorage.getItem("nb_pending_league");
+      if (pl) { localStorage.removeItem("nb_pending_league"); router.replace(`/worldcup/join/${pl}`); return; }
+      const pg = localStorage.getItem("nb_pending_group");
+      if (pg) { localStorage.removeItem("nb_pending_group"); router.replace(`/worldcup/g/${pg}`); return; }
+    } catch (e) {}
+  }, [user, router]);
 
   useEffect(() => {
     // Get initial session

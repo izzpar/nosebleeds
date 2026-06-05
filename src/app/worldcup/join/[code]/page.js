@@ -13,11 +13,13 @@ export default function JoinLeaguePage() {
   const [league, setLeague] = useState(undefined); // undefined=loading, null=not found
   const [status, setStatus] = useState("");
 
+  // Re-read when auth resolves: logged-out visitors hit RLS and can't see the
+  // league, so we only trust a null result once we actually have a session.
   useEffect(() => {
     sbFetch(`wc_leagues?invite_code=eq.${String(code).toUpperCase()}&select=*`)
       .then(async (r) => setLeague((await sbJson(r))[0] || null))
       .catch(() => setLeague(null));
-  }, [code]);
+  }, [code, user]);
 
   useEffect(() => {
     if (!league || !user) return;
@@ -48,8 +50,21 @@ export default function JoinLeaguePage() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-sm w-full text-center">
         <div className="text-4xl mb-3">🏆</div>
-        {league === undefined ? (
+        {loading || (user && league === undefined) ? (
           <p className="text-zinc-500">Loading…</p>
+        ) : !user ? (
+          /* Logged out: RLS hides the league, so don't claim it's invalid —
+             prompt for an account, then auto-join after sign-in. */
+          <>
+            <h1 className="text-xl font-bold mb-1">{league?.name ? `Join “${league.name}”` : "You're invited!"}</h1>
+            <p className="text-zinc-400 text-sm mb-5">
+              {league?.name
+                ? <>A {league.draft_type === "auction" ? "live auction" : "snake"} {FORMAT_LABEL[league.format] || "draft"} league on <span className="text-red-500 font-semibold">The Nosebleeds</span>.</>
+                : <>Join this Fantasy World Cup league on <span className="text-red-500 font-semibold">The Nosebleeds</span> — free, with your friends.</>}
+            </p>
+            <button onClick={goLogin} className="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-xl w-full">Create account / sign in to join</button>
+            <p className="text-zinc-600 text-[11px] mt-3">It takes a few seconds — we&apos;ll drop you straight into the league.</p>
+          </>
         ) : league === null ? (
           <>
             <h1 className="text-xl font-bold mb-1">Invite not found</h1>
@@ -62,13 +77,7 @@ export default function JoinLeaguePage() {
             <p className="text-zinc-400 text-sm mb-5">
               A {league.draft_type === "auction" ? "live auction" : "snake"} {FORMAT_LABEL[league.format] || "draft"} league on <span className="text-red-500 font-semibold">The Nosebleeds</span> — free, with your friends.
             </p>
-            {loading ? (
-              <p className="text-zinc-500 text-sm">…</p>
-            ) : user ? (
-              <p className="text-emerald-400 text-sm">{status || "Joining…"}</p>
-            ) : (
-              <button onClick={goLogin} className="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-xl w-full">Sign in to join</button>
-            )}
+            <p className="text-emerald-400 text-sm">{status || "Joining…"}</p>
           </>
         )}
       </div>
