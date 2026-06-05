@@ -42,6 +42,7 @@ export default function SalaryCapPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [celebrate, setCelebrate] = useState(0);
+  const [sel, setSel] = useState(null); // selected squad player (for pitch actions)
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
 
   // The round you're currently editing = the next one whose lock hasn't passed.
@@ -243,58 +244,83 @@ export default function SalaryCapPage() {
                 ≈ <span className="text-zinc-300">€{avgPerSlot}m</span> per player for your {slotsLeft} remaining {slotsLeft === 1 ? "slot" : "slots"}
               </p>
             )}
-            <button onClick={() => setSubTab("board")} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4">
-              👥 Play with friends? Create a private mini-league on the <span className="text-zinc-200">Leaderboard</span> tab →
-            </button>
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => setSubTab("board")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+                👥 Friends league →
+              </button>
+              <button onClick={() => router.push("/worldcup/how")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+                ℹ️ Scoring &amp; transfers →
+              </button>
+            </div>
 
-            {/* squad by position */}
-            {POS.map((g) => (
-              <div key={g} className="mb-2">
-                <div className="text-[11px] font-bold mb-1"><span className={POS_COLOR[g]}>{g}</span> <span className="text-zinc-600">({posCount(squad, g)}/{SQUAD_REQ[g]})</span></div>
-                <div className="flex flex-wrap gap-1.5">
-                  {squadPlayers.filter((p) => p.role === g).map((p) => {
-                    const id = String(p.id); const isStart = starters.includes(id); const isCap = captain === id;
-                    return (
-                      <span key={id} className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] border ${isStart ? "bg-zinc-800 border-zinc-600" : "bg-zinc-900/50 border-zinc-800 text-zinc-400"}`}>
-                        <button onClick={() => toggleStarter(id)} title="starter" className={isStart ? "text-amber-400" : "text-zinc-600"}>★</button>
-                        {isStart && <button onClick={() => setCaptain(id)} title="captain" className={isCap ? "text-red-500 font-bold" : "text-zinc-600"}>C</button>}
-                        <span>{p.name}</span>
-                        <span className="text-zinc-500">€{p.price}</span>
-                        {!locked && <button onClick={() => removePlayer(id)} className="text-zinc-600 ml-0.5">✕</button>}
-                      </span>
-                    );
-                  })}
-                  {posCount(squad, g) === 0 && <span className="text-zinc-600 text-[12px]">none yet</span>}
-                </div>
-              </div>
-            ))}
+            {/* Pitch — starting XI in formation */}
+            <div className="rounded-2xl p-3 mb-2 bg-gradient-to-b from-emerald-700/30 via-emerald-800/20 to-emerald-950/30 border border-emerald-900/40">
+              <div className="text-[10px] text-emerald-200/70 font-bold mb-1 text-center">STARTING XI ({starters.length}/11) · tap a player</div>
+              {["FWD", "MID", "DEF", "GK"].map((g) => {
+                const row = starters.map((id) => byId[id]).filter((p) => p && p.role === g);
+                return (
+                  <div key={g} className="flex justify-center items-start gap-1.5 my-1.5 min-h-[3.4rem] flex-wrap">
+                    {row.length === 0 && <span className="text-[10px] text-emerald-200/30 self-center">{g}</span>}
+                    {row.map((p) => {
+                      const id = String(p.id); const isCap = captain === id;
+                      return (
+                        <button key={id} onClick={() => setSel(sel === id ? null : id)} className={`flex flex-col items-center w-[3.6rem] transition-transform ${sel === id ? "scale-110" : ""}`}>
+                          <div className={`relative w-9 h-9 rounded-full overflow-hidden border-2 bg-zinc-800 ${sel === id ? "border-white" : isCap ? "border-red-500" : "border-zinc-600"}`}>
+                            {p.image && <img src={p.image} alt="" className="w-full h-full object-cover" />}
+                            {isCap && <span className="absolute -bottom-0.5 -right-0.5 bg-red-600 text-white text-[7px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">C</span>}
+                          </div>
+                          <span className="text-[9px] text-white truncate w-full text-center leading-tight mt-0.5">{(p.name || "").split(" ").slice(-1)[0]}</span>
+                          <span className="text-[8px] text-emerald-200/70">€{p.price}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
 
-            {/* bench / auto-sub order */}
-            {squad.length > starters.length && (
-              <div className="mb-4 mt-2">
-                <div className="text-[11px] font-bold text-zinc-400 mb-1">
-                  Bench <span className="text-zinc-600 font-normal">— if a starter doesn&apos;t play, the first bench sub who played takes their points</span>
-                </div>
-                <div className="space-y-1">
-                  {bench.map((id, i) => {
-                    const p = byId[id]; if (!p) return null;
-                    return (
-                      <div key={id} className="flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-1.5 text-[12px]">
-                        <span className="text-zinc-600 w-4">{i + 1}</span>
-                        <span className={`${POS_COLOR[p.role]} font-bold w-8 text-[10px]`}>{p.role}</span>
-                        <span className="flex-1 truncate">{p.name}</span>
-                        {!locked && (
-                          <span className="flex gap-1">
-                            <button onClick={() => moveBench(id, -1)} disabled={i === 0} className="w-6 h-6 rounded bg-zinc-800 disabled:opacity-30">↑</button>
-                            <button onClick={() => moveBench(id, 1)} disabled={i === bench.length - 1} className="w-6 h-6 rounded bg-zinc-800 disabled:opacity-30">↓</button>
-                          </span>
-                        )}
+            {/* Bench strip */}
+            <div className="mb-2">
+              <div className="text-[10px] text-zinc-500 font-bold mb-1">BENCH (auto-sub order →)</div>
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                {bench.length === 0 && <span className="text-[11px] text-zinc-600">No subs yet.</span>}
+                {bench.map((id, i) => {
+                  const p = byId[id]; if (!p) return null;
+                  return (
+                    <button key={id} onClick={() => setSel(sel === id ? null : id)} className={`flex flex-col items-center w-[3.4rem] shrink-0 bg-zinc-900/60 rounded-lg py-1 border ${sel === id ? "border-white" : "border-zinc-800"}`}>
+                      <div className="relative w-8 h-8 rounded-full overflow-hidden border border-zinc-700 bg-zinc-800">
+                        {p.image && <img src={p.image} alt="" className="w-full h-full object-cover" />}
+                        <span className="absolute -top-1 -left-1 bg-zinc-700 text-zinc-300 text-[7px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">{i + 1}</span>
                       </div>
-                    );
-                  })}
-                </div>
+                      <span className="text-[8px] text-zinc-300 truncate w-full text-center leading-tight">{(p.name || "").split(" ").slice(-1)[0]}</span>
+                      <span className={`text-[8px] ${POS_COLOR[p.role]}`}>{p.role}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Action bar for the selected player */}
+            {sel && byId[sel] && !locked && (
+              <div className="flex items-center gap-2 flex-wrap bg-zinc-900/80 border border-zinc-700 rounded-xl px-3 py-2 mb-3">
+                <span className="text-[12px] font-bold">{byId[sel].name}</span>
+                {starters.includes(sel) ? (
+                  <>
+                    <button onClick={() => setCaptain(sel)} className={`text-[11px] px-2 py-1 rounded ${captain === sel ? "bg-red-600 text-white" : "bg-zinc-800"}`}>⭐ Captain</button>
+                    <button onClick={() => toggleStarter(sel)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">⬇️ Bench</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => toggleStarter(sel)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">⬆️ Start</button>
+                    <button onClick={() => moveBench(sel, -1)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">↑</button>
+                    <button onClick={() => moveBench(sel, 1)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">↓</button>
+                  </>
+                )}
+                <button onClick={() => { removePlayer(sel); setSel(null); }} className="text-[11px] px-2 py-1 rounded bg-zinc-800 text-red-300">✕ Remove</button>
+                <button onClick={() => setSel(null)} className="text-[11px] px-2 py-1 text-zinc-500 ml-auto">done</button>
               </div>
             )}
+            <p className="text-[10px] text-zinc-600 mb-3">Squad: {squad.length}/15 · positions {POS.map((g) => `${posCount(squad, g)}/${SQUAD_REQ[g]} ${g}`).join(" · ")}</p>
 
             {!locked && (
               <button onClick={save} disabled={saving} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl my-4">
