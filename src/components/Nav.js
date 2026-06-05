@@ -13,6 +13,7 @@ export default function Nav({ tab, setTab }) {
     { id: "games", icon: "🏈", label: "Games" },
     { id: "discover", icon: "🔥", label: "Discover" },
     { id: "predictions", icon: "🔮", label: "Predict", route: "/predictions" },
+    { id: "worldcup", icon: "🏆", label: "Cup", route: "/worldcup" },
     { id: "friends", icon: "👥", label: "Friends" },
     { id: "diary", icon: "📓", label: "Diary" },
     { id: "profile", icon: "👤", label: user ? "Profile" : "Login" },

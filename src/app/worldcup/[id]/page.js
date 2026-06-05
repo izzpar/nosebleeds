@@ -1,0 +1,469 @@
+"use client";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Nav from "@/components/Nav";
+import { useAuth } from "@/components/AuthProvider";
+import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
+import {
+  fetchTeams,
+  fetchResults,
+  computeStandings,
+  onClockPosition,
+  draftPlan,
+  DEFAULT_SCORING,
+} from "@/lib/worldcup";
+
+const POLL_MS = 2500;
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+export default function LeagueRoom() {
+  const { id } = useParams();
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const [league, setLeague] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [picks, setPicks] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [subTab, setSubTab] = useState("draft"); // 'draft' | 'standings'
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(null);
+  const lastPickCount = useRef(0);
+
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
+
+  // ---- data loading ----
+  const loadAll = useCallback(async () => {
+    const [lRes, mRes, pRes] = await Promise.all([
+      sbFetch(`wc_leagues?id=eq.${id}&select=*`),
+      sbFetch(`wc_members?league_id=eq.${id}&select=*&order=draft_position.asc.nullslast,created_at.asc`),
+      sbFetch(`wc_picks?league_id=eq.${id}&select=*&order=pick_number.asc`),
+    ]);
+    const lg = (await sbJson(lRes))[0];
+    if (!lg) { setNotFound(true); setLoading(false); return; }
+    setLeague(lg);
+    setMembers(await sbJson(mRes));
+    setPicks(await sbJson(pRes));
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Load the 48 nations once.
+  useEffect(() => { fetchTeams().then(setTeams).catch(() => {}); }, []);
+
+  // Poll while in lobby (to see joins) or drafting (to see picks land live).
+  useEffect(() => {
+    if (!league || league.status === "done") return;
+    const t = setInterval(loadAll, POLL_MS);
+    return () => clearInterval(t);
+  }, [league, loadAll]);
+
+  // Load tournament results when viewing standings.
+  useEffect(() => {
+    if (subTab === "standings" && !results) fetchResults().then(setResults).catch(() => {});
+  }, [subTab, results]);
+
+  // ---- derived draft state ----
+  const n = members.length;
+  const { perManager, totalPicks } = draftPlan(n, teams.length || 48);
+  const draftComplete = totalPicks > 0 && picks.length >= totalPicks;
+  const onClockPos = onClockPosition(picks.length, n);
+  const onClockMember = members.find((m) => m.draft_position === onClockPos) || null;
+  const isMyTurn =
+    league?.status === "drafting" &&
+    !draftComplete &&
+    onClockMember?.user_id === user?.id;
+  const isCommish = league && user && league.commissioner_id === user.id;
+  const pickedTeamIds = new Set(picks.map((p) => String(p.team_id)));
+
+  // Advisory countdown — resets whenever a new pick lands.
+  useEffect(() => {
+    if (league?.status !== "drafting" || draftComplete) { setSecondsLeft(null); return; }
+    if (picks.length !== lastPickCount.current) {
+      lastPickCount.current = picks.length;
+      setSecondsLeft(league.pick_seconds || 90);
+    }
+    const t = setInterval(() => setSecondsLeft((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(t);
+  }, [league, picks.length, draftComplete]);
+
+  // Commissioner auto-marks the league done once the board is full.
+  useEffect(() => {
+    if (isCommish && draftComplete && league?.status === "drafting") {
+      sbFetch(`wc_leagues?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) })
+        .then(loadAll);
+    }
+  }, [isCommish, draftComplete, league, id, loadAll]);
+
+  // ---- actions ----
+  const startDraft = async () => {
+    if (!isCommish || n < 2 || busy) return;
+    setBusy(true);
+    try {
+      const order = shuffle(members);
+      for (let i = 0; i < order.length; i++) {
+        await sbFetch(`wc_members?id=eq.${order[i].id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ draft_position: i }),
+        });
+      }
+      await sbFetch(`wc_leagues?id=eq.${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "drafting" }),
+      });
+      await loadAll();
+    } catch (e) {
+      flash("Couldn't start draft");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pickTeam = async (team) => {
+    if (!isMyTurn || busy || pickedTeamIds.has(String(team.id))) return;
+    setBusy(true);
+    try {
+      const { res } = await sbInsert("wc_picks", {
+        league_id: id,
+        user_id: user.id,
+        team_id: team.id,
+        team_abbr: team.abbr,
+        team_name: team.name,
+        pick_number: picks.length,
+      });
+      if (!res.ok) {
+        // 409 = someone grabbed that slot/team first; just resync.
+        await loadAll();
+        flash(res.status === 409 ? "Too slow — board moved on" : "Pick failed");
+        return;
+      }
+      await loadAll();
+    } catch (e) {
+      flash("Pick failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const undoLastPick = async () => {
+    if (!isCommish || picks.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      const last = picks[picks.length - 1];
+      await sbFetch(`wc_picks?id=eq.${last.id}`, { method: "DELETE" });
+      if (league.status === "done") {
+        await sbFetch(`wc_leagues?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ status: "drafting" }) });
+      }
+      await loadAll();
+    } catch (e) {
+      flash("Couldn't undo");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyCode = () => {
+    try { navigator.clipboard.writeText(league.invite_code); flash("Code copied"); } catch (e) {}
+  };
+
+  // ---- render ----
+  if (loading) return <Shell><p className="text-zinc-600 text-sm py-10">Loading…</p></Shell>;
+  if (notFound) return <Shell><p className="text-zinc-500 py-10">League not found.</p></Shell>;
+
+  const myPicks = picks.filter((p) => p.user_id === user?.id);
+
+  return (
+    <div className="min-h-screen pb-24">
+      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
+          <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
+          <span className="text-xl">🏆</span>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold leading-tight truncate">{league.name}</h1>
+            <button onClick={copyCode} className="text-[11px] text-zinc-500 leading-tight">
+              Invite code <span className="text-zinc-300 font-mono tracking-widest">{league.invite_code}</span> · tap to copy
+            </button>
+          </div>
+        </div>
+        {/* sub-tabs */}
+        <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
+          {["draft", "standings"].map((t) => (
+            <button
+              key={t}
+              onClick={() => setSubTab(t)}
+              className={`pb-2 font-bold capitalize border-b-2 ${
+                subTab === t ? "text-white border-red-500" : "text-zinc-600 border-transparent"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 pt-4">
+        {subTab === "draft" ? (
+          league.status === "lobby" ? (
+            <Lobby
+              members={members}
+              isCommish={isCommish}
+              perManager={n >= 2 ? draftPlan(n, teams.length || 48).perManager : 0}
+              onStart={startDraft}
+              busy={busy}
+            />
+          ) : (
+            <DraftBoard
+              members={members}
+              picks={picks}
+              teams={teams}
+              pickedTeamIds={pickedTeamIds}
+              onClockMember={onClockMember}
+              isMyTurn={isMyTurn}
+              draftComplete={draftComplete}
+              perManager={perManager}
+              totalPicks={totalPicks}
+              secondsLeft={secondsLeft}
+              onPick={pickTeam}
+              isCommish={isCommish}
+              onUndo={undoLastPick}
+              busy={busy}
+              myPicks={myPicks}
+            />
+          )
+        ) : (
+          <Standings
+            members={members}
+            picks={picks}
+            results={results}
+            scoring={league.scoring || DEFAULT_SCORING}
+            status={league.status}
+          />
+        )}
+      </div>
+
+      {toast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-50">
+          {toast}
+        </div>
+      )}
+      <Nav />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+function Shell({ children }) {
+  return (
+    <div className="min-h-screen pb-24">
+      <div className="max-w-2xl mx-auto px-4 pt-6">{children}</div>
+      <Nav />
+    </div>
+  );
+}
+
+function Lobby({ members, isCommish, perManager, onStart, busy }) {
+  return (
+    <div>
+      <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
+        <h3 className="font-bold mb-1">Pre-draft lobby</h3>
+        <p className="text-[12px] text-zinc-500 mb-3">
+          Share the invite code. When everyone&apos;s in, the commissioner starts the draft — order is
+          randomized and it snakes (1·2·3 → 3·2·1).
+          {members.length >= 2 && <> Each manager will draft <span className="text-zinc-300">{perManager}</span> nations.</>}
+        </p>
+        <div className="space-y-1.5">
+          {members.map((m, i) => (
+            <div key={m.id} className="flex items-center gap-2 text-sm">
+              <span className="text-zinc-600 w-5">{i + 1}</span>
+              <span>{m.display_name || m.handle || "Player"}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {isCommish ? (
+        <button
+          onClick={onStart}
+          disabled={busy || members.length < 2}
+          className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-3 rounded-xl"
+        >
+          {members.length < 2 ? "Need 2+ managers to start" : "Start draft 🎲"}
+        </button>
+      ) : (
+        <p className="text-center text-zinc-500 text-sm py-2">Waiting for the commissioner to start…</p>
+      )}
+    </div>
+  );
+}
+
+function DraftBoard({
+  members, picks, teams, pickedTeamIds, onClockMember, isMyTurn, draftComplete,
+  perManager, totalPicks, secondsLeft, onPick, isCommish, onUndo, busy, myPicks,
+}) {
+  const memberName = (uid) => {
+    const m = members.find((x) => x.user_id === uid);
+    return m?.display_name || m?.handle || "Player";
+  };
+  const available = teams.filter((t) => !pickedTeamIds.has(String(t.id)));
+
+  return (
+    <div>
+      {/* status bar */}
+      {draftComplete ? (
+        <div className="bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-4 py-3 mb-4 text-center">
+          <div className="font-bold text-emerald-400">Draft complete 🎉</div>
+          <div className="text-[12px] text-zinc-500">Check the Standings tab once games kick off.</div>
+        </div>
+      ) : (
+        <div
+          className={`rounded-xl px-4 py-3 mb-4 flex items-center justify-between border ${
+            isMyTurn ? "bg-red-950/40 border-red-700/60" : "bg-zinc-900/70 border-zinc-800"
+          }`}
+        >
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+              Pick {picks.length + 1} of {totalPicks}
+            </div>
+            <div className="font-bold">
+              {isMyTurn ? "You're on the clock" : `${onClockMember ? memberName(onClockMember.user_id) : "—"} picking`}
+            </div>
+          </div>
+          {secondsLeft != null && (
+            <div className={`text-2xl font-bold tabular-nums ${secondsLeft <= 10 ? "text-red-500" : "text-zinc-300"}`}>
+              {secondsLeft}s
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* available nations */}
+      {!draftComplete && (
+        <>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">
+            Available ({available.length})
+          </h3>
+          <div className="grid grid-cols-2 gap-2 mb-6">
+            {available.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onPick(t)}
+                disabled={!isMyTurn || busy}
+                className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border text-left transition-all ${
+                  isMyTurn
+                    ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.98]"
+                    : "bg-zinc-900/50 border-zinc-800 opacity-60"
+                }`}
+              >
+                {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
+                <span className="text-sm font-medium truncate">{t.name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* my squad */}
+      <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">
+        Your squad ({myPicks.length}{perManager ? `/${perManager}` : ""})
+      </h3>
+      <div className="flex flex-wrap gap-2 mb-6">
+        {myPicks.length === 0 ? (
+          <p className="text-zinc-600 text-sm">No picks yet.</p>
+        ) : (
+          myPicks.map((p) => {
+            const t = teams.find((x) => String(x.id) === String(p.team_id));
+            return (
+              <span key={p.id} className="flex items-center gap-1.5 bg-zinc-800/70 rounded-lg px-2 py-1 text-sm">
+                {t?.logo && <img src={t.logo} alt="" className="w-4 h-4 object-contain" />}
+                {p.team_name}
+              </span>
+            );
+          })
+        )}
+      </div>
+
+      {/* full draft log */}
+      <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Draft log</h3>
+      <div className="space-y-1 mb-4">
+        {[...picks].reverse().map((p) => (
+          <div key={p.id} className="flex items-center gap-2 text-sm bg-zinc-900/40 rounded-lg px-3 py-1.5">
+            <span className="text-zinc-600 w-8 text-[11px]">#{p.pick_number + 1}</span>
+            <span className="font-medium">{p.team_name}</span>
+            <span className="text-zinc-600 text-[11px] ml-auto">{memberName(p.user_id)}</span>
+          </div>
+        ))}
+        {picks.length === 0 && <p className="text-zinc-600 text-sm">No picks yet.</p>}
+      </div>
+
+      {isCommish && picks.length > 0 && (
+        <button
+          onClick={onUndo}
+          disabled={busy}
+          className="text-[12px] text-zinc-500 hover:text-zinc-300 underline"
+        >
+          Undo last pick (commissioner)
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Standings({ members, picks, results, scoring, status }) {
+  if (!results) return <p className="text-zinc-600 text-sm py-8">Loading results…</p>;
+  const rows = computeStandings(members, picks, results, scoring);
+  const noGames = (results.events || 0) === 0;
+
+  return (
+    <div>
+      {noGames && (
+        <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-500">
+          No completed matches yet — standings fill in automatically as the World Cup plays out.
+        </div>
+      )}
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={r.user_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-600 font-bold w-5">{i + 1}</span>
+                <span className="font-bold">{r.name}</span>
+              </div>
+              <span className="font-bold text-red-500 tabular-nums">{r.total} pts</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 pl-7">
+              {r.teams.map((t) => (
+                <span
+                  key={t.team_id}
+                  className="text-[11px] bg-zinc-800/70 rounded px-1.5 py-0.5 text-zinc-300"
+                  title={t.stat ? `${t.stat.w}W ${t.stat.d}D ${t.stat.l}L · ${t.stat.gf} GF` : "no games yet"}
+                >
+                  {t.team_abbr || t.team_name} <span className="text-zinc-500">{t.points}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="text-zinc-600 text-sm py-6">No managers yet.</p>}
+      </div>
+
+      {/* scoring legend */}
+      <div className="mt-6 text-[11px] text-zinc-600 leading-relaxed">
+        <span className="font-bold text-zinc-500">Scoring</span> · Win {scoring.win} · Draw {scoring.draw} ·
+        Goal {scoring.goal} · Clean sheet {scoring.clean_sheet} · Reach R16 +{scoring.r16} · QF +{scoring.qf} ·
+        SF +{scoring.sf} · Final +{scoring.final} · Champion +{scoring.champion}
+      </div>
+    </div>
+  );
+}
