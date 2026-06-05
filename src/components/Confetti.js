@@ -9,17 +9,18 @@ export default function Confetti({ show }) {
   const [pieces, setPieces] = useState([]);
   useEffect(() => {
     if (!show) return;
-    const ps = Array.from({ length: 70 }, (_, i) => ({
-      id: `${i}-${Date.now()}`,
-      left: Math.random() * 100,
-      delay: Math.random() * 0.5,
-      dur: 1.8 + Math.random() * 1.4,
-      color: COLORS[Math.floor(Math.random() * COLORS.length)],
-      size: 6 + Math.random() * 7,
-    }));
-    setPieces(ps);
-    const t = setTimeout(() => setPieces([]), 3400);
-    return () => clearTimeout(t);
+    const spawn = setTimeout(() => {
+      setPieces(Array.from({ length: 70 }, (_, i) => ({
+        id: `${i}-${Date.now()}`,
+        left: Math.random() * 100,
+        delay: Math.random() * 0.5,
+        dur: 1.8 + Math.random() * 1.4,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        size: 6 + Math.random() * 7,
+      })));
+    }, 0);
+    const clear = setTimeout(() => setPieces([]), 3400);
+    return () => { clearTimeout(spawn); clearTimeout(clear); };
   }, [show]);
 
   if (!pieces.length) return null;
