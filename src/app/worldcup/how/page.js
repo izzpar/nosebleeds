@@ -57,6 +57,11 @@ export default function HowItWorksPage() {
           <p className="text-zinc-500">Play the open <b>Global</b> game or make a private <b>league</b> on the Leagues tab — name your teams and the commissioner sets how many each person can enter.</p>
         </Card>
 
+        <Card icon="⭐" title="World Cup Match Ratings">
+          <p>Watched a game? Rate it <b>1–10</b> for entertainment, drop a quick review, and vote your <b>Star Man</b> from the players who featured. See the crowd&apos;s average, the rating spread, and who&apos;s winning the Star Man vote.</p>
+          <p className="text-zinc-500">Ratings open once a match kicks off. No draft, no signup needed to browse — just your take on the football.</p>
+        </Card>
+
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2 mt-5">Fantasy leagues (draft with friends)</h3>
         <p className="text-[12px] text-zinc-500 mb-2">Create a private league, invite friends with a link, and draft via a <b>snake</b> (take turns) or live <b>auction</b> (nominate &amp; bid with a budget).</p>
 
