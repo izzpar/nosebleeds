@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { groupByCode, joinGroup } from "@/lib/groups";
+import WcBackdrop from "@/components/WcBackdrop";
 
 const GAME_PATH = { ranking: "/worldcup/rankings", salary: "/worldcup/salary" };
 const GAME_NAME = { ranking: "World Cup Nations Ranking", salary: "World Cup Salary Cap" };
@@ -35,6 +36,7 @@ export default function JoinGroupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
+      <WcBackdrop />
       <div className="max-w-sm w-full text-center">
         <div className="text-4xl mb-3">🏆</div>
         {loading || (user && group === undefined) ? (

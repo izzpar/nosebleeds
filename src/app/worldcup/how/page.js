@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
+import WcBackdrop from "@/components/WcBackdrop";
 
 function Card({ icon, title, children }) {
   return (
@@ -23,7 +24,8 @@ export default function HowItWorksPage() {
   const router = useRouter();
   return (
     <div className="min-h-screen pb-32">
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+      <WcBackdrop />
+      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
           <h1 className="text-base font-bold">How the games work</h1>

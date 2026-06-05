@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
+import WcBackdrop from "@/components/WcBackdrop";
 
 const FORMAT_LABEL = { team: "nations draft", player: "players draft" };
 
@@ -48,6 +49,7 @@ export default function JoinLeaguePage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
+      <WcBackdrop />
       <div className="max-w-sm w-full text-center">
         <div className="text-4xl mb-3">🏆</div>
         {loading || (user && league === undefined) ? (

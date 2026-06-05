@@ -11,6 +11,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
+import WcBackdrop from "@/components/WcBackdrop";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -1217,8 +1218,9 @@ function HomeContent() {
 
   return (
     <div className="min-h-screen pb-24">
+      {sport === "wc" && <WcBackdrop />}
       {/* Header */}
-      <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+      <div className={`sticky top-0 z-50 backdrop-blur-xl border-b border-zinc-800 ${sport === "wc" ? "bg-[#09090b]/70" : "bg-[#09090b]/90"}`}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="text-xl font-extrabold text-white">
             <span className="text-red-600">🩸</span> The Nosebleeds
