@@ -169,7 +169,7 @@ export default function WorldCupHub() {
         <div className="rounded-3xl p-6 mb-6 text-center bg-gradient-to-br from-red-700 via-red-800 to-zinc-900 border border-red-500/30">
           <div className="text-5xl mb-2">🏆</div>
           <h2 className="text-2xl font-extrabold text-white leading-tight">Fantasy World Cup 2026</h2>
-          <p className="text-[12px] text-red-100/80 mt-1 mb-4">Rank the nations, build a squad, draft with friends &amp; rate every match — all free. Pick a game below ↓</p>
+          <p className="text-[12px] text-red-100/80 mt-1 mb-4">Rank nations, build a squad &amp; draft players — make private leagues vs your friends, or take on the world. Free. Pick a game ↓</p>
           <KickoffCountdown variant="hero" />
           <p className="text-[10px] text-red-200/60 mt-2">until kickoff — lock your picks before June 11</p>
           <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-white/90 underline mt-2">ℹ️ How the games &amp; scoring work</button>
