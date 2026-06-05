@@ -44,7 +44,8 @@ export default function RankingLeaguePage() {
           total = Math.round(res.total);
           best = [...res.contributions].sort((a, b) => b.points - a.points)[0];
         }
-        return { id: r.id, user_id: r.user_id, name: r.display_name || r.handle || "Player", handle: r.handle, label: r.label, submitted, total, best, created_at: r.created_at || "" };
+        const topPick = submitted ? String(r.ranking[0]) : null; // their #1-ranked nation
+        return { id: r.id, user_id: r.user_id, name: r.display_name || r.handle || "Player", handle: r.handle, label: r.label, submitted, total, best, topPick, created_at: r.created_at || "" };
       }).sort((a, b) => reveal ? (b.total - a.total) : ((b.submitted - a.submitted) || a.created_at.localeCompare(b.created_at)));
       if (!cancelled) setRows({ list, reveal });
     };
@@ -99,7 +100,11 @@ export default function RankingLeaguePage() {
               <div key={r.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
                 <div className="min-w-0">
                   <div className="font-bold truncate">{r.label || "Your ranking"}</div>
-                  <div className={`text-[11px] ${r.submitted ? "text-emerald-400" : "text-zinc-600"}`}>{r.submitted ? "✓ Ranking locked in" : "… not finished"}</div>
+                  {r.topPick && teamById(r.topPick) ? (
+                    <div className="text-[11px] text-zinc-400 flex items-center gap-1">👑 #1 {teamById(r.topPick).logo && <img src={teamById(r.topPick).logo} alt="" className="w-3.5 h-3.5 object-contain inline" />} {teamById(r.topPick).name}</div>
+                  ) : (
+                    <div className={`text-[11px] ${r.submitted ? "text-emerald-400" : "text-zinc-600"}`}>{r.submitted ? "✓ Ranking locked in" : "… not finished"}</div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {rows?.reveal && <span className="font-bold text-red-500 tabular-nums">{r.total}</span>}
@@ -128,7 +133,6 @@ export default function RankingLeaguePage() {
             )}
             <div className="space-y-2">
               {rows.list.map((r, i) => {
-                const bt = r.best && teamById(r.best.team_id);
                 // After kickoff, anyone's entry is viewable; before, only your own.
                 const canView = rows.reveal || r.user_id === user?.id;
                 return (
@@ -140,8 +144,10 @@ export default function RankingLeaguePage() {
                           {r.name}{r.user_id === user?.id ? <span className="text-[10px] text-emerald-400 font-normal"> · you</span> : null}
                           {r.label ? <span className="text-[11px] text-zinc-500 font-normal"> · {r.label}</span> : null}
                         </div>
-                        {rows.reveal
-                          ? (bt && <div className="text-[11px] text-zinc-500">Top pick: {bt.name} (#{r.best.rank})</div>)
+                        {canView
+                          ? (r.topPick && teamById(r.topPick)
+                              ? <div className="text-[11px] text-zinc-400 flex items-center gap-1">👑 #1 {teamById(r.topPick).logo && <img src={teamById(r.topPick).logo} alt="" className="w-3.5 h-3.5 object-contain inline" />} {teamById(r.topPick).name}</div>
+                              : <div className="text-[11px] text-zinc-600">… no ranking yet</div>)
                           : <div className={`text-[11px] ${r.submitted ? "text-emerald-400" : "text-zinc-600"}`}>{r.submitted ? "✓ Ranking locked in" : "… hasn't finished"}</div>}
                       </div>
                     </div>
