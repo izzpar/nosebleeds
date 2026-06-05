@@ -97,7 +97,23 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // The supabase-js client can hang on network calls in this app, so clear the
+    // session locally for an instant, reliable sign-out and revoke server-side
+    // best-effort (without awaiting).
+    try {
+      const tokenKey = Object.keys(localStorage).find((k) => k.includes("auth-token"));
+      const session = tokenKey ? JSON.parse(localStorage.getItem(tokenKey) || "null") : null;
+      if (session?.access_token) {
+        fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/logout`, {
+          method: "POST",
+          headers: {
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }).catch(() => {});
+      }
+      if (tokenKey) localStorage.removeItem(tokenKey);
+    } catch (e) {}
     setUser(null);
     setProfile(null);
   };
