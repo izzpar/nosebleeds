@@ -171,13 +171,19 @@ export default function SalaryCapPage() {
     } catch (e) { flash("Couldn't save"); } finally { setSaving(false); }
   };
 
-  // pool picker list
+  const slotsLeft = 15 - squad.length;
+  const avgPerSlot = slotsLeft > 0 ? Math.floor((remaining / slotsLeft) * 10) / 10 : 0;
+
+  // pool picker list — affordable players first (so you always see ones you can pick)
   const query = q.trim().toLowerCase();
   const available = pool
     .filter((p) => p.role === pos)
     .filter((p) => !squad.includes(String(p.id)))
     .filter((p) => !query || (p.name || "").toLowerCase().includes(query) || (p.team_name || "").toLowerCase().includes(query))
-    .sort((a, b) => (b.proj || 0) - (a.proj || 0))
+    .sort((a, b) => {
+      const aff = (priceOf(b.id) <= remaining + 1e-9 ? 1 : 0) - (priceOf(a.id) <= remaining + 1e-9 ? 1 : 0);
+      return aff || (b.proj || 0) - (a.proj || 0);
+    })
     .slice(0, 60);
 
   return (
@@ -232,6 +238,14 @@ export default function SalaryCapPage() {
                 </div>
               ))}
             </div>
+            {slotsLeft > 0 && (
+              <p className="text-[11px] text-zinc-500 mb-3 -mt-2 text-center">
+                ≈ <span className="text-zinc-300">€{avgPerSlot}m</span> per player for your {slotsLeft} remaining {slotsLeft === 1 ? "slot" : "slots"}
+              </p>
+            )}
+            <button onClick={() => setSubTab("board")} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4">
+              👥 Play with friends? Create a private mini-league on the <span className="text-zinc-200">Leaderboard</span> tab →
+            </button>
 
             {/* squad by position */}
             {POS.map((g) => (
@@ -299,7 +313,8 @@ export default function SalaryCapPage() {
                     </button>
                   ))}
                 </div>
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm mb-1 outline-none focus:border-zinc-600" />
+                <p className="text-[10px] text-zinc-600 mb-2">Affordable players first. Numbers per player: <span className="text-zinc-400">projected points</span> · <span className="text-emerald-400">price</span>. Greyed = over budget.</p>
                 <div className="space-y-1">
                   {available.map((p) => {
                     const affordable = priceOf(p.id) <= remaining + 1e-9;

@@ -77,8 +77,8 @@ export default function WorldCupHub() {
       await sbInsert("wc_members", {
         league_id: league.id,
         user_id: user.id,
-        handle: profile?.handle,
-        display_name: profile?.display_name || profile?.handle,
+        handle: profile?.handle || user.email?.split("@")[0],
+        display_name: profile?.display_name || profile?.handle || user.email?.split("@")[0],
       });
       router.push(`/worldcup/${league.id}`);
     } catch (e) {
@@ -107,8 +107,8 @@ export default function WorldCupHub() {
       const ins = await sbInsert("wc_members", {
         league_id: league.id,
         user_id: user.id,
-        handle: profile?.handle,
-        display_name: profile?.display_name || profile?.handle,
+        handle: profile?.handle || user.email?.split("@")[0],
+        display_name: profile?.display_name || profile?.handle || user.email?.split("@")[0],
       });
       // 23505 = already a member → just go in
       if (!ins.res.ok && ins.res.status !== 409) { flash("Couldn't join"); return; }
