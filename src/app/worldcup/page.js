@@ -22,6 +22,7 @@ export default function WorldCupHub() {
 
   const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [myStatus, setMyStatus] = useState({ salary: false, ranking: false });
   const [name, setName] = useState("");
   const [format, setFormat] = useState("team"); // 'team' | 'player'
   const [draftType, setDraftType] = useState("snake"); // 'snake' | 'auction'
@@ -44,6 +45,18 @@ export default function WorldCupHub() {
   }, [user]);
 
   useEffect(() => { loadLeagues(); }, [loadLeagues]);
+
+  // Quick "have I entered?" status for the game cards.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const [sal, rank] = await Promise.all([
+        sbJson(await sbFetch(`wc_fantasy_lineups?user_id=eq.${user.id}&select=round_id&limit=1`)),
+        sbJson(await sbFetch(`wc_rankings?user_id=eq.${user.id}&select=user_id&limit=1`)),
+      ]);
+      setMyStatus({ salary: sal.length > 0, ranking: rank.length > 0 });
+    })().catch(() => {});
+  }, [user]);
 
   const createLeague = async () => {
     if (!user || !name.trim() || busy) return;
@@ -148,8 +161,8 @@ export default function WorldCupHub() {
             >
               <span className="text-2xl">🔢</span>
               <div className="flex-1">
-                <div className="font-bold">Power Ranking</div>
-                <div className="text-[11px] text-zinc-400">Rank all 48 nations · climb the global leaderboard</div>
+                <div className="font-bold">Power Ranking {myStatus.ranking && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
+                <div className="text-[11px] text-zinc-400">{myStatus.ranking ? "View your rank on the global leaderboard" : "Rank all 48 nations · climb the global leaderboard"}</div>
               </div>
               <span className="text-zinc-600">›</span>
             </button>
@@ -159,8 +172,8 @@ export default function WorldCupHub() {
             >
               <span className="text-2xl">💰</span>
               <div className="flex-1">
-                <div className="font-bold">Salary Cap</div>
-                <div className="text-[11px] text-zinc-400">€100m budget · pick any players · global leaderboard</div>
+                <div className="font-bold">Salary Cap {myStatus.salary && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
+                <div className="text-[11px] text-zinc-400">{myStatus.salary ? "Manage your team & check the leaderboard" : "€100m budget · pick any players · global leaderboard"}</div>
               </div>
               <span className="text-zinc-600">›</span>
             </button>
