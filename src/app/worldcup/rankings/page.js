@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
-import { fetchTeams, fetchResults, rankingPoints, rankingsLocked, RANKING_LOCK_ISO } from "@/lib/worldcup";
+import { fetchTeams, fetchResults, rankingPoints, rankingsLocked, RANKING_LOCK_ISO, nationStrength } from "@/lib/worldcup";
 
 export default function RankingsPage() {
   const { user, profile } = useAuth();
@@ -50,6 +50,10 @@ export default function RankingsPage() {
   };
   const addAllRemaining = () =>
     !locked && setOrder((o) => [...o, ...pool.map((t) => String(t.id))]);
+  // Fill the whole ranking by suggested strength (then the user can tweak).
+  const suggestOrder = () =>
+    !locked &&
+    setOrder([...teams].sort((a, b) => nationStrength(b.name) - nationStrength(a.name)).map((t) => String(t.id)));
 
   const save = async () => {
     if (!user || saving || locked) return;
@@ -119,10 +123,17 @@ export default function RankingsPage() {
               <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">
                 Your ranking ({ranked.length}/{teams.length})
               </h3>
-              {!locked && order.length === teams.length && (
-                <button onClick={save} disabled={saving} className="text-sm bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-lg">
-                  {saving ? "Saving…" : "Save"}
-                </button>
+              {!locked && (
+                <div className="flex items-center gap-2">
+                  <button onClick={suggestOrder} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1.5 rounded-lg">
+                    ✨ Suggest
+                  </button>
+                  {order.length === teams.length && (
+                    <button onClick={save} disabled={saving} className="text-sm bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-lg">
+                      {saving ? "Saving…" : "Save"}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             <div className="space-y-1.5 mb-6">

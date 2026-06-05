@@ -11,6 +11,8 @@ import {
   onClockPosition,
   draftPlan,
   DEFAULT_SCORING,
+  nationStrength,
+  playerProjection,
 } from "@/lib/worldcup";
 
 const POLL_MS = 2500;
@@ -441,7 +443,10 @@ function DraftBoard({
     const m = members.find((x) => x.user_id === uid);
     return m?.display_name || m?.handle || "Player";
   };
-  const available = teams.filter((t) => !pickedTeamIds.has(String(t.id)));
+  // Suggested order: strongest nations first, so users don't have to sort.
+  const available = teams
+    .filter((t) => !pickedTeamIds.has(String(t.id)))
+    .sort((a, b) => nationStrength(b.name) - nationStrength(a.name));
 
   return (
     <div>
@@ -473,12 +478,23 @@ function DraftBoard({
         </div>
       )}
 
-      {/* available nations */}
+      {/* available nations (suggested order: strongest first) */}
       {!draftComplete && (
         <>
-          <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">
-            Available ({available.length})
-          </h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">
+              Available ({available.length}) · suggested order
+            </h3>
+            {isMyTurn && available[0] && (
+              <button
+                onClick={() => onPick(available[0])}
+                disabled={busy}
+                className="text-[12px] bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-3 py-1 rounded-lg"
+              >
+                ⚡ Auto-pick {available[0].name}
+              </button>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-2 mb-6">
             {available.map((t) => (
               <button
@@ -492,7 +508,8 @@ function DraftBoard({
                 }`}
               >
                 {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
-                <span className="text-sm font-medium truncate">{t.name}</span>
+                <span className="text-sm font-medium truncate flex-1">{t.name}</span>
+                <span className="text-[10px] text-zinc-600 tabular-nums">{nationStrength(t.name)}</span>
               </button>
             ))}
           </div>
@@ -727,7 +744,8 @@ function PlayerDraftBoard({
   const available = players
     .filter((p) => !pickedPlayerIds.has(String(p.id)))
     .filter((p) => pos === "ALL" || p.role === pos)
-    .filter((p) => !query || (p.name || "").toLowerCase().includes(query) || (p.team_name || "").toLowerCase().includes(query));
+    .filter((p) => !query || (p.name || "").toLowerCase().includes(query) || (p.team_name || "").toLowerCase().includes(query))
+    .sort((a, b) => playerProjection(b) - playerProjection(a)); // suggested order
   const shown = available.slice(0, 80);
 
   // group my squad by position
@@ -781,7 +799,20 @@ function PlayerDraftBoard({
       {/* pool */}
       {!draftComplete && (
         <>
-          <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Player pool</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">
+              Player pool · suggested order
+            </h3>
+            {isMyTurn && shown[0] && (
+              <button
+                onClick={() => onPick(shown[0])}
+                disabled={busy}
+                className="text-[12px] bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-3 py-1 rounded-lg"
+              >
+                ⚡ Auto-pick {shown[0].name.split(" ").slice(-1)[0]}
+              </button>
+            )}
+          </div>
           {poolLoading && players.length === 0 ? (
             <p className="text-zinc-600 text-sm py-4">Loading squads…</p>
           ) : (
@@ -792,13 +823,14 @@ function PlayerDraftBoard({
                 placeholder="Search player or nation…"
                 className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2.5 text-sm mb-2 outline-none focus:border-zinc-600"
               />
-              <div className="flex gap-1.5 mb-3">
+              <div className="flex gap-1.5 mb-1">
                 {POS.map((p) => (
                   <button key={p} onClick={() => setPos(p)} className={`text-[12px] font-bold px-3 py-1 rounded-full ${pos === p ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>
                     {p}
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-zinc-600 mb-3">“Proj” is a pre-tournament strength estimate — replaced by live form once games start.</p>
               <div className="space-y-1">
                 {shown.map((p) => (
                   <button
@@ -809,7 +841,8 @@ function PlayerDraftBoard({
                   >
                     <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role] || "text-zinc-400"}`}>{p.role}</span>
                     <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
-                    <span className="text-[11px] text-zinc-500 truncate max-w-[35%]">{p.team_name}</span>
+                    <span className="text-[11px] text-zinc-500 truncate max-w-[30%]">{p.team_name}</span>
+                    <span className="text-[11px] text-zinc-400 tabular-nums w-7 text-right" title="Projection">{playerProjection(p)}</span>
                   </button>
                 ))}
                 {available.length === 0 && <p className="text-zinc-600 text-sm py-3">No players match.</p>}

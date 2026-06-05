@@ -228,3 +228,49 @@ export function rankingsLocked(now = new Date()) {
   return now >= new Date(RANKING_LOCK_ISO);
 }
 
+// ---- Draft guidance (interim heuristic) ----------------------------------
+// A pre-tournament strength seed per nation (0–100), used to suggest a draft
+// order so users don't sort manually. This is a starting heuristic; it gets
+// replaced by real form/market data once the live stats engine is wired in.
+const NATION_STRENGTH = {
+  argentina: 95, france: 95, spain: 93, brazil: 92, england: 91, portugal: 89,
+  netherlands: 87, germany: 86, belgium: 82, croatia: 80, uruguay: 80,
+  colombia: 79, morocco: 78, switzerland: 74, japan: 74, senegal: 73,
+  turkiye: 73, unitedstates: 72, norway: 72, austria: 72, mexico: 71,
+  egypt: 70, ecuador: 70, southkorea: 70, algeria: 70, ivorycoast: 69,
+  sweden: 68, czechia: 67, canada: 67, ghana: 66, iran: 66, scotland: 66,
+  bosnia: 66, paraguay: 64, australia: 64, congodr: 63, tunisia: 63,
+  qatar: 60, saudiarabia: 60, southafrica: 60, panama: 58, iraq: 56,
+  uzbekistan: 56, capeverde: 55, jordan: 55, newzealand: 55, haiti: 52,
+  curacao: 50,
+};
+
+// Normalize a nation name (strip accents/punctuation, map aliases) to a key.
+function nationKey(name) {
+  let s = (name || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z]/g, "");
+  const alias = {
+    cotedivoire: "ivorycoast",
+    bosniaandherzegovina: "bosnia", bosniaherzegovina: "bosnia",
+    turkey: "turkiye",
+    usa: "unitedstates", unitedstatesofamerica: "unitedstates",
+    korearepublic: "southkorea", republicofkorea: "southkorea", korea: "southkorea",
+    drcongo: "congodr", democraticrepublicofcongo: "congodr", congokinshasa: "congodr",
+    czechrepublic: "czechia",
+    caboverde: "capeverde",
+  };
+  return alias[s] || s;
+}
+
+export function nationStrength(name) {
+  return NATION_STRENGTH[nationKey(name)] ?? 55;
+}
+
+// Interim per-player projection: nation strength weighted by position.
+const POS_WEIGHT = { FWD: 1.0, MID: 0.85, DEF: 0.72, GK: 0.6 };
+export function playerProjection(player) {
+  const w = POS_WEIGHT[player?.role] ?? 0.8;
+  return Math.round(nationStrength(player?.team_name) * w);
+}
+
