@@ -306,6 +306,7 @@ export default function SalaryCapPage() {
                       <button key={p.id} onClick={() => addPlayer(p)} disabled={!ok}
                         className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${ok ? "bg-zinc-900 border-zinc-700 hover:border-red-500" : "bg-zinc-900/40 border-zinc-800 opacity-50"}`}>
                         <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role]}`}>{p.role}</span>
+                        {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded-full object-cover bg-zinc-800 shrink-0" loading="lazy" />}
                         <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
                         <span className="text-[11px] text-zinc-500 truncate max-w-[26%]">{p.team_name}</span>
                         <span className="text-[11px] text-zinc-400 w-7 text-right">{p.proj}</span>

@@ -874,6 +874,7 @@ function PlayerDraftBoard({
                     className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${isMyTurn ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.99]" : "bg-zinc-900/50 border-zinc-800 opacity-70"}`}
                   >
                     <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role] || "text-zinc-400"}`}>{p.role}</span>
+                    {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded-full object-cover bg-zinc-800 shrink-0" loading="lazy" />}
                     <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
                     <span className="text-[11px] text-zinc-500 truncate max-w-[30%]">{p.team_name}</span>
                     <span className="text-[11px] text-zinc-400 tabular-nums w-7 text-right" title="Projection">{projOf(p)}</span>
