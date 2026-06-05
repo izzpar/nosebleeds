@@ -7,19 +7,19 @@ import { sbFetch, sbJson } from "@/lib/sbrest";
 import KickoffCountdown from "@/components/KickoffCountdown";
 import WcBackdrop from "@/components/WcBackdrop";
 import { WC_TEAMS_FALLBACK } from "@/lib/worldcup";
+import { ui, svgIcon, IconChip } from "@/components/ui";
 
 // Inline icon set (consistent stroke) — replaces emoji-as-icons.
-const ico = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", className: "w-5 h-5" };
-const IconRank = () => (<svg {...ico}><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M3 20h18" /></svg>);
-const IconSalary = () => (<svg {...ico}><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><circle cx="16.5" cy="14.5" r="1.5" /></svg>);
-const IconStar = () => (<svg {...ico}><path d="M12 3l2.7 5.5 6 .9-4.3 4.2 1 6L12 17l-5.4 2.6 1-6L3.3 9.4l6-.9z" /></svg>);
-const IconUsers = () => (<svg {...ico}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
+const IconRank = () => (<svg {...svgIcon}><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M3 20h18" /></svg>);
+const IconSalary = () => (<svg {...svgIcon}><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><circle cx="16.5" cy="14.5" r="1.5" /></svg>);
+const IconStar = () => (<svg {...svgIcon}><path d="M12 3l2.7 5.5 6 .9-4.3 4.2 1 6L12 17l-5.4 2.6 1-6L3.3 9.4l6-.9z" /></svg>);
+const IconUsers = () => (<svg {...svgIcon}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
 
 const GAMES = [
-  { key: "ranking", Icon: IconRank, chip: "bg-red-500/15 text-red-400", title: "Nations Ranking", href: "/worldcup/rankings", on: "View your rank on the global board", off: "Rank all 48 nations · climb the global board" },
-  { key: "salary", Icon: IconSalary, chip: "bg-emerald-500/15 text-emerald-400", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "€100m budget · build your XI · solo or in leagues" },
-  { key: "ratings", Icon: IconStar, chip: "bg-amber-500/15 text-amber-400", title: "Match Ratings", href: "/?tab=games", on: "Rate matches & players", off: "Rate every game 1–10, pick your Star Man" },
-  { key: "leagues", Icon: IconUsers, chip: "bg-sky-500/15 text-sky-400", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft with friends — snake or live auction" },
+  { key: "ranking", Icon: IconRank, tint: "red", title: "Nations Ranking", href: "/worldcup/rankings", on: "View your rank on the global board", off: "Rank all 48 nations · climb the global board" },
+  { key: "salary", Icon: IconSalary, tint: "emerald", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "€100m budget · build your XI · solo or in leagues" },
+  { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games", on: "Rate matches & players", off: "Rate every game 1–10, pick your Star Man" },
+  { key: "leagues", Icon: IconUsers, tint: "sky", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft with friends — snake or live auction" },
 ];
 
 // A recognizable set of flags for the hero strip (real imagery, not emoji).
@@ -46,7 +46,7 @@ export default function WorldCupHub() {
   return (
     <div className="min-h-screen pb-24">
       <WcBackdrop />
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
+      <div className={ui.header}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center text-base shrink-0">🩸</div>
           <div>
@@ -79,8 +79,8 @@ export default function WorldCupHub() {
             const entered = myStatus[g.key];
             return (
               <button key={g.key} onClick={() => router.push(g.href)}
-                className="w-full text-left bg-zinc-900/80 border border-zinc-800 rounded-2xl px-4 py-4 flex items-center gap-3.5 hover:border-zinc-700 hover:bg-zinc-900 transition-all active:scale-[0.99]">
-                <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${g.chip}`}><g.Icon /></div>
+                className={`w-full text-left ${ui.card} ${ui.cardHover} px-4 py-4 flex items-center gap-3.5`}>
+                <IconChip tint={g.tint}><g.Icon /></IconChip>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold flex items-center gap-2">
                     {g.title}
@@ -98,7 +98,7 @@ export default function WorldCupHub() {
           <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl px-5 py-6 text-center">
             <p className="text-white font-bold mb-1">New here? Welcome 👋</p>
             <p className="text-[13px] text-zinc-400 mb-4 max-w-sm mx-auto">Tap any game above to look around. Log in to save your picks, create private leagues, and invite your friends.</p>
-            <button onClick={() => router.push("/login")} className="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-2.5 rounded-xl shadow-lg shadow-red-900/30">Log in / sign up</button>
+            <button onClick={() => router.push("/login")} className={`${ui.btnPrimary} px-6 py-2.5 shadow-lg shadow-red-900/30`}>Log in / sign up</button>
           </div>
         )}
       </div>
