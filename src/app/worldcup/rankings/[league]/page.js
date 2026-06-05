@@ -62,7 +62,7 @@ export default function RankingLeaguePage() {
     let cancelled = false;
     const run = () => load().catch(() => { if (!cancelled) setRows((r) => r || { list: [], reveal: false }); });
     run();
-    const t = setInterval(run, 45000);
+    const t = setInterval(() => { if (!document.hidden) run(); }, 45000);
     return () => { cancelled = true; clearInterval(t); };
   }, [load]);
 
