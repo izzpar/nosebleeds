@@ -31,7 +31,7 @@ const clampWcDate = (d) => (d < WC_OPENER ? WC_OPENER : d > WC_FINAL ? WC_FINAL 
 // `team: false` sports (tennis, World Cup) are not favorite-team based — no
 // favorite-team picker. World Cup still uses the shared /game/[id] page.
 const SPORTS = [
-  { id: "wc", emoji: "🏆", label: "World Cup", team: false },
+  { id: "wc", emoji: "⚽🏆", label: "World Cup", team: false },
   { id: "nfl", emoji: "🏈", label: "NFL", team: true },
   { id: "mlb", emoji: "⚾", label: "MLB", team: true },
   { id: "nba", emoji: "🏀", label: "NBA", team: true },
@@ -1865,7 +1865,6 @@ function HomeContent() {
                 {SPORTS.map((s) => (
                   <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
                 ))}
-                <button onClick={() => setProfileSport("wc")} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "wc" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏆<span className="hidden sm:inline ml-1">Cup</span></button>
               </div>
             </div>
             {sportRatedLogs.length === 0 && (
