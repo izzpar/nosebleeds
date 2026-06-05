@@ -17,6 +17,7 @@ import {
 import AuctionRoom from "./AuctionRoom";
 import WaiverView from "./WaiverView";
 import Confetti from "@/components/Confetti";
+import { DEFAULT_PLAYER_SCORING, pointsFromComponents, isPlayerScoring } from "@/lib/playerScoring";
 
 const POLL_MS = 2500;
 
@@ -407,7 +408,7 @@ export default function LeagueRoom() {
           )
         ) : subTab === "standings" ? (
           isPlayer ? (
-            <PlayerStandings members={members} picks={picks} />
+            <PlayerStandings members={members} picks={picks} scoring={league.scoring} />
           ) : (
             <Standings
               members={members}
@@ -680,14 +681,37 @@ const SCORE_FIELDS = [
   ["champion", "Champion"],
 ];
 
+// Editable player-scoring fields (dotted paths into the scoring object).
+const PLAYER_SCORE_FIELDS = [
+  ["play_60", "Played 60+"], ["play_1", "Played <60"],
+  ["goal.GK", "Goal · GK"], ["goal.DEF", "Goal · DEF"], ["goal.MID", "Goal · MID"], ["goal.FWD", "Goal · FWD"],
+  ["assist", "Assist"], ["shot_on_target", "Shot on target"], ["tackle", "Tackle"],
+  ["clean_sheet.GK", "Clean sheet · GK"], ["clean_sheet.DEF", "Clean sheet · DEF"], ["clean_sheet.MID", "Clean sheet · MID"],
+  ["conceded_2.GK", "Conceded /2 · GK"], ["conceded_2.DEF", "Conceded /2 · DEF"],
+  ["save_points", "Saves /3"], ["yellow", "Yellow"], ["red", "Red"], ["own_goal", "Own goal"],
+];
+
 function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
+  const isPlayer = league.format === "player";
   const base = { ...DEFAULT_SCORING, ...(league.scoring || {}) };
   const [form, setForm] = useState(base);
+  // Player-scoring form (nested object), starting from the league's or the default.
+  const [pform, setPform] = useState(() =>
+    JSON.parse(JSON.stringify(isPlayerScoring(league.scoring) ? league.scoring : DEFAULT_PLAYER_SCORING))
+  );
   const [secs, setSecs] = useState(league.pick_seconds || 90);
-  const num = (v) => { const x = parseInt(v, 10); return Number.isFinite(x) ? x : 0; };
+  const num = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? x : 0; };
   const isLobby = league.status === "lobby";
 
+  const getP = (path) => path.split(".").reduce((o, k) => (o == null ? o : o[k]), pform);
+  const setP = (path, val) => setPform((prev) => {
+    const r = JSON.parse(JSON.stringify(prev)); const ks = path.split(".");
+    let o = r; for (let i = 0; i < ks.length - 1; i++) { o[ks[i]] = o[ks[i]] || {}; o = o[ks[i]]; }
+    o[ks[ks.length - 1]] = num(val); return r;
+  });
+
   const save = () => {
+    if (isPlayer) { onSave({ scoring: pform, pick_seconds: Math.max(10, num(secs)) }); return; }
     const scoring = {};
     for (const [k] of SCORE_FIELDS) scoring[k] = num(form[k]);
     onSave({ scoring, pick_seconds: Math.max(10, num(secs)) });
@@ -754,13 +778,18 @@ function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
         <h3 className="font-bold mb-1">Scoring</h3>
         {league.format === "player" ? (
           <>
-            <p className="text-[12px] text-zinc-500 mb-3">Player scoring is standardized across all player leagues:</p>
-            <div className="text-[12px] text-zinc-300 space-y-1.5">
-              <div>⏱️ Played 60+ min <b>+2</b> · under 60 <b>+1</b></div>
-              <div>⚽ Goal — GK/DEF <b>+6</b>, MID <b>+5</b>, FWD <b>+4</b></div>
-              <div>🅰️ Assist <b>+3</b> · 🎯 Shot on target <b>+0.5</b> · 🛡️ Tackle <b>+0.25</b></div>
-              <div>🧤 Clean sheet (60+ min) — GK/DEF <b>+4</b>, MID <b>+1</b> · Save <b>+1</b> per 3</div>
-              <div>🥅 Goals conceded (GK/DEF) <b>−1</b> per 2 · 🟨 <b>−1</b> · 🟥 <b>−3</b> · own goal <b>−2</b></div>
+            <p className="text-[12px] text-zinc-500 mb-3">Set the points each action is worth (per-match thresholds: 60 min, clean sheet, conceded ÷2, saves ÷3 are fixed). Standings re-score instantly.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {PLAYER_SCORE_FIELDS.map(([path, label]) => (
+                <label key={path} className="flex items-center justify-between gap-2 bg-zinc-900/40 rounded-lg px-3 py-2">
+                  <span className="text-[12px] text-zinc-300">{label}</span>
+                  <input
+                    type="number" step="0.25" value={getP(path) ?? 0}
+                    onChange={(e) => setP(path, e.target.value)}
+                    className="w-14 bg-[#09090b] border border-zinc-800 rounded-md px-1.5 py-1 text-sm text-right outline-none focus:border-zinc-600"
+                  />
+                </label>
+              ))}
             </div>
           </>
         ) : (
@@ -954,8 +983,9 @@ function PlayerDraftBoard({
 
 // Player-league standings — totals from the live wc_player_points store
 // (written by the /api/wc-score cron during the tournament).
-function PlayerStandings({ members, picks }) {
-  const [pts, setPts] = useState(null); // player_id -> { points, goals, assists }
+function PlayerStandings({ members, picks, scoring }) {
+  const [pts, setPts] = useState(null); // player_id -> row { points, components, role }
+  const playerScoring = isPlayerScoring(scoring) ? scoring : DEFAULT_PLAYER_SCORING;
 
   useEffect(() => {
     const ids = [...new Set(picks.map((p) => p.player_id).filter(Boolean))];
@@ -964,7 +994,7 @@ function PlayerStandings({ members, picks }) {
       const map = {};
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100).map((x) => encodeURIComponent(x)).join(",");
-        const res = await sbFetch(`wc_player_points?player_id=in.(${chunk})&select=player_id,points,goals,assists`);
+        const res = await sbFetch(`wc_player_points?player_id=in.(${chunk})&select=player_id,points,components,role`);
         for (const r of await sbJson(res)) map[String(r.player_id)] = r;
       }
       if (!cancelled) setPts(map);
@@ -974,7 +1004,13 @@ function PlayerStandings({ members, picks }) {
 
   if (!pts) return <p className="text-zinc-600 text-sm py-8">Loading points…</p>;
 
-  const ptOf = (pid) => Number(pts[String(pid)]?.points || 0);
+  // Use the league's (possibly custom) scoring re-applied to the stored components.
+  const ptOf = (pid) => {
+    const r = pts[String(pid)];
+    if (!r) return 0;
+    if (r.components && Object.keys(r.components).length) return pointsFromComponents(r.components, r.role || "MID", playerScoring);
+    return Number(r.points || 0);
+  };
   const rows = members
     .map((m) => {
       const squad = picks
