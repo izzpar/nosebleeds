@@ -556,7 +556,7 @@ export default function PredictionsPage() {
                     {viewMode === "units" && g.spread != null && g.favAbbr && (
                       <div>
                         <div className="text-[9px] font-bold text-zinc-600 tracking-widest uppercase mb-1">
-                          Against the spread {g.spreadText && `(${g.spreadText})`}
+                          Against the spread
                         </div>
                         <div className="flex gap-2">
                           {[g.away, g.home].map((t, i) => {
