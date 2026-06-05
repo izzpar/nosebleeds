@@ -1223,6 +1223,20 @@ function HomeContent() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-3">
+        {/* Fantasy World Cup promo — flagship games hub */}
+        {(tab === "games" || tab === "discover") && (
+          <button
+            onClick={() => router.push("/worldcup")}
+            className="w-full text-left rounded-2xl p-4 mb-3 bg-gradient-to-r from-red-700 via-red-800 to-zinc-900 border border-red-500/40 flex items-center gap-3 active:scale-[0.99] transition-transform"
+          >
+            <div className="text-3xl">🏆</div>
+            <div className="flex-1">
+              <div className="text-sm font-extrabold text-white">Fantasy World Cup 2026 is here</div>
+              <div className="text-[11px] text-red-100/80 mt-0.5">Draft nations or players, run a live auction, build a salary-cap XI, rank all 48 — and climb leaderboards with friends.</div>
+            </div>
+            <div className="text-white text-xl">›</div>
+          </button>
+        )}
         {/* Onboarding — nudge new users to pick favorite teams */}
         {tab === "games" && user && profile && !onboardDismissed && !FAV_SPORTS.some((s) => profile[favKey(s.id)]) && (
           <div className="rounded-2xl p-4 mb-3 bg-gradient-to-br from-red-900/50 via-zinc-900 to-zinc-900 border border-red-600/30">
