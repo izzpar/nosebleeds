@@ -54,8 +54,9 @@ create index if not exists wc_picks_league_idx   on public.wc_picks(league_id);
 -- Backfill columns if the tables pre-date the player-draft / format changes.
 alter table public.wc_leagues add column if not exists format     text not null default 'team';
 alter table public.wc_leagues add column if not exists squad_size int  not null default 15;
-alter table public.wc_leagues add column if not exists draft_type text not null default 'snake';
-alter table public.wc_leagues add column if not exists budget     int  not null default 200;
+alter table public.wc_leagues add column if not exists draft_type   text not null default 'snake';
+alter table public.wc_leagues add column if not exists budget       int  not null default 200;
+alter table public.wc_leagues add column if not exists max_managers int  not null default 8;
 alter table public.wc_picks   add column if not exists player_id   text;
 alter table public.wc_picks   add column if not exists player_name text;
 alter table public.wc_picks   add column if not exists position    text;
