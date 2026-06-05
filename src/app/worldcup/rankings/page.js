@@ -191,7 +191,8 @@ function Leaderboard({ teamById }) {
   const [scopeIds, setScopeIds] = useState(null); // null = global, else group member ids
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    const load = async () => {
       const [res, results] = await Promise.all([
         sbFetch("wc_rankings?select=user_id,display_name,handle,ranking"),
         fetchResults(),
@@ -210,8 +211,11 @@ function Leaderboard({ teamById }) {
           };
         })
         .sort((a, b) => b.total - a.total);
-      setRows({ scored, noGames: (results.events || 0) === 0 });
-    })().catch(() => setRows({ scored: [], noGames: true }));
+      if (!cancelled) setRows({ scored, noGames: (results.events || 0) === 0 });
+    };
+    load().catch(() => { if (!cancelled) setRows((r) => r || { scored: [], noGames: true }); });
+    const t = setInterval(() => load().catch(() => {}), 45000); // live refresh
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
 
   if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading leaderboard…</p>;

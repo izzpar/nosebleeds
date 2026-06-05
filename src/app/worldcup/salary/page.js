@@ -330,7 +330,8 @@ function SalaryLeaderboard() {
   const [rows, setRows] = useState(null);
   const [scopeIds, setScopeIds] = useState(null);
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    const load = async () => {
       const [roundsRes, lineups, rps] = await Promise.all([
         fetch("/api/wc-rounds").then((r) => r.json()).catch(() => ({ rounds: [] })),
         sbJson(await sbFetch("wc_fantasy_lineups?select=user_id,round_id,starters,bench,captain")),
@@ -379,8 +380,11 @@ function SalaryLeaderboard() {
         }
         return { user_id: uid, name: nameOf[uid] || "Player", total: Math.round(total * 100) / 100 };
       }).sort((a, b) => b.total - a.total);
-      setRows(scored);
-    })().catch(() => setRows([]));
+      if (!cancelled) setRows(scored);
+    };
+    load().catch(() => { if (!cancelled) setRows((r) => r || []); });
+    const t = setInterval(() => load().catch(() => {}), 45000); // live refresh
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
   if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading…</p>;
   const shown = scopeIds ? rows.filter((r) => scopeIds.includes(r.user_id)) : rows;
