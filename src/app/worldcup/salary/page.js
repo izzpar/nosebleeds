@@ -15,6 +15,17 @@ const START_MIN = { GK: 1, DEF: 3, MID: 2, FWD: 1 };       // formation floor
 const START_MAX = { GK: 1, DEF: 5, MID: 5, FWD: 3 };       // formation ceiling
 const POS = ["GK", "DEF", "MID", "FWD"];
 const POS_COLOR = { GK: "text-amber-400", DEF: "text-sky-400", MID: "text-emerald-400", FWD: "text-red-400" };
+// Valid starting formations (GK is always 1; DEF+MID+FWD = 10).
+const FORMATIONS = [
+  { k: "3-4-3", DEF: 3, MID: 4, FWD: 3 },
+  { k: "3-5-2", DEF: 3, MID: 5, FWD: 2 },
+  { k: "4-3-3", DEF: 4, MID: 3, FWD: 3 },
+  { k: "4-4-2", DEF: 4, MID: 4, FWD: 2 },
+  { k: "4-5-1", DEF: 4, MID: 5, FWD: 1 },
+  { k: "5-3-2", DEF: 5, MID: 3, FWD: 2 },
+  { k: "5-4-1", DEF: 5, MID: 4, FWD: 1 },
+];
+const DEFAULT_FORM = { DEF: 4, MID: 3, FWD: 3 }; // 4-3-3
 const GLOBAL = { id: null, name: "🌍 Global", max_entries: 1, isGlobal: true };
 
 function lockLabel(ts) {
@@ -56,6 +67,7 @@ function SalaryCapInner() {
   const [toast, setToast] = useState("");
   const [celebrate, setCelebrate] = useState(0);
   const [sel, setSel] = useState(null); // selected squad player (for pitch actions)
+  const [form, setForm] = useState(DEFAULT_FORM); // chosen starting formation
 
   // Leagues-tab UI
   const [creatingLeague, setCreatingLeague] = useState(false);
@@ -166,15 +178,47 @@ function SalaryCapInner() {
   const spent = squad.reduce((s, id) => s + priceOf(id), 0);
   const remaining = Math.round((BUDGET - spent) * 10) / 10;
   const posCount = (arr, pp) => arr.filter((id) => byId[id]?.role === pp).length;
-  // Formation string from the starting XI (outfield only), e.g. "4-4-2".
-  const formation = ["DEF", "MID", "FWD"].map((g) => posCount(starters, g)).join("-");
+  const formStart = (g) => (g === "GK" ? 1 : form[g]);            // starting slots for a line
+  const formKey = `${form.DEF}-${form.MID}-${form.FWD}`;
+
+  // Keep the formation label in sync with a loaded/edited XI once it's full.
+  useEffect(() => {
+    if (starters.length === 11 && pool.length) {
+      const nf = { DEF: posCount(starters, "DEF"), MID: posCount(starters, "MID"), FWD: posCount(starters, "FWD") };
+      if (nf.DEF !== form.DEF || nf.MID !== form.MID || nf.FWD !== form.FWD) setForm(nf);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [starters, pool.length]);
 
   const addPlayer = (p) => {
     if (locked || !selEntryId || squad.includes(String(p.id))) return;
     if (posCount(squad, p.role) >= SQUAD_REQ[p.role]) { flash(`Squad already has ${SQUAD_REQ[p.role]} ${p.role}`); return; }
     if (priceOf(p.id) > remaining + 1e-9) { flash("Not enough budget"); return; }
     if (squad.length >= 15) { flash("Squad is full (15)"); return; }
-    setSquad((s) => [...s, String(p.id)]);
+    const id = String(p.id);
+    setSquad((s) => [...s, id]);
+    // Auto-start into an open formation slot for this position; otherwise it lands
+    // on the bench (so building a team is just tapping players, not micro-managing).
+    setStarters((st) => {
+      if (st.length >= 11) return st;
+      if (st.filter((x) => byId[x]?.role === p.role).length >= formStart(p.role)) return st;
+      return [...st, id];
+    });
+  };
+
+  // Switch formation: refit the XI, preferring players already on the pitch.
+  const applyFormation = (nf) => {
+    if (locked) return;
+    setForm(nf);
+    const want = { GK: 1, DEF: nf.DEF, MID: nf.MID, FWD: nf.FWD };
+    const next = [];
+    for (const g of POS) {
+      const ofPos = squad.filter((id) => byId[id]?.role === g)
+        .sort((a, b) => (starters.includes(a) ? 0 : 1) - (starters.includes(b) ? 0 : 1));
+      next.push(...ofPos.slice(0, want[g]));
+    }
+    setStarters(next);
+    if (captain && !next.includes(captain)) setCaptain(null);
   };
   const removePlayer = (id) => {
     if (locked) return;
@@ -191,7 +235,7 @@ function SalaryCapInner() {
       return;
     }
     if (starters.length >= 11) { flash("11 starters already"); return; }
-    if (posCount(starters, role) >= START_MAX[role]) { flash(`Max ${START_MAX[role]} ${role} on the pitch`); return; }
+    if (posCount(starters, role) >= formStart(role)) { flash(`${formKey} has no open ${role} slot — switch formation`); return; }
     setStarters((s) => [...s, id]);
   };
   const moveBench = (id, dir) => {
@@ -429,19 +473,35 @@ function SalaryCapInner() {
                   </div>
                 </details>
 
-                {/* Pitch — starting XI in formation */}
+                {/* Formation picker */}
+                <div className="flex gap-1 flex-wrap items-center mb-2">
+                  <span className="text-[10px] text-zinc-500 font-bold mr-1">FORMATION</span>
+                  {FORMATIONS.map((f) => (
+                    <button key={f.k} onClick={() => applyFormation(f)} className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${formKey === f.k ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{f.k}</button>
+                  ))}
+                </div>
+
+                {/* Pitch — fixed formation slots; empty slots fill as you add players */}
                 <div className="rounded-2xl p-3 mb-2 bg-gradient-to-b from-emerald-700/30 via-emerald-800/20 to-emerald-950/30 border border-emerald-900/40">
                   <div className="flex items-center justify-between text-[10px] text-emerald-200/70 font-bold mb-1 px-1">
                     <span>STARTING XI ({starters.length}/11)</span>
-                    {startersValid && <span className="text-emerald-300">{formation}</span>}
-                    <span>tap a player</span>
+                    <span className="text-emerald-300">{formKey}</span>
+                    <span>tap a slot</span>
                   </div>
                   {["FWD", "MID", "DEF", "GK"].map((g) => {
-                    const row = starters.map((id) => byId[id]).filter((p) => p && p.role === g);
+                    const inRow = starters.map((id) => byId[id]).filter((p) => p && p.role === g);
+                    const cells = Array.from({ length: formStart(g) }, (_, i) => inRow[i] || null);
                     return (
                       <div key={g} className="flex justify-center items-start gap-1.5 my-1.5 min-h-[3.4rem] flex-wrap">
-                        {row.length === 0 && <span className="text-[10px] text-emerald-200/30 self-center">{g}</span>}
-                        {row.map((p) => {
+                        {cells.map((p, i) => {
+                          if (!p) {
+                            return (
+                              <button key={`${g}-${i}`} onClick={() => { setPos(g); flash(`Pick a ${g} below`); }} className="flex flex-col items-center w-[3.6rem]">
+                                <div className="w-9 h-9 rounded-full border-2 border-dashed border-emerald-300/40 flex items-center justify-center text-emerald-200/50 text-base">＋</div>
+                                <span className="text-[8px] text-emerald-200/50 mt-0.5">{g}</span>
+                              </button>
+                            );
+                          }
                           const id = String(p.id); const isCap = captain === id;
                           return (
                             <button key={id} onClick={() => setSel(sel === id ? null : id)} className={`flex flex-col items-center w-[3.6rem] transition-transform ${sel === id ? "scale-110" : ""}`}>
