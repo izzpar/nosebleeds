@@ -1795,7 +1795,7 @@ export default function GamePage({ params }) {
                       {team.logo && <img src={team.logo} className="w-10 h-10 mx-auto" />}
                       <div className="text-lg font-extrabold text-white mt-2">{team.record}</div>
                       <div className="text-[10px] text-zinc-400">{team.name}</div>
-                      {pos && <div className="text-xs font-bold text-red-400 mt-1.5 px-2 py-0.5 rounded-md bg-red-600/10 inline-block">#{pos.rank} in {pos.division}</div>}
+                      {pos && sport !== "wc" && <div className="text-xs font-bold text-red-400 mt-1.5 px-2 py-0.5 rounded-md bg-red-600/10 inline-block">#{pos.rank} in {pos.division}</div>}
                       {/* Probable starter for this team */}
                       {sport === "mlb" && (
                         <div className="mt-3 pt-3 border-t border-zinc-800">

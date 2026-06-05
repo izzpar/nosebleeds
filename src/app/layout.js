@@ -12,7 +12,7 @@ const font = Space_Grotesk({
 export const metadata = {
   metadataBase: new URL("https://thenosebleeds.app"),
   title: "The Nosebleeds — Free Fantasy World Cup 2026 & Game Ratings",
-  description: "Free Fantasy World Cup 2026 with friends: rank all 48 nations, build a salary-cap squad, draft players, and rate every match on shared leaderboards. Plus rate & review games across every sport.",
+  description: "Free Fantasy World Cup 2026: rank all 48 nations, build a salary-cap squad, and draft players — make private leagues to take on your friends, or climb the global leaderboard against the world. Plus rate every match.",
   applicationName: "The Nosebleeds",
   appleWebApp: {
     capable: true,
@@ -21,7 +21,7 @@ export const metadata = {
   },
   openGraph: {
     title: "The Nosebleeds — Free Fantasy World Cup 2026 & Game Ratings",
-    description: "Free Fantasy World Cup 2026 with friends: rank all 48 nations, build a salary-cap squad, draft players, and rate every match on shared leaderboards.",
+    description: "Rank the nations, build a salary-cap squad, and draft players. Make private leagues vs your friends or climb the global board against the world — free.",
     url: "https://thenosebleeds.app",
     siteName: "The Nosebleeds",
     type: "website",
