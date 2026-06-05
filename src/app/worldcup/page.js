@@ -53,8 +53,8 @@ export default function WorldCupHub() {
     if (!user) return;
     (async () => {
       const [sal, rank] = await Promise.all([
-        sbJson(await sbFetch(`wc_fantasy_lineups?user_id=eq.${user.id}&select=round_id&limit=1`)),
-        sbJson(await sbFetch(`wc_rankings?user_id=eq.${user.id}&select=user_id&limit=1`)),
+        sbJson(await sbFetch(`wc_salary_entries?user_id=eq.${user.id}&select=id&limit=1`)),
+        sbJson(await sbFetch(`wc_ranking_entries?user_id=eq.${user.id}&select=id&limit=1`)),
       ]);
       setMyStatus({ salary: sal.length > 0, ranking: rank.length > 0 });
     })().catch(() => {});
@@ -180,7 +180,7 @@ export default function WorldCupHub() {
               <span className="text-2xl">💰</span>
               <div className="flex-1">
                 <div className="font-bold">World Cup Salary Cap {myStatus.salary && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
-                <div className="text-[11px] text-zinc-400">{myStatus.salary ? "Manage your team & check the leaderboard" : "€100m budget · pick any players · global leaderboard"}</div>
+                <div className="text-[11px] text-zinc-400">{myStatus.salary ? "Manage your team & check the leaderboard" : "€100m budget · pick any players · play global or in private leagues"}</div>
               </div>
               <span className="text-zinc-600">›</span>
             </button>
