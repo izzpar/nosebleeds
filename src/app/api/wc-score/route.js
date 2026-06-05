@@ -7,7 +7,7 @@
 // SUPABASE_SERVICE_ROLE_KEY, (optional) CRON_SECRET.
 
 import { smFetch, parsePlayerStats, WC_SEASON } from "@/lib/sportmonks";
-import { playerMatchPoints } from "@/lib/playerScoring";
+import { playerMatchPoints, playerComponents, addComponents } from "@/lib/playerScoring";
 import { buildRounds, fixtureRoundMap } from "@/lib/rounds";
 
 export const dynamic = "force-dynamic";
@@ -85,13 +85,15 @@ export async function GET(request) {
         const pts = playerMatchPoints(p);
         const t = (totals[key] = totals[key] || {
           points: 0, matches: 0, goals: 0, assists: 0, minutes: 0,
-          name: p.name, team_id: p.team_id,
+          name: p.name, team_id: p.team_id, role: p.role, components: {},
         });
         t.points += pts;
         t.matches += 1;
         t.goals += Number(p.stats[52] || 0);
         t.assists += Number(p.stats[79] || 0);
         t.minutes += p.minutes;
+        t.role = p.role;
+        t.components = addComponents(t.components, playerComponents(p));
         const rk = `${key}|${rid}`;
         roundPts[rk] = (roundPts[rk] || 0) + pts;
       }
@@ -107,6 +109,8 @@ export async function GET(request) {
     goals: t.goals,
     assists: t.assists,
     minutes: t.minutes,
+    role: t.role || null,
+    components: t.components || {},
     updated_at: new Date().toISOString(),
   }));
 

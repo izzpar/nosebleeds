@@ -15,6 +15,7 @@ export const DEFAULT_PLAYER_SCORING = {
   saves_per_point: 3,    // +1 per N saves (GK)
   shot_on_target: 0.5,   // you asked for shots to count
   tackle: 0.25,          // and tackles
+  save_points: 1,        // points per 3 saves
   yellow: -1,
   red: -3,
   own_goal: -2,
@@ -24,6 +25,58 @@ export const DEFAULT_PLAYER_SCORING = {
 };
 
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// ---- Component-based scoring -------------------------------------------------
+// The cron stores per-player cumulative scoring "components" (counts) so a league
+// can re-score with custom values. Per-match thresholds (60 min, clean sheet,
+// conceded/2, saves/3) are baked here; the point VALUES stay configurable.
+export function playerComponents(p) {
+  if (!p || !p.played) return null;
+  const s = p.stats || {};
+  const conceded = n(s[STAT.GOALS_CONCEDED] || s[STAT.GK_GOALS_CONCEDED]);
+  return {
+    play60: p.minutes >= 60 ? 1 : 0,
+    play1: p.minutes > 0 && p.minutes < 60 ? 1 : 0,
+    goals: n(s[STAT.GOALS]),
+    assists: n(s[STAT.ASSISTS]),
+    sot: n(s[STAT.SHOTS_ON_TARGET]),
+    tackles: n(s[STAT.TACKLES]),
+    cs: p.minutes >= 60 && conceded === 0 ? 1 : 0,
+    conceded2: Math.floor(conceded / 2),
+    saves3: Math.floor(n(s[STAT.SAVES]) / 3),
+    yellow: n(s[STAT.YELLOW]),
+    red: n(s[STAT.RED]),
+    og: n(s[STAT.OWN_GOAL]),
+    penWon: n(s[STAT.PEN_WON]),
+    penCommitted: n(s[STAT.PEN_COMMITTED]),
+  };
+}
+
+export function addComponents(a, b) {
+  const r = { ...(a || {}) };
+  for (const k of Object.keys(b || {})) r[k] = (r[k] || 0) + b[k];
+  return r;
+}
+
+export function pointsFromComponents(c, role = "MID", scoring = DEFAULT_PLAYER_SCORING) {
+  if (!c) return 0;
+  let p = 0;
+  p += (c.play60 || 0) * scoring.play_60 + (c.play1 || 0) * scoring.play_1;
+  p += (c.goals || 0) * (scoring.goal[role] ?? scoring.goal.MID);
+  p += (c.assists || 0) * scoring.assist;
+  p += (c.sot || 0) * scoring.shot_on_target + (c.tackles || 0) * scoring.tackle;
+  p += (c.cs || 0) * (scoring.clean_sheet[role] ?? 0);
+  p += (c.conceded2 || 0) * (scoring.conceded_2[role] ?? 0);
+  p += (c.saves3 || 0) * (scoring.save_points ?? 1);
+  p += (c.yellow || 0) * scoring.yellow + (c.red || 0) * scoring.red + (c.og || 0) * scoring.own_goal;
+  p += (c.penWon || 0) * scoring.pen_won + (c.penCommitted || 0) * scoring.pen_committed;
+  return Math.round(p * 100) / 100;
+}
+
+// Is this object a player-scoring config (vs the team default)?
+export function isPlayerScoring(s) {
+  return !!s && s.play_60 != null;
+}
 
 // Compute one player's points for one match.
 // `p` is a row from parsePlayerStats(); `scoring` is a league config.
