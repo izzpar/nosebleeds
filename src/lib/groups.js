@@ -15,10 +15,17 @@ export async function fetchMyGroups(userId, game) {
   return rows.map((r) => r.wc_groups).filter((g) => g && g.game === game);
 }
 
-export async function createGroup(name, game, userId, profile) {
-  const { rows } = await sbInsert("wc_groups", {
+export async function createGroup(name, game, userId, profile, maxEntries = 1) {
+  let { res, rows } = await sbInsert("wc_groups", {
     name: name.trim(), invite_code: makeGroupCode(), game, creator_id: userId,
+    max_entries: Math.max(1, Math.min(10, Number(maxEntries) || 1)),
   });
+  if (!res.ok) {
+    // max_entries column may not exist yet — fall back.
+    ({ res, rows } = await sbInsert("wc_groups", {
+      name: name.trim(), invite_code: makeGroupCode(), game, creator_id: userId,
+    }));
+  }
   const g = rows[0];
   if (g) {
     await sbInsert("wc_group_members", {
