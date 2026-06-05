@@ -131,7 +131,7 @@ export default function RankingsPage() {
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {[["mine", "My Entries"], ["board", "Leaderboard"]].map(([id, label]) => (
+          {[["mine", "Rank"], ["leagues", "Leagues"], ["board", "Leaderboard"]].map(([id, label]) => (
             <button key={id} onClick={() => setSubTab(id)} className={`pb-2 font-bold border-b-2 ${subTab === id ? "text-white border-red-500" : "text-zinc-600 border-transparent"}`}>{label}</button>
           ))}
         </div>
@@ -145,32 +145,48 @@ export default function RankingsPage() {
           </div>
         ) : (
           <>
-            {/* League selector */}
-            <div className="flex gap-1.5 flex-wrap items-center mb-2">
-              {leagues.map((l) => (
-                <button key={l.id || "global"} onClick={() => setSelLeagueId(l.id || null)} className={`text-[12px] font-bold px-3 py-1 rounded-full ${selLeagueId === (l.id || null) ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{l.name}</button>
-              ))}
-              <button onClick={() => setCreatingLeague((v) => !v)} className="text-[12px] font-bold px-3 py-1 rounded-full bg-zinc-800 text-zinc-400">＋ League</button>
-            </div>
-            {creatingLeague && (
-              <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
-                <input value={lgName} onChange={(e) => setLgName(e.target.value)} placeholder="League name" maxLength={32} className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
-                <label className="flex items-center justify-between text-[12px] text-zinc-400 mb-2">
-                  Max entries per person
-                  <input type="number" min={1} max={10} value={lgMax} onChange={(e) => setLgMax(Number(e.target.value))} className="w-16 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-right" />
-                </label>
-                <button onClick={createLeague} disabled={!lgName.trim()} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2 rounded-lg text-sm">Create &amp; invite</button>
-              </div>
-            )}
-            {selLeague.invite_code && (
-              <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-3">
-                {copied ? "✓ Invite link copied!" : <>🔗 Invite friends to <span className="text-zinc-200">{selLeague.name}</span> — tap to copy</>}
-              </button>
-            )}
-
-            <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline mb-3 block">
-              ℹ️ How scoring works — you earn more for teams you rank higher when they do well
-            </button>
+            {subTab === "leagues" ? (
+              <>
+                <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your ranking leagues</h3>
+                <div className="space-y-2 mb-3">
+                  {leagues.map((l) => (
+                    <button key={l.id || "global"} onClick={() => { setSelLeagueId(l.id || null); setSubTab("mine"); }} className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700">
+                      <div>
+                        <div className="font-bold">{l.name}</div>
+                        <div className="text-[11px] text-zinc-500">{!l.id ? "Open to everyone · one entry each" : `Private · up to ${l.max_entries || 1} ${(l.max_entries || 1) === 1 ? "entry" : "entries"} each`}</div>
+                      </div>
+                      <span className="text-zinc-600">›</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setCreatingLeague((v) => !v)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 rounded-xl mb-3">＋ Create a league</button>
+                {creatingLeague && (
+                  <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
+                    <input value={lgName} onChange={(e) => setLgName(e.target.value)} placeholder="League name" maxLength={32} className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
+                    <label className="flex items-center justify-between text-[12px] text-zinc-400 mb-2">
+                      Max entries per person
+                      <input type="number" min={1} max={10} value={lgMax} onChange={(e) => setLgMax(Number(e.target.value))} className="w-16 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-right" />
+                    </label>
+                    <button onClick={createLeague} disabled={!lgName.trim()} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2 rounded-lg text-sm">Create &amp; invite</button>
+                  </div>
+                )}
+                {selLeague.invite_code && (
+                  <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+                    {copied ? "✓ Invite link copied!" : <>🔗 Invite to <span className="text-zinc-200">{selLeague.name}</span> — tap to copy</>}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex gap-1.5 flex-wrap items-center mb-2">
+                  {leagues.map((l) => (
+                    <button key={l.id || "global"} onClick={() => setSelLeagueId(l.id || null)} className={`text-[12px] font-bold px-3 py-1 rounded-full ${selLeagueId === (l.id || null) ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{l.name}</button>
+                  ))}
+                  <button onClick={() => setSubTab("leagues")} className="text-[12px] font-bold px-3 py-1 rounded-full bg-zinc-800 text-zinc-400">＋ League</button>
+                </div>
+                <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline mb-3 block">
+                  ℹ️ How scoring works — you earn more for teams you rank higher when they do well
+                </button>
 
             {subTab === "board" ? (
               <Leaderboard selLeagueId={selLeagueId} teamById={teamById} />
@@ -218,6 +234,8 @@ export default function RankingsPage() {
                     />
                   </>
                 )}
+              </>
+            )}
               </>
             )}
           </>
@@ -274,11 +292,11 @@ function RankEditor({ teams, ranked, pool, order, locked, saving, onAdd, onRemov
             <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Tap to add ({pool.length})</h3>
             <button onClick={onAddAll} className="text-[12px] text-zinc-400 underline">Add all</button>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {pool.map((t) => (
-              <button key={t.id} onClick={() => onAdd(t.id)} className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 hover:border-red-500 rounded-xl px-3 py-2.5 text-left active:scale-[0.98]">
-                {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
-                <span className="text-sm font-medium truncate">{t.name}</span>
+              <button key={t.id} onClick={() => onAdd(t.id)} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 hover:border-red-500 rounded-lg px-2 py-2 text-left active:scale-[0.97]">
+                {t.logo && <img src={t.logo} alt="" className="w-4 h-4 object-contain shrink-0" />}
+                <span className="text-[12px] font-medium truncate">{t.name}</span>
               </button>
             ))}
           </div>
