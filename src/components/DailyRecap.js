@@ -346,7 +346,7 @@ export default function DailyRecap({ sport, date }) {
     <div className="min-h-screen pb-24">
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
+          <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
           <h1 className="text-sm font-bold text-white flex-1 text-center">{meta.emoji} Daily Recap</h1>
           <div className="w-12" />
         </div>
@@ -364,7 +364,7 @@ export default function DailyRecap({ sport, date }) {
             <div className="text-5xl mb-3">{meta.emoji}</div>
             <div className="text-base font-bold text-white">No ratings for this day yet</div>
             <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">Once people rate games from {prettyDate(date)}, the recap will fill in here</div>
-            <Link href="/" className="inline-block mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</Link>
+            <Link href="/?tab=games" className="inline-block mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</Link>
           </div>
         ) : (
           <>

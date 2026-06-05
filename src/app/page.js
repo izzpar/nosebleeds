@@ -2875,10 +2875,24 @@ function HomeContent() {
 }
 
 
+// For now the World Cup is the front door: a bare visit to "/" lands on the
+// Cup to hook people. The games feed still lives here — the bottom-nav "Games"
+// tab and in-app links reach it via /?tab=games, which renders normally.
+function RootGate() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const hasTab = searchParams.has("tab");
+  useEffect(() => {
+    if (!hasTab) router.replace("/worldcup");
+  }, [hasTab, router]);
+  if (!hasTab) return <div className="min-h-screen bg-[#09090b]" />;
+  return <HomeContent />;
+}
+
 export default function Home() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#09090b]" />}>
-      <HomeContent />
+      <RootGate />
     </Suspense>
   );
 }

@@ -158,7 +158,7 @@ export default function PublicProfile({ params }) {
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-4">
       <div className="text-5xl">🤷</div>
       <div className="text-base font-bold text-white">User @{handle} not found</div>
-      <Link href="/" className="text-sm text-red-400 hover:text-red-300">← Back to The Nosebleeds</Link>
+      <Link href="/?tab=games" className="text-sm text-red-400 hover:text-red-300">← Back to The Nosebleeds</Link>
     </div>
   );
 
@@ -175,7 +175,7 @@ export default function PublicProfile({ params }) {
       {/* Header */}
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
+          <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
           <h1 className="text-base font-bold text-white"><span className="text-red-600">🩸</span> The Nosebleeds</h1>
           <div className="w-12"></div>
         </div>

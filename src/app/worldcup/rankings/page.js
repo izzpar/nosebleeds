@@ -126,7 +126,7 @@ export default function RankingsPage() {
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
           <span className="text-xl">🔢</span>
           <div className="flex-1">
-            <h1 className="text-base font-bold leading-tight">Power Ranking</h1>
+            <h1 className="text-base font-bold leading-tight">World Cup Nations Ranking</h1>
             <p className="text-[11px] text-zinc-500 leading-tight">Rank all 48 · {locked ? "locked" : "locks at kickoff Jun 11"}</p>
           </div>
         </div>

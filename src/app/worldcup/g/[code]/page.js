@@ -5,7 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { groupByCode, joinGroup } from "@/lib/groups";
 
 const GAME_PATH = { ranking: "/worldcup/rankings", salary: "/worldcup/salary" };
-const GAME_NAME = { ranking: "Power Ranking", salary: "Salary Cap" };
+const GAME_NAME = { ranking: "World Cup Nations Ranking", salary: "World Cup Salary Cap" };
 
 export default function JoinGroupPage() {
   const { code } = useParams();
@@ -14,7 +14,8 @@ export default function JoinGroupPage() {
   const [group, setGroup] = useState(undefined); // undefined=loading, null=not found
   const [status, setStatus] = useState("");
 
-  useEffect(() => { groupByCode(String(code)).then(setGroup).catch(() => setGroup(null)); }, [code]);
+  // Re-read when auth resolves: logged-out visitors hit RLS and see nothing.
+  useEffect(() => { groupByCode(String(code)).then(setGroup).catch(() => setGroup(null)); }, [code, user]);
 
   // Once signed in, join and head to the game.
   useEffect(() => {
@@ -36,8 +37,23 @@ export default function JoinGroupPage() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-sm w-full text-center">
         <div className="text-4xl mb-3">🏆</div>
-        {group === undefined ? (
+        {loading || (user && group === undefined) ? (
           <p className="text-zinc-500">Loading…</p>
+        ) : !user ? (
+          /* Logged out: RLS hides the group, so prompt for an account, then
+             auto-join after sign-in. */
+          <>
+            <h1 className="text-xl font-bold mb-1">{group?.name ? `Join “${group.name}”` : "You're invited!"}</h1>
+            <p className="text-zinc-400 text-sm mb-5">
+              {group?.name
+                ? <>A <span className="text-zinc-200">{GAME_NAME[group.game] || "Fantasy World Cup"}</span> mini-league on <span className="text-red-500 font-semibold">The Nosebleeds</span>.</>
+                : <>Join this Fantasy World Cup mini-league on <span className="text-red-500 font-semibold">The Nosebleeds</span> — free, with your friends.</>}
+            </p>
+            <button onClick={goLogin} className="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-xl w-full">
+              Create account / sign in to join
+            </button>
+            <p className="text-zinc-600 text-[11px] mt-3">It takes a few seconds — we&apos;ll drop you straight into the league.</p>
+          </>
         ) : group === null ? (
           <>
             <h1 className="text-xl font-bold mb-1">Invite not found</h1>
@@ -50,15 +66,7 @@ export default function JoinGroupPage() {
             <p className="text-zinc-400 text-sm mb-5">
               A <span className="text-zinc-200">{GAME_NAME[group.game] || "Fantasy World Cup"}</span> mini-league on <span className="text-red-500 font-semibold">The Nosebleeds</span>. Draft, predict, and climb the leaderboard with your friends — free.
             </p>
-            {loading ? (
-              <p className="text-zinc-500 text-sm">…</p>
-            ) : user ? (
-              <p className="text-emerald-400 text-sm">{status || "Joining…"}</p>
-            ) : (
-              <button onClick={goLogin} className="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-xl w-full">
-                Sign in to join
-              </button>
-            )}
+            <p className="text-emerald-400 text-sm">{status || "Joining…"}</p>
           </>
         )}
       </div>

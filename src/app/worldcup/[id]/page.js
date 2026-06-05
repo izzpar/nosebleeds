@@ -136,13 +136,16 @@ export default function LeagueRoom() {
     ? players.map((p) => ({ id: p.id, name: p.name, kind: "player", team: p.team_name, position: p.role, proj: typeof p.proj === "number" ? p.proj : playerProjection(p) }))
     : teams.map((t) => ({ id: t.id, name: t.name, kind: "team", proj: nationStrength(t.name) }));
 
-  // Advisory countdown — resets whenever a new pick lands.
+  const paused = !!league?.draft_paused;
+
+  // Advisory countdown — resets whenever a new pick lands, frozen while paused.
   useEffect(() => {
     if (league?.status !== "drafting" || draftComplete) { setSecondsLeft(null); return; }
     if (picks.length !== lastPickCount.current) {
       lastPickCount.current = picks.length;
       setSecondsLeft(league.pick_seconds || 90);
     }
+    if (league?.draft_paused) return; // hold the clock while the commissioner has it paused
     const t = setInterval(() => setSecondsLeft((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
     return () => clearInterval(t);
   }, [league, picks.length, draftComplete]);
@@ -183,6 +186,7 @@ export default function LeagueRoom() {
 
   useEffect(() => {
     if (!isCommish || league?.draft_type === "auction" || league?.status !== "drafting" || draftComplete) return;
+    if (league?.draft_paused) return; // no auto-draft while paused (waiting on a late manager)
     if (secondsLeft !== null && secondsLeft <= 0) autoPick();
   }, [isCommish, league, draftComplete, secondsLeft, autoPick]);
 
@@ -269,6 +273,26 @@ export default function LeagueRoom() {
       await loadAll();
     } catch (e) {
       flash("Couldn't start draft");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Commissioner can pause the draft (e.g. a manager is running late) — freezes
+  // the clock and suspends auto-drafting until resumed.
+  const togglePause = async () => {
+    if (!isCommish || busy || league?.status !== "drafting") return;
+    setBusy(true);
+    try {
+      const next = !league.draft_paused;
+      const res = await sbFetch(`wc_leagues?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ draft_paused: next }) });
+      if (!res.ok) { flash("Couldn't update — add the draft_paused column"); return; }
+      // A fresh clock on resume so the on-the-clock manager gets a full window.
+      if (!next) lastPickCount.current = -1;
+      await loadAll();
+      flash(next ? "Draft paused" : "Draft resumed");
+    } catch (e) {
+      flash("Couldn't update");
     } finally {
       setBusy(false);
     }
@@ -392,7 +416,23 @@ export default function LeagueRoom() {
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
         {subTab === "draft" ? (
-          league.status === "lobby" ? (
+          <>
+          {league.status === "drafting" && (paused || isCommish) && (
+            <div className={`rounded-xl px-4 py-2.5 mb-3 flex items-center justify-between gap-2 border ${paused ? "bg-amber-950/40 border-amber-700/50" : "bg-zinc-900/70 border-zinc-800"}`}>
+              <div className="text-[12px] leading-tight">
+                {paused
+                  ? <span className="text-amber-300 font-bold">⏸ Draft paused{isCommish ? "" : " by the commissioner"}</span>
+                  : <span className="text-zinc-400">Waiting on someone? You can pause the clock.</span>}
+              </div>
+              {isCommish && (
+                <button onClick={togglePause} disabled={busy}
+                  className={`shrink-0 text-[12px] font-bold px-3 py-1.5 rounded-lg ${paused ? "bg-emerald-700 hover:bg-emerald-600 text-white" : "bg-amber-600 hover:bg-amber-500 text-white"}`}>
+                  {paused ? "▶ Resume" : "⏸ Pause"}
+                </button>
+              )}
+            </div>
+          )}
+          {league.status === "lobby" ? (
             <Lobby
               members={members}
               isCommish={isCommish}
@@ -415,6 +455,7 @@ export default function LeagueRoom() {
               perManager={perManager}
               totalPicks={totalPicks}
               budget={league.budget || 200}
+              paused={paused}
               onReload={loadAll}
             />
           ) : isPlayer ? (
@@ -454,7 +495,8 @@ export default function LeagueRoom() {
               busy={busy}
               myPicks={myPicks}
             />
-          )
+          )}
+          </>
         ) : subTab === "standings" ? (
           isPlayer ? (
             <PlayerStandings members={members} picks={picks} scoring={league.scoring} />
