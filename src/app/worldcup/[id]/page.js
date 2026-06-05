@@ -740,12 +740,13 @@ function PlayerDraftBoard({
     return m?.display_name || m?.handle || "Player";
   };
 
+  const projOf = (p) => (typeof p.proj === "number" ? p.proj : playerProjection(p));
   const query = q.trim().toLowerCase();
   const available = players
     .filter((p) => !pickedPlayerIds.has(String(p.id)))
     .filter((p) => pos === "ALL" || p.role === pos)
     .filter((p) => !query || (p.name || "").toLowerCase().includes(query) || (p.team_name || "").toLowerCase().includes(query))
-    .sort((a, b) => playerProjection(b) - playerProjection(a)); // suggested order
+    .sort((a, b) => projOf(b) - projOf(a)); // suggested order
   const shown = available.slice(0, 80);
 
   // group my squad by position
@@ -842,7 +843,7 @@ function PlayerDraftBoard({
                     <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role] || "text-zinc-400"}`}>{p.role}</span>
                     <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
                     <span className="text-[11px] text-zinc-500 truncate max-w-[30%]">{p.team_name}</span>
-                    <span className="text-[11px] text-zinc-400 tabular-nums w-7 text-right" title="Projection">{playerProjection(p)}</span>
+                    <span className="text-[11px] text-zinc-400 tabular-nums w-7 text-right" title="Projection">{projOf(p)}</span>
                   </button>
                 ))}
                 {available.length === 0 && <p className="text-zinc-600 text-sm py-3">No players match.</p>}

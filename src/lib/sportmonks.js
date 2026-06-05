@@ -80,6 +80,19 @@ export async function fetchSquad(teamId, seasonId) {
   return r;
 }
 
+// Squad + each player's season statistics (for projections/pricing).
+export async function fetchSquadStats(teamId, seasonId) {
+  let r = await smFetch(`football/squads/seasons/${seasonId}/teams/${teamId}`, {
+    searchParams: { include: "player.position;player.statistics.details" },
+  });
+  if (!r.ok || r.json?.message || !(r.json?.data || []).length) {
+    r = await smFetch(`football/squads/teams/${teamId}`, {
+      searchParams: { include: "player.position;player.statistics.details" },
+    });
+  }
+  return r;
+}
+
 // The season's team list includes knockout-bracket placeholders ("Winner
 // Quarter-final 1", "Runner-up Group A", …). Keep only the real nations.
 const PLACEHOLDER_NAME = /winner|runner[- ]?up|loser|group [a-l]\b|quarter|semi|^final$|third|play-?off|\btbd\b|to be|placeholder/i;

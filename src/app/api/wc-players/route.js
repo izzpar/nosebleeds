@@ -6,7 +6,8 @@
 // Cached at the edge (squads change rarely). Hit /api/wc-players?debug=1 to see
 // a raw squad sample for verifying the response shape.
 
-import { hasKey, fetchSeasonTeams, fetchSquad, isRealNation, WC_SEASON } from "@/lib/sportmonks";
+import { hasKey, fetchSeasonTeams, fetchSquad, fetchSquadStats, isRealNation, WC_SEASON } from "@/lib/sportmonks";
+import { projectAndPrice } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -58,16 +59,22 @@ export async function GET(request) {
     });
   }
 
-  // 2) Each squad, flattened to a browser-safe player list.
+  // 2) Each squad (with season stats), flattened + projected. Fetched in
+  // parallel batches so we stay well within the function time budget.
   const players = [];
-  for (const team of teams) {
-    try {
-      const { ok, json } = await fetchSquad(team.id, SEASON);
-      if (!ok) continue;
-      for (const row of json.data || []) {
+  const BATCH = 12;
+  for (let i = 0; i < teams.length; i += BATCH) {
+    const slice = teams.slice(i, i + BATCH);
+    const results = await Promise.all(
+      slice.map((team) => fetchSquadStats(team.id, SEASON).then((r) => ({ team, r })).catch(() => null))
+    );
+    for (const item of results) {
+      if (!item || !item.r.ok) continue;
+      const { team, r } = item;
+      for (const row of r.json.data || []) {
         const player = row.player || {};
         const position = player.position || row.position;
-        players.push({
+        const base = {
           id: row.player_id || player.id,
           name: player.display_name || player.name || player.common_name,
           team_id: team.id,
@@ -75,9 +82,11 @@ export async function GET(request) {
           team_image: team.image,
           role: roleOf(position, row.position_id || player.position_id),
           image: player.image_path || null,
-        });
+        };
+        const { proj, price, form } = projectAndPrice({ ...base, statistics: player.statistics });
+        players.push({ ...base, proj, price, g: form?.g ?? null, a: form?.a ?? null });
       }
-    } catch (e) { /* skip a failing squad */ }
+    }
   }
 
   return new Response(JSON.stringify({ ok: true, teamCount: teams.length, playerCount: players.length, players }), {
