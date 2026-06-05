@@ -752,23 +752,38 @@ function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
       {/* Scoring */}
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
         <h3 className="font-bold mb-1">Scoring</h3>
-        <p className="text-[12px] text-zinc-500 mb-3">
-          Points each nation earns. Round bonuses are cumulative (a finalist banks R16 + QF + SF + Final).
-          Changes re-score the standings instantly.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          {SCORE_FIELDS.map(([key, label]) => (
-            <label key={key} className="flex items-center justify-between gap-2 bg-zinc-900/40 rounded-lg px-3 py-2">
-              <span className="text-[13px] text-zinc-300">{label}</span>
-              <input
-                type="number"
-                value={form[key]}
-                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                className="w-16 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-sm text-right outline-none focus:border-zinc-600"
-              />
-            </label>
-          ))}
-        </div>
+        {league.format === "player" ? (
+          <>
+            <p className="text-[12px] text-zinc-500 mb-3">Player scoring is standardized across all player leagues:</p>
+            <div className="text-[12px] text-zinc-300 space-y-1.5">
+              <div>⏱️ Played 60+ min <b>+2</b> · under 60 <b>+1</b></div>
+              <div>⚽ Goal — GK/DEF <b>+6</b>, MID <b>+5</b>, FWD <b>+4</b></div>
+              <div>🅰️ Assist <b>+3</b> · 🎯 Shot on target <b>+0.5</b> · 🛡️ Tackle <b>+0.25</b></div>
+              <div>🧤 Clean sheet (60+ min) — GK/DEF <b>+4</b>, MID <b>+1</b> · Save <b>+1</b> per 3</div>
+              <div>🥅 Goals conceded (GK/DEF) <b>−1</b> per 2 · 🟨 <b>−1</b> · 🟥 <b>−3</b> · own goal <b>−2</b></div>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-[12px] text-zinc-500 mb-3">
+              Points each nation earns. Round bonuses are cumulative (a finalist banks R16 + QF + SF + Final).
+              Changes re-score the standings instantly.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {SCORE_FIELDS.map(([key, label]) => (
+                <label key={key} className="flex items-center justify-between gap-2 bg-zinc-900/40 rounded-lg px-3 py-2">
+                  <span className="text-[13px] text-zinc-300">{label}</span>
+                  <input
+                    type="number"
+                    value={form[key]}
+                    onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                    className="w-16 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-sm text-right outline-none focus:border-zinc-600"
+                  />
+                </label>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <button
