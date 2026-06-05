@@ -231,35 +231,51 @@ export default function AuctionRoom({
         ))}
       </div>
 
-      {/* nomination picker */}
-      {myNominate && (
-        <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-3 mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[12px] text-zinc-400">Opening bid</span>
-            <input type="number" min={1} max={Math.max(1, myMax)} value={openBid} onChange={(e) => setOpenBid(e.target.value)}
-              className="w-16 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-sm" />
-          </div>
-          {format === "player" && (
-            <div className="flex gap-1.5 mb-2">
-              {["ALL", "GK", "DEF", "MID", "FWD"].map((p) => (
-                <button key={p} onClick={() => setPos(p)} className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${pos === p ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{p}</button>
-              ))}
+      {/* Best-available draft board — always visible so everyone can scout.
+          The nominator taps a player to put them on the block. */}
+      <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-3 mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Best available ({available.length})</h3>
+          {myNominate && !lot?.item_id && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-400">Opening</span>
+              <input type="number" min={1} max={Math.max(1, myMax)} value={openBid} onChange={(e) => setOpenBid(e.target.value)}
+                className="w-14 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-sm text-right" />
             </div>
           )}
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search to nominate…" className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
-          <div className="space-y-1 max-h-72 overflow-y-auto">
-            {available.map((it) => (
-              <button key={it.id} onClick={() => nominate(it)} disabled={busy}
-                className="w-full flex items-center gap-2 rounded-lg px-3 py-2 border bg-zinc-900 border-zinc-700 hover:border-red-500 text-left">
-                {it.position && <span className={`text-[10px] font-bold w-8 ${POS_COLOR[it.position]}`}>{it.position}</span>}
-                <span className="text-sm font-medium flex-1 truncate">{it.name}</span>
-                {it.team && <span className="text-[11px] text-zinc-500 truncate max-w-[30%]">{it.team}</span>}
-                {it.proj != null && <span className="text-[11px] text-zinc-400 w-7 text-right">{it.proj}</span>}
-              </button>
+        </div>
+        <div className="text-[11px] mb-2">
+          {lot?.item_id
+            ? <span className="text-zinc-500">Bidding in progress — scout your next target.</span>
+            : myNominate
+              ? <span className="text-red-400 font-semibold">Your nomination — tap a player to put them up for auction.</span>
+              : <span className="text-zinc-500">{nominator ? memberName(nominator.user_id) : "Someone"} is nominating…</span>}
+        </div>
+        {format === "player" && (
+          <div className="flex gap-1.5 mb-2">
+            {["ALL", "GK", "DEF", "MID", "FWD"].map((p) => (
+              <button key={p} onClick={() => setPos(p)} className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${pos === p ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{p}</button>
             ))}
           </div>
+        )}
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search players…" className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
+        <div className="space-y-1 max-h-80 overflow-y-auto">
+          {available.length === 0 && <p className="text-zinc-600 text-sm py-2">No players match.</p>}
+          {available.map((it) => {
+            const canNom = myNominate && !lot?.item_id;
+            return (
+              <button key={it.id} onClick={() => (canNom ? nominate(it) : flash(lot?.item_id ? "Sell the current lot first" : "Not your nomination"))} disabled={busy}
+                className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${canNom ? "bg-zinc-900 border-zinc-700 hover:border-red-500" : "bg-zinc-900/40 border-zinc-800"}`}>
+                {it.position && <span className={`text-[10px] font-bold w-8 ${POS_COLOR[it.position]}`}>{it.position}</span>}
+                <span className="text-sm font-medium flex-1 truncate">{it.name}</span>
+                {it.team && <span className="text-[11px] text-zinc-500 truncate max-w-[28%]">{it.team}</span>}
+                {it.proj != null && <span className="text-[11px] text-zinc-400 w-7 text-right" title="Projected points">{it.proj}</span>}
+                {canNom && <span className="text-[10px] text-red-400 font-bold shrink-0">▲</span>}
+              </button>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* my roster */}
       <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your squad ({myPicks.length}/{perManager})</h3>

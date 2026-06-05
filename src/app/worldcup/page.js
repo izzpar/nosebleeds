@@ -184,6 +184,17 @@ export default function WorldCupHub() {
               </div>
               <span className="text-zinc-600">›</span>
             </button>
+            <button
+              onClick={() => router.push("/worldcup/matches")}
+              className="w-full text-left bg-gradient-to-r from-amber-950/40 to-zinc-900/70 border border-amber-900/40 rounded-2xl px-4 py-3 mb-6 flex items-center gap-3 hover:border-amber-700/60"
+            >
+              <span className="text-2xl">⭐</span>
+              <div className="flex-1">
+                <div className="font-bold">World Cup Match Ratings</div>
+                <div className="text-[11px] text-zinc-400">Rate every game 1–10 · vote your Star Man · see the crowd</div>
+              </div>
+              <span className="text-zinc-600">›</span>
+            </button>
 
             {/* Your leagues */}
             <h2 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your draft leagues</h2>
