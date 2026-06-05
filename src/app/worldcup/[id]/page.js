@@ -15,6 +15,7 @@ import {
   playerProjection,
 } from "@/lib/worldcup";
 import AuctionRoom from "./AuctionRoom";
+import WaiverView from "./WaiverView";
 
 const POLL_MS = 2500;
 
@@ -303,7 +304,7 @@ export default function LeagueRoom() {
         </div>
         {/* sub-tabs */}
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {(isCommish ? ["draft", "standings", "settings"] : ["draft", "standings"]).map((t) => (
+          {["draft", "standings", ...(isPlayer ? ["waivers"] : []), ...(isCommish ? ["settings"] : [])].map((t) => (
             <button
               key={t}
               onClick={() => setSubTab(t)}
@@ -393,6 +394,8 @@ export default function LeagueRoom() {
               status={league.status}
             />
           )
+        ) : subTab === "waivers" ? (
+          <WaiverView leagueId={id} members={members} picks={picks} players={players} user={user} />
         ) : (
           <Settings
             league={league}
