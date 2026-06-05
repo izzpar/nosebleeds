@@ -10,13 +10,26 @@ const font = Space_Grotesk({
 });
 
 export const metadata = {
-  title: "The Nosebleeds",
-  description: "Rate and review every game you watch",
+  metadataBase: new URL("https://thenosebleeds.app"),
+  title: "The Nosebleeds — Fantasy World Cup 2026",
+  description: "Free Fantasy World Cup 2026: rank the nations, build a salary-cap squad, draft with friends, and rate every match. Plus rate & review games across every sport.",
   applicationName: "The Nosebleeds",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Nosebleeds",
+  },
+  openGraph: {
+    title: "The Nosebleeds — Fantasy World Cup 2026",
+    description: "Rank nations, build a salary-cap squad, draft with friends, and rate every match — free, with your friends.",
+    url: "https://thenosebleeds.app",
+    siteName: "The Nosebleeds",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "The Nosebleeds — Fantasy World Cup 2026",
+    description: "Rank nations, build a salary-cap squad, draft with friends, and rate every match — free.",
   },
   icons: {
     icon: [
