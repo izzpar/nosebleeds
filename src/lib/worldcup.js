@@ -202,3 +202,29 @@ export function draftPlan(n, teamCount = 48) {
   const perManager = Math.floor(teamCount / n);
   return { perManager, totalPicks: perManager * n };
 }
+
+// ---- Power Ranking (1–48) -------------------------------------------------
+// You rank every nation; each team earns performance points (teamPoints above),
+// weighted by where YOU ranked it — higher rank = more weight when it does well.
+// weight(rank 1) = N, weight(rank N) = 1. Score = Σ teamPts × weight.
+export function rankingPoints(orderedTeamIds, results, scoring = DEFAULT_SCORING) {
+  const byTeam = results?.byTeam || {};
+  const N = orderedTeamIds.length;
+  let total = 0;
+  const contributions = [];
+  orderedTeamIds.forEach((tid, i) => {
+    const weight = N - i;
+    const teamPts = teamPoints(byTeam[String(tid)], scoring);
+    const points = teamPts * weight;
+    total += points;
+    contributions.push({ team_id: String(tid), rank: i + 1, weight, teamPts, points });
+  });
+  return { total, contributions };
+}
+
+// The lock moment — rankings freeze at the opening kickoff (2026-06-11).
+export const RANKING_LOCK_ISO = "2026-06-11T16:00:00Z";
+export function rankingsLocked(now = new Date()) {
+  return now >= new Date(RANKING_LOCK_ISO);
+}
+

@@ -110,8 +110,21 @@ export default function WorldCupHub() {
           </div>
         ) : (
           <>
+            {/* Game modes */}
+            <button
+              onClick={() => router.push("/worldcup/rankings")}
+              className="w-full text-left bg-gradient-to-r from-red-950/60 to-zinc-900/70 border border-red-900/40 rounded-2xl px-4 py-3 mb-6 flex items-center gap-3 hover:border-red-700/60"
+            >
+              <span className="text-2xl">🔢</span>
+              <div className="flex-1">
+                <div className="font-bold">Power Ranking</div>
+                <div className="text-[11px] text-zinc-400">Rank all 48 nations · climb the global leaderboard</div>
+              </div>
+              <span className="text-zinc-600">›</span>
+            </button>
+
             {/* Your leagues */}
-            <h2 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your leagues</h2>
+            <h2 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your draft leagues</h2>
             {loading ? (
               <p className="text-zinc-600 text-sm py-6">Loading…</p>
             ) : leagues.length === 0 ? (
