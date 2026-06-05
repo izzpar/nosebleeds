@@ -137,22 +137,25 @@ export default function PredictionsPage() {
             const ho = (c.competitors || []).find(t => t.homeAway === "home");
             const aw = (c.competitors || []).find(t => t.homeAway === "away");
             if (!ho || !aw) return null;
-            // Odds (spread + moneyline) — inline on scoreboard when available
+            // Odds (spread + moneyline) — inline on scoreboard when the book has posted a line.
+            const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
             const odds = c.odds?.[0];
             let spread = null, favAbbr = null;
-            const moneylines = {};
+            const moneylines = {};   // real moneyline per team (when available)
+            const spreadOdds = {};   // real spread juice per team (when available)
             if (odds) {
-              if (typeof odds.spread === "number") spread = odds.spread;
-              // details like "KC -1.5"
+              if (num(odds.spread) != null) spread = num(odds.spread);
               if (odds.details) {
                 const m = odds.details.match(/^([A-Z]+)\s+(-?\d+(?:\.\d+)?)/);
                 if (m) { favAbbr = m[1]; }
               }
-              // Moneylines per team
-              const homeML = odds.homeTeamOdds?.moneyLine;
-              const awayML = odds.awayTeamOdds?.moneyLine;
-              if (typeof homeML === "number") moneylines[ho.team.abbreviation] = homeML;
-              if (typeof awayML === "number") moneylines[aw.team.abbreviation] = awayML;
+              const hO = odds.homeTeamOdds, aO = odds.awayTeamOdds;
+              const homeML = num(hO?.moneyLine), awayML = num(aO?.moneyLine);
+              if (homeML != null) moneylines[ho.team.abbreviation] = homeML;
+              if (awayML != null) moneylines[aw.team.abbreviation] = awayML;
+              const homeSO = num(hO?.spreadOdds), awaySO = num(aO?.spreadOdds);
+              if (homeSO != null) spreadOdds[ho.team.abbreviation] = homeSO;
+              if (awaySO != null) spreadOdds[aw.team.abbreviation] = awaySO;
             }
             return {
               id: e.id,
@@ -160,7 +163,7 @@ export default function PredictionsPage() {
               date: e.date,
               home: { abbr: ho.team.abbreviation, name: ho.team.displayName, logo: ho.team.logo, color: "#" + (ho.team.color || "333"), record: ho.records?.[0]?.summary || "" },
               away: { abbr: aw.team.abbreviation, name: aw.team.displayName, logo: aw.team.logo, color: "#" + (aw.team.color || "333"), record: aw.records?.[0]?.summary || "" },
-              spread, favAbbr, moneylines,
+              spread, favAbbr, moneylines, spreadOdds,
               spreadText: odds?.details || null,
             };
           })
@@ -564,6 +567,7 @@ export default function PredictionsPage() {
                             const isFav = t.abbr === g.favAbbr;
                             const lineLabel = isFav ? `-${Math.abs(g.spread)}` : `+${Math.abs(g.spread)}`;
                             const selected = pick?.pick_type === "ats" && pick?.pick_value === t.abbr;
+                            const so = g.spreadOdds?.[t.abbr]; // real juice if the book posted it
                             return (
                               <button
                                 key={i}
@@ -572,7 +576,7 @@ export default function PredictionsPage() {
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition-all ${selected ? "bg-green-500/15 text-green-400 border-green-500/50" : "bg-zinc-950 text-zinc-400 border-transparent hover:border-zinc-700"}`}
                               >
                                 {t.abbr} {lineLabel}
-                                <span className="block text-[10px] font-semibold opacity-70 mt-0.5">-110</span>
+                                <span className="block text-[10px] font-semibold opacity-70 mt-0.5">{so != null ? fmtML(so) : "-110"}</span>
                               </button>
                             );
                           })}
