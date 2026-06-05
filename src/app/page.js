@@ -313,6 +313,8 @@ function HomeContent() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   });
+  // Profile tab: which sport's stats to show (defaults to global sport)
+  const [profileSport, setProfileSport] = useState("nfl");
   // Persist sport choice
   const setSport = (s) => {
     setSportInternal(s);
@@ -372,8 +374,6 @@ function HomeContent() {
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [latestRecap, setLatestRecap] = useState(null); // { season, week } of most recent week with ratings
   const [barDrilldown, setBarDrilldown] = useState(null); // { rating: int, games: [] }
-  // Profile tab: which sport's stats to show (defaults to global sport)
-  const [profileSport, setProfileSport] = useState("nfl");
   const [wrappedSeason, setWrappedSeason] = useState("all"); // Season Wrapped drill-in
   const [handleError, setHandleError] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
@@ -1334,7 +1334,7 @@ function HomeContent() {
               <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
                 <div className="text-2xl">{sportEmoji(sport)}</div>
                 <div className="flex-1">
-                  <div className="text-sm font-bold text-white">Yesterday's Recap</div>
+                  <div className="text-sm font-bold text-white">Yesterday&apos;s Recap</div>
                   <div className="text-[10px] text-zinc-500">{ydayLabel} — best games, top MVPs, biggest letdowns</div>
                 </div>
                 <span className="text-zinc-500">→</span>
@@ -1545,7 +1545,7 @@ function HomeContent() {
             {divisiveGames.length > 0 && (
               <div className="mb-5">
                 <h3 className="text-base font-bold text-white mb-1">⚔️ Most Divisive</h3>
-                <p className="text-xs text-zinc-500 mb-3">Games the community can't agree on</p>
+                <p className="text-xs text-zinc-500 mb-3">Games the community can&apos;t agree on</p>
                 {divisiveGames.map((g, i) => (
                   <Link key={g.game_id} href={gh(g.game_id, g.sample?.sport)} className="block">
                     <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
@@ -1617,7 +1617,7 @@ function HomeContent() {
               <div className="text-center py-12">
                 <div className="text-5xl mb-3">🌱</div>
                 <div className="text-base font-bold text-white">Nothing here yet</div>
-                <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">Rate some games and they'll show up here for everyone to discover</div>
+                <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">Rate some games and they&apos;ll show up here for everyone to discover</div>
                 <button onClick={() => setTab("games")} className="mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</button>
               </div>
             )}
@@ -1704,7 +1704,7 @@ function HomeContent() {
                     {searchResults.length} {searchResults.length === 1 ? "result" : "results"}
                   </div>
                   {searchResults.length === 0 && (
-                    <div className="text-center py-10 text-zinc-600 text-sm">No players match "{playerSearch}"</div>
+                    <div className="text-center py-10 text-zinc-600 text-sm">No players match &quot;{playerSearch}&quot;</div>
                   )}
                   {searchResults.map((p, i) => renderRow(p, i, false))}
                 </>
@@ -2210,7 +2210,7 @@ function HomeContent() {
                   );
                 })}
               </div>
-              <div className="text-[10px] text-zinc-600 mt-2">Recolors the app's accent. Priciest unlocked theme wins.</div>
+              <div className="text-[10px] text-zinc-600 mt-2">Recolors the app&apos;s accent. Priciest unlocked theme wins.</div>
               {!dropsStoreReady && (
                 <div className="text-[10px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
               )}
@@ -2707,7 +2707,7 @@ function HomeContent() {
                 </div>
               );
             })}
-            <div className="text-[10px] text-zinc-600 mb-4 -mt-2">Used for fandom filters on each sport's games.</div>
+            <div className="text-[10px] text-zinc-600 mb-4 -mt-2">Used for fandom filters on each sport&apos;s games.</div>
 
             <div className="flex gap-2">
               <button onClick={() => setShowEditProfile(false)} className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Cancel</button>
@@ -2807,7 +2807,7 @@ function HomeContent() {
                 </button>
               )}
               {notifPerm === "denied" && (
-                <div className="mb-3 text-[10px] text-zinc-600 text-center">Browser alerts are blocked — enable them in your browser's site settings.</div>
+                <div className="mb-3 text-[10px] text-zinc-600 text-center">Browser alerts are blocked — enable them in your browser&apos;s site settings.</div>
               )}
               {notifs.length === 0 ? (
                 <div className="text-center py-10">

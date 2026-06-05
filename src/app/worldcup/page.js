@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
+import KickoffCountdown from "@/components/KickoffCountdown";
 
 function makeCode() {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no easily-confused chars
@@ -106,8 +107,17 @@ export default function WorldCupHub() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-5">
+        {/* Hero */}
+        <div className="rounded-3xl p-6 mb-6 text-center bg-gradient-to-br from-red-700 via-red-800 to-zinc-900 border border-red-500/30">
+          <div className="text-5xl mb-2">🏆</div>
+          <h2 className="text-2xl font-extrabold text-white leading-tight">Fantasy World Cup 2026</h2>
+          <p className="text-[12px] text-red-100/80 mt-1 mb-4">Draft · auction · salary cap · power ranking — free, with friends.</p>
+          <KickoffCountdown variant="hero" />
+          <p className="text-[10px] text-red-200/60 mt-2">until kickoff — lock your teams before June 11</p>
+        </div>
+
         {!user ? (
-          <div className="text-center py-16">
+          <div className="text-center py-10">
             <p className="text-zinc-400 mb-4">Sign in to draft with your friends.</p>
             <button
               onClick={() => router.push("/login")}
