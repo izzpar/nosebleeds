@@ -54,6 +54,7 @@ export default function HowItWorksPage() {
             <p>Minus: goals conceded (GK/DEF) −1 per 2 · yellow −1 · red −3 · own goal −2.</p>
             <p><b>Captain</b> scores double. <b>Auto-subs:</b> if a starter doesn&apos;t play, your first bench sub who did takes their points.</p>
           </Scoring>
+          <p className="text-zinc-500">Play the open <b>Global</b> game or make a private <b>league</b> on the Leagues tab — name your teams and the commissioner sets how many each person can enter.</p>
         </Card>
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2 mt-5">Fantasy leagues (draft with friends)</h3>
