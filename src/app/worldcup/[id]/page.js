@@ -90,9 +90,10 @@ export default function LeagueRoom() {
   useEffect(() => { fetchTeams().then(setTeams).catch(() => {}); }, []);
 
   // Poll while in lobby (to see joins) or drafting (to see picks land live).
+  // Skip refetches while the tab is backgrounded to avoid wasted load.
   useEffect(() => {
     if (!league || league.status === "done") return;
-    const t = setInterval(loadAll, POLL_MS);
+    const t = setInterval(() => { if (!document.hidden) loadAll(); }, POLL_MS);
     return () => clearInterval(t);
   }, [league, loadAll]);
 

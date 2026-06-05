@@ -28,7 +28,7 @@ export default function AuctionRoom({
   }, [leagueId]);
 
   useEffect(() => { loadLot(); }, [loadLot]);
-  useEffect(() => { const t = setInterval(loadLot, 1500); return () => clearInterval(t); }, [loadLot]);
+  useEffect(() => { const t = setInterval(() => { if (!document.hidden) loadLot(); }, 1500); return () => clearInterval(t); }, [loadLot]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   // ---- derived ----

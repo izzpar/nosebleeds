@@ -95,7 +95,7 @@ export default function SalaryLeaguePage() {
     let cancelled = false;
     const run = () => load().catch(() => { if (!cancelled) setRows((r) => r || []); });
     run();
-    const t = setInterval(run, 45000);
+    const t = setInterval(() => { if (!document.hidden) run(); }, 45000);
     return () => { cancelled = true; clearInterval(t); };
   }, [load]);
 
