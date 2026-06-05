@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import WcBackdrop from "@/components/WcBackdrop";
 import { useAuth } from "@/components/AuthProvider";
-import { sbFetch, sbJson } from "@/lib/sbrest";
+import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import { fetchResults, rankingPoints, rankingsLocked, fetchTeams, WC_TEAMS_FALLBACK } from "@/lib/worldcup";
 import { groupById } from "@/lib/groups";
 
@@ -21,38 +21,50 @@ export default function RankingLeaguePage() {
 
   const [group, setGroup] = useState(isGlobal ? GLOBAL : null);
   const [rows, setRows] = useState(null);
+  const [myLib, setMyLib] = useState([]);   // your ranking library (for the add picker)
   const [teams, setTeams] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2400); };
 
   useEffect(() => { fetchTeams().then((t) => setTeams(t?.length ? t : WC_TEAMS_FALLBACK)).catch(() => setTeams(WC_TEAMS_FALLBACK)); }, []);
   useEffect(() => { if (!isGlobal) groupById(groupId).then((g) => setGroup(g || GLOBAL)).catch(() => {}); }, [groupId, isGlobal]);
 
+  const load = useCallback(async () => {
+    const flt = isGlobal ? "group_id=is.null" : `group_id=eq.${groupId}`;
+    const [subs, results, mine] = await Promise.all([
+      sbJson(await sbFetch(`wc_ranking_submissions?${flt}&select=id,user_id,entry_id,wc_ranking_entries(id,user_id,display_name,handle,label,ranking,created_at)`)),
+      fetchResults(),
+      user ? sbJson(await sbFetch(`wc_ranking_entries?user_id=eq.${user.id}&select=id,label,ranking&order=created_at.asc`)) : [],
+    ]);
+    const reveal = locked || (results.events || 0) > 0;
+    const list = subs.map((s) => {
+      const e = s.wc_ranking_entries || {};
+      const submitted = Array.isArray(e.ranking) && e.ranking.length > 0;
+      let total = 0, best = null;
+      if (submitted && reveal) {
+        const res = rankingPoints(e.ranking, results);
+        total = Math.round(res.total);
+        best = [...res.contributions].sort((a, b) => b.points - a.points)[0];
+      }
+      return {
+        subId: s.id, id: e.id || s.entry_id, user_id: e.user_id || s.user_id,
+        name: e.display_name || e.handle || "Player", handle: e.handle, label: e.label,
+        submitted, total, best, topPick: submitted ? String(e.ranking[0]) : null, created_at: e.created_at || "",
+      };
+    }).sort((a, b) => reveal ? (b.total - a.total) : ((b.submitted - a.submitted) || a.created_at.localeCompare(b.created_at)));
+    setMyLib(mine);
+    setRows({ list, reveal });
+  }, [groupId, isGlobal, locked, user]);
+
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      const flt = isGlobal ? "group_id=is.null" : `group_id=eq.${groupId}`;
-      const [entries, results] = await Promise.all([
-        sbJson(await sbFetch(`wc_ranking_entries?${flt}&select=id,user_id,display_name,handle,label,ranking,created_at`)),
-        fetchResults(),
-      ]);
-      const reveal = locked || (results.events || 0) > 0;
-      const list = entries.map((r) => {
-        const submitted = Array.isArray(r.ranking) && r.ranking.length > 0;
-        let total = 0, best = null;
-        if (submitted && reveal) {
-          const res = rankingPoints(r.ranking, results);
-          total = Math.round(res.total);
-          best = [...res.contributions].sort((a, b) => b.points - a.points)[0];
-        }
-        const topPick = submitted ? String(r.ranking[0]) : null; // their #1-ranked nation
-        return { id: r.id, user_id: r.user_id, name: r.display_name || r.handle || "Player", handle: r.handle, label: r.label, submitted, total, best, topPick, created_at: r.created_at || "" };
-      }).sort((a, b) => reveal ? (b.total - a.total) : ((b.submitted - a.submitted) || a.created_at.localeCompare(b.created_at)));
-      if (!cancelled) setRows({ list, reveal });
-    };
-    load().catch(() => { if (!cancelled) setRows({ list: [], reveal: false }); });
-    const t = setInterval(() => load().catch(() => {}), 45000);
+    const run = () => load().catch(() => { if (!cancelled) setRows((r) => r || { list: [], reveal: false }); });
+    run();
+    const t = setInterval(run, 45000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [groupId, isGlobal, locked]);
+  }, [load]);
 
   const teamById = (id) => teams.find((t) => String(t.id) === String(id));
   const copyInvite = () => {
@@ -60,8 +72,20 @@ export default function RankingLeaguePage() {
     try { navigator.clipboard.writeText(`${window.location.origin}/worldcup/g/${group.invite_code}`); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
   };
 
-  const myEntries = (rows?.list || []).filter((r) => r.user_id === user?.id);
+  const myRows = (rows?.list || []).filter((r) => r.user_id === user?.id);
+  const myEntryIds = new Set(myRows.map((r) => r.id));
+  const maxEntries = group?.max_entries || 1;
+  const addable = myLib.filter((e) => !myEntryIds.has(e.id));
+  const canAddMore = !locked && myRows.length < maxEntries && addable.length > 0;
   const submittedCount = (rows?.list || []).filter((r) => r.submitted).length;
+
+  const addEntry = async (entryId) => {
+    setAddOpen(false);
+    const { res } = await sbInsert("wc_ranking_submissions", { entry_id: entryId, group_id: groupId, user_id: user.id });
+    if (res.ok || res.status === 409) { flash("Entered ✓"); await load(); }
+    else flash("Couldn't enter — run the entries SQL");
+  };
+  const removeEntry = async (subId) => { await sbFetch(`wc_ranking_submissions?id=eq.${subId}`, { method: "DELETE" }); await load(); };
 
   return (
     <div className="min-h-screen pb-24">
@@ -78,26 +102,37 @@ export default function RankingLeaguePage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
-        {/* Invite (private leagues) */}
         {group?.invite_code && (
           <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4">
             {copied ? "✓ Invite link copied!" : <>🔗 Invite to <span className="text-zinc-200">{group.name}</span> — tap to copy</>}
           </button>
         )}
 
-        {/* Your entries */}
+        {/* Your entries in this league */}
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Your {myEntries.length === 1 ? "entry" : "entries"}</h2>
-          <button onClick={() => router.push(`/worldcup/rankings?league=${league}`)} className="text-[12px] bg-red-600 hover:bg-red-500 text-white font-bold px-3 py-1 rounded-lg">
-            {myEntries.length ? "＋ / Edit" : "Start ranking →"}
-          </button>
+          <h2 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Your {myRows.length === 1 ? "entry" : "entries"} here</h2>
+          {canAddMore && <button onClick={() => setAddOpen((v) => !v)} className="text-[12px] bg-red-600 hover:bg-red-500 text-white font-bold px-3 py-1 rounded-lg">＋ Enter a ranking</button>}
         </div>
-        {myEntries.length === 0 ? (
-          <p className="text-zinc-600 text-sm mb-5">You haven&apos;t entered yet.</p>
+        {addOpen && (
+          <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
+            <div className="text-[11px] text-zinc-500 mb-2">Pick which of your rankings to enter in {group?.name || "this league"}:</div>
+            <div className="flex flex-wrap gap-1.5">
+              {addable.map((e) => (
+                <button key={e.id} onClick={() => addEntry(e.id)} className="text-[12px] px-3 py-1 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200">{e.label || "Untitled"}</button>
+              ))}
+            </div>
+            <button onClick={() => router.push("/worldcup/rankings")} className="text-[11px] text-zinc-500 underline mt-2">＋ Build a new ranking</button>
+          </div>
+        )}
+        {myRows.length === 0 ? (
+          <div className="mb-5">
+            <p className="text-zinc-600 text-sm">You haven&apos;t entered a ranking here yet.</p>
+            {!locked && myLib.length === 0 && <button onClick={() => router.push("/worldcup/rankings")} className="mt-2 bg-red-600 text-white font-bold px-4 py-2 rounded-xl text-sm">Build a ranking →</button>}
+          </div>
         ) : (
           <div className="space-y-2 mb-5">
-            {myEntries.map((r) => (
-              <div key={r.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
+            {myRows.map((r) => (
+              <div key={r.subId} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
                 <div className="min-w-0">
                   <div className="font-bold truncate">{r.label || "Your ranking"}</div>
                   {r.topPick && teamById(r.topPick) ? (
@@ -108,7 +143,8 @@ export default function RankingLeaguePage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {rows?.reveal && <span className="font-bold text-red-500 tabular-nums">{r.total}</span>}
-                  <button onClick={() => router.push(`/worldcup/rankings?league=${league}&entry=${r.id}`)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white">Edit</button>
+                  <button onClick={() => router.push(`/worldcup/rankings?entry=${r.id}`)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white">Edit</button>
+                  {!locked && <button onClick={() => removeEntry(r.subId)} className="text-[12px] text-zinc-500 hover:text-red-400 px-1" title="Remove from this league">✕</button>}
                 </div>
               </div>
             ))}
@@ -133,10 +169,9 @@ export default function RankingLeaguePage() {
             )}
             <div className="space-y-2">
               {rows.list.map((r, i) => {
-                // After kickoff, anyone's entry is viewable; before, only your own.
                 const canView = rows.reveal || r.user_id === user?.id;
                 return (
-                  <div key={r.id} onClick={() => canView && router.push(`/worldcup/rankings/${league}/${r.id}`)} className={`bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between gap-2 ${canView ? "cursor-pointer hover:border-zinc-700" : ""}`}>
+                  <div key={r.subId} onClick={() => canView && router.push(`/worldcup/rankings/${league}/${r.id}`)} className={`bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between gap-2 ${canView ? "cursor-pointer hover:border-zinc-700" : ""}`}>
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-zinc-600 font-bold w-5">{rows.reveal ? i + 1 : "•"}</span>
                       <div className="min-w-0">
@@ -162,6 +197,7 @@ export default function RankingLeaguePage() {
           </>
         )}
       </div>
+      {toast && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-50">{toast}</div>}
       <Nav />
     </div>
   );

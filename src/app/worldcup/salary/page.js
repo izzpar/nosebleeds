@@ -41,6 +41,8 @@ function SalaryCapInner() {
   const [selLeagueId, setSelLeagueId] = useState(null); // null = Global
   const [entries, setEntries] = useState([]);
   const [selEntryId, setSelEntryId] = useState(null);
+  const [subs, setSubs] = useState([]);          // leagues the selected team is entered in
+  const [addOpen, setAddOpen] = useState(false);
 
   // The selected entry's lineup for the round being edited.
   const [squad, setSquad] = useState([]);       // player ids
@@ -93,14 +95,34 @@ function SalaryCapInner() {
   }, [user]);
   useEffect(() => { loadLeagues(); }, [loadLeagues]);
 
+  // Your team library (reusable across leagues).
   const loadEntries = useCallback(async () => {
     if (!user) return;
-    const flt = selLeagueId ? `group_id=eq.${selLeagueId}` : "group_id=is.null";
-    const rows = await sbJson(await sbFetch(`wc_salary_entries?${flt}&user_id=eq.${user.id}&select=*&order=created_at.asc`));
+    const rows = await sbJson(await sbFetch(`wc_salary_entries?user_id=eq.${user.id}&select=*&order=created_at.asc`));
     setEntries(rows);
     setSelEntryId((prev) => (rows.find((r) => r.id === prev) ? prev : rows[0]?.id || null));
-  }, [user, selLeagueId]);
+  }, [user]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // Which leagues the selected team is entered in.
+  const loadSubs = useCallback(async () => {
+    if (!user || !selEntryId) { setSubs([]); return; }
+    const rows = await sbJson(await sbFetch(`wc_salary_submissions?entry_id=eq.${selEntryId}&user_id=eq.${user.id}&select=id,group_id`));
+    setSubs(rows);
+  }, [user, selEntryId]);
+  useEffect(() => { loadSubs(); }, [loadSubs]);
+
+  const addToLeague = async (groupId) => {
+    if (!selEntryId) return;
+    setAddOpen(false);
+    const { res } = await sbInsert("wc_salary_submissions", { entry_id: selEntryId, group_id: groupId, user_id: user.id });
+    if (res.ok || res.status === 409) { flash("Entered ✓"); await loadSubs(); }
+    else flash("Couldn't enter — run the entries SQL");
+  };
+  const removeFromLeague = async (subId) => {
+    await sbFetch(`wc_salary_submissions?id=eq.${subId}`, { method: "DELETE" });
+    await loadSubs();
+  };
 
   // Deep-link from the dedicated league/entry pages: /worldcup/salary?league=X&entry=Y
   useEffect(() => {
@@ -205,10 +227,8 @@ function SalaryCapInner() {
   // ---- entry + league actions ----
   const newEntry = async () => {
     if (!user || locked) return;
-    const max = selLeague.max_entries || 1;
-    if (entries.length >= max) { flash(`Max ${max} ${max === 1 ? "team" : "teams"} here`); return; }
     const { rows } = await sbInsert("wc_salary_entries", {
-      group_id: selLeagueId, user_id: user.id,
+      group_id: null, user_id: user.id,
       handle: profile?.handle || user.email?.split("@")[0],
       display_name: profile?.display_name || profile?.handle || user.email?.split("@")[0],
       label: `Team ${entries.length + 1}`,
@@ -283,7 +303,7 @@ function SalaryCapInner() {
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {[["leagues", "Leagues"], ["team", "My Team"], ["board", "Leaderboard"]].map(([id, label]) => (
+          {[["leagues", "Leagues"], ["team", "My Teams"]].map(([id, label]) => (
             <button key={id} onClick={() => setSubTab(id)} className={`pb-2 font-bold border-b-2 ${subTab === id ? "text-white border-red-500" : "text-zinc-600 border-transparent"}`}>{label}</button>
           ))}
         </div>
@@ -326,8 +346,6 @@ function SalaryCapInner() {
               </button>
             )}
           </>
-        ) : subTab === "board" ? (
-          <SalaryLeaderboard selLeagueId={selLeagueId} leagues={leagues} onSelLeague={setSelLeagueId} onCreateLeague={() => setSubTab("leagues")} />
         ) : poolLoading || editRound === undefined ? (
           <p className="text-zinc-600 text-sm py-8">Loading…</p>
         ) : locked ? (
@@ -336,30 +354,18 @@ function SalaryCapInner() {
           </div>
         ) : (
           <>
-            {/* League + entry switcher */}
-            <div className="flex gap-1.5 flex-wrap items-center mb-2">
-              {leagues.map((l) => (
-                <button key={l.id || "global"} onClick={() => setSelLeagueId(l.id || null)} className={`text-[12px] font-bold px-3 py-1 rounded-full ${selLeagueId === (l.id || null) ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{l.name}</button>
-              ))}
-              <button onClick={() => setSubTab("leagues")} className="text-[12px] font-bold px-3 py-1 rounded-full bg-zinc-800 text-zinc-400">＋ League</button>
-            </div>
-
             {entries.length === 0 ? (
               <div className="text-center py-10">
-                <p className="text-zinc-500 text-sm mb-1">No team yet in {selLeague.name}.</p>
-                <p className="text-zinc-600 text-[12px] mb-4">Build a 15-player squad under €{BUDGET}m and pick your XI.</p>
+                <p className="text-zinc-500 text-sm mb-1">No team yet.</p>
+                <p className="text-zinc-600 text-[12px] mb-4">Build a 15-player squad under €{BUDGET}m and pick your XI — then enter it in your leagues.</p>
                 <button onClick={newEntry} className="bg-red-600 text-white font-bold px-5 py-2.5 rounded-xl">Create your team →</button>
               </div>
             ) : (
               <>
-                {/* Entry selector + namer */}
+                {/* Team selector + namer */}
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">
-                    Your {entries.length > 1 || (selLeague.max_entries || 1) > 1 ? "teams" : "team"}
-                  </h3>
-                  {entries.length < (selLeague.max_entries || 1) && (
-                    <button onClick={newEntry} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1 rounded-lg">＋ New team</button>
-                  )}
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Your {entries.length > 1 ? "teams" : "team"}</h3>
+                  <button onClick={newEntry} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1 rounded-lg">＋ New team</button>
                 </div>
                 {entries.length > 1 && (
                   <div className="flex gap-1.5 flex-wrap mb-3">
@@ -377,6 +383,32 @@ function SalaryCapInner() {
                     maxLength={24}
                     className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-zinc-600"
                   />
+                )}
+
+                {/* Entered-in leagues */}
+                {selEntryId && (
+                  <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Entered in</div>
+                    <div className="flex gap-1.5 flex-wrap items-center">
+                      {subs.length === 0 && <span className="text-[12px] text-zinc-600">Not entered in any league yet.</span>}
+                      {subs.map((s) => (
+                        <span key={s.id} className="text-[12px] bg-zinc-800 rounded-full pl-3 pr-1.5 py-1 flex items-center gap-1.5">
+                          {s.group_id ? (leagues.find((l) => l.id === s.group_id)?.name || "League") : "🌍 Global"}
+                          <button onClick={() => removeFromLeague(s.id)} className="text-zinc-500 hover:text-red-400 w-4 h-4 leading-none" title="Remove">✕</button>
+                        </span>
+                      ))}
+                      {leagues.filter((l) => !subs.some((s) => (s.group_id || "global") === (l.id || "global"))).length > 0 && (
+                        <button onClick={() => setAddOpen((v) => !v)} className="text-[12px] font-bold px-3 py-1 rounded-full bg-red-600/20 text-red-300 border border-red-700/40">＋ Enter in a league</button>
+                      )}
+                    </div>
+                    {addOpen && (
+                      <div className="mt-2 flex gap-1.5 flex-wrap">
+                        {leagues.filter((l) => !subs.some((s) => (s.group_id || "global") === (l.id || "global"))).map((l) => (
+                          <button key={l.id || "global"} onClick={() => addToLeague(l.id || null)} className="text-[12px] px-3 py-1 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200">{l.name}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {editRound && (
