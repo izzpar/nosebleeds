@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
@@ -27,9 +27,10 @@ function lockLabel(ts) {
   return `in ${h}h ${m}m`;
 }
 
-export default function SalaryCapPage() {
+function SalaryCapInner() {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [pool, setPool] = useState([]);
   const [poolLoading, setPoolLoading] = useState(true);
@@ -100,6 +101,15 @@ export default function SalaryCapPage() {
     setSelEntryId((prev) => (rows.find((r) => r.id === prev) ? prev : rows[0]?.id || null));
   }, [user, selLeagueId]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // Deep-link from the dedicated league/entry pages: /worldcup/salary?league=X&entry=Y
+  useEffect(() => {
+    const lg = searchParams.get("league");
+    const en = searchParams.get("entry");
+    if (lg != null) { setSelLeagueId(lg === "global" ? null : lg); setSubTab("team"); }
+    if (en) setSelEntryId(en);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load the selected entry's lineup for the round being edited (carry it over
   // from the most recent prior round if this round hasn't been set yet).
@@ -290,10 +300,10 @@ export default function SalaryCapPage() {
             <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your salary-cap leagues</h3>
             <div className="space-y-2 mb-3">
               {leagues.map((l) => (
-                <button key={l.id || "global"} onClick={() => { setSelLeagueId(l.id || null); setSubTab("team"); }} className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700">
+                <button key={l.id || "global"} onClick={() => router.push(`/worldcup/salary/${l.id || "global"}`)} className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700">
                   <div>
                     <div className="font-bold">{l.name}</div>
-                    <div className="text-[11px] text-zinc-500">{!l.id ? "Open to everyone · one team each" : `Private · up to ${l.max_entries || 1} ${(l.max_entries || 1) === 1 ? "team" : "teams"} each`}</div>
+                    <div className="text-[11px] text-zinc-500">{!l.id ? "Open to everyone · one team each · see who entered" : `Private · up to ${l.max_entries || 1} ${(l.max_entries || 1) === 1 ? "team" : "teams"} each · see who entered`}</div>
                   </div>
                   <span className="text-zinc-600">›</span>
                 </button>
@@ -516,6 +526,14 @@ export default function SalaryCapPage() {
       <Confetti show={celebrate} />
       <Nav />
     </div>
+  );
+}
+
+export default function SalaryCapPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#09090b]" />}>
+      <SalaryCapInner />
+    </Suspense>
   );
 }
 

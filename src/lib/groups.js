@@ -41,6 +41,11 @@ export async function groupByCode(code) {
   return (await sbJson(res))[0] || null;
 }
 
+export async function groupById(id) {
+  const res = await sbFetch(`wc_groups?id=eq.${id}&select=*`);
+  return (await sbJson(res))[0] || null;
+}
+
 export async function joinGroup(group, userId, profile) {
   const ins = await sbInsert("wc_group_members", {
     group_id: group.id, user_id: userId, handle: profile?.handle,

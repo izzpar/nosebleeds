@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import Confetti from "@/components/Confetti";
@@ -12,9 +12,10 @@ import WcBackdrop from "@/components/WcBackdrop";
 
 const GLOBAL = { id: null, name: "🌍 Global", max_entries: 1, isGlobal: true };
 
-export default function RankingsPage() {
+function RankingsInner() {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const locked = rankingsLocked();
 
   const [teams, setTeams] = useState([]);
@@ -57,6 +58,15 @@ export default function RankingsPage() {
     setSelEntryId((prev) => (rows.find((r) => r.id === prev) ? prev : rows[0]?.id || null));
   }, [user, selLeagueId]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // Deep-link from the dedicated league/entry pages: /worldcup/rankings?league=X&entry=Y
+  useEffect(() => {
+    const lg = searchParams.get("league");
+    const en = searchParams.get("entry");
+    if (lg != null) { setSelLeagueId(lg === "global" ? null : lg); setSubTab("mine"); }
+    if (en) setSelEntryId(en);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const e = entries.find((x) => x.id === selEntryId);
@@ -153,10 +163,10 @@ export default function RankingsPage() {
                 <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your ranking leagues</h3>
                 <div className="space-y-2 mb-3">
                   {leagues.map((l) => (
-                    <button key={l.id || "global"} onClick={() => { setSelLeagueId(l.id || null); setSubTab("mine"); }} className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700">
+                    <button key={l.id || "global"} onClick={() => router.push(`/worldcup/rankings/${l.id || "global"}`)} className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700">
                       <div>
                         <div className="font-bold">{l.name}</div>
-                        <div className="text-[11px] text-zinc-500">{!l.id ? "Open to everyone · one entry each" : `Private · up to ${l.max_entries || 1} ${(l.max_entries || 1) === 1 ? "entry" : "entries"} each`}</div>
+                        <div className="text-[11px] text-zinc-500">{!l.id ? "Open to everyone · one entry each · see who entered" : `Private · up to ${l.max_entries || 1} ${(l.max_entries || 1) === 1 ? "entry" : "entries"} each · see who entered`}</div>
                       </div>
                       <span className="text-zinc-600">›</span>
                     </button>
@@ -249,6 +259,14 @@ export default function RankingsPage() {
       <Confetti show={celebrate} />
       <Nav />
     </div>
+  );
+}
+
+export default function RankingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#09090b]" />}>
+      <RankingsInner />
+    </Suspense>
   );
 }
 
