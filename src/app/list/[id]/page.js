@@ -57,7 +57,7 @@ export default function ListPage({ params }) {
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
       <div className="text-4xl">📋</div>
       <div className="text-zinc-500">List not found</div>
-      <Link href="/" className="text-red-400 text-sm font-semibold">← Back to The Nosebleeds</Link>
+      <Link href="/?tab=games" className="text-red-400 text-sm font-semibold">← Back to The Nosebleeds</Link>
     </div>
   );
 
@@ -67,7 +67,7 @@ export default function ListPage({ params }) {
     <div className="min-h-screen pb-24">
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
+          <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
           <h1 className="text-sm font-bold text-white flex-1 text-center truncate">{list.icon} {list.name}</h1>
           <button onClick={share} className="text-zinc-400 hover:text-white text-sm font-medium w-12 text-right">{copied ? "✓" : "🔗"}</button>
         </div>

@@ -72,7 +72,7 @@ export default function TrendingPage() {
     <div className="min-h-screen pb-24">
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
+          <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
           <h1 className="text-sm font-bold text-white flex-1 text-center">📈 Trending</h1>
           <div className="w-12" />
         </div>
@@ -96,7 +96,7 @@ export default function TrendingPage() {
             <div className="text-5xl mb-3">📭</div>
             <div className="text-base font-bold text-white">Nothing trending yet</div>
             <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">No games have been rated in this window. Be the first to rate one.</div>
-            <Link href="/" className="inline-block mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</Link>
+            <Link href="/?tab=games" className="inline-block mt-4 px-6 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold">Browse Games →</Link>
           </div>
         )}
 

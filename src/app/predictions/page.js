@@ -397,7 +397,7 @@ export default function PredictionsPage() {
       {/* Header */}
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
+          <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
           <h1 className="text-sm font-bold text-white flex-1 text-center">🔮 Predictions</h1>
           {/* Sport switcher */}
           <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">

@@ -135,7 +135,7 @@ export default function LoginPage() {
         </button>
 
         {/* Browse without account */}
-        <Link href="/" className="block mt-8 text-sm text-zinc-500 hover:text-red-400 transition-colors">
+        <Link href="/?tab=games" className="block mt-8 text-sm text-zinc-500 hover:text-red-400 transition-colors">
           Browse games without signing in →
         </Link>
         <Link href="/about" className="block mt-3 text-xs text-zinc-600 hover:text-red-400 transition-colors">
