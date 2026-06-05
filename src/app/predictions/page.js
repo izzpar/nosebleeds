@@ -138,7 +138,15 @@ export default function PredictionsPage() {
             const aw = (c.competitors || []).find(t => t.homeAway === "away");
             if (!ho || !aw) return null;
             // Odds (spread + moneyline) — inline on scoreboard when the book has posted a line.
-            const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+            // ESPN returns these in several shapes (legacy numbers, and the newer
+            // ESPN-BET "current: { moneyLine: { american } }" nesting), so probe all.
+            const num = (v) => {
+              if (v == null) return null;
+              const n = Number(typeof v === "string" ? v.replace(/[^\d.+-]/g, "") : v);
+              return Number.isFinite(n) && n !== 0 ? n : null;
+            };
+            const teamML = (o) => num(o?.moneyLine) ?? num(o?.current?.moneyLine?.american) ?? num(o?.moneyLine?.american) ?? num(o?.close?.moneyLine?.american) ?? num(o?.open?.moneyLine?.american);
+            const teamSpreadJuice = (o) => num(o?.spreadOdds) ?? num(o?.current?.pointSpread?.american) ?? num(o?.current?.spread?.american) ?? num(o?.close?.pointSpread?.american);
             const odds = c.odds?.[0];
             let spread = null, favAbbr = null;
             const moneylines = {};   // real moneyline per team (when available)
@@ -150,10 +158,11 @@ export default function PredictionsPage() {
                 if (m) { favAbbr = m[1]; }
               }
               const hO = odds.homeTeamOdds, aO = odds.awayTeamOdds;
-              const homeML = num(hO?.moneyLine), awayML = num(aO?.moneyLine);
+              const homeML = teamML(hO) ?? num(odds.moneylineHome);
+              const awayML = teamML(aO) ?? num(odds.moneylineAway);
               if (homeML != null) moneylines[ho.team.abbreviation] = homeML;
               if (awayML != null) moneylines[aw.team.abbreviation] = awayML;
-              const homeSO = num(hO?.spreadOdds), awaySO = num(aO?.spreadOdds);
+              const homeSO = teamSpreadJuice(hO), awaySO = teamSpreadJuice(aO);
               if (homeSO != null) spreadOdds[ho.team.abbreviation] = homeSO;
               if (awaySO != null) spreadOdds[aw.team.abbreviation] = awaySO;
             }
