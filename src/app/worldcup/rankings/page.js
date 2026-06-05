@@ -113,6 +113,12 @@ export default function RankingsPage() {
     try { navigator.clipboard.writeText(`${window.location.origin}/worldcup/g/${selLeague.invite_code}`); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
   };
 
+  const renameEntry = async (label) => {
+    if (!selEntryId) return;
+    await sbFetch(`wc_ranking_entries?id=eq.${selEntryId}`, { method: "PATCH", body: JSON.stringify({ label }) });
+    setEntries((es) => es.map((e) => (e.id === selEntryId ? { ...e, label } : e)));
+  };
+
   return (
     <div className="min-h-screen pb-24">
       <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
@@ -162,6 +168,10 @@ export default function RankingsPage() {
               </button>
             )}
 
+            <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline mb-3 block">
+              ℹ️ How scoring works — you earn more for teams you rank higher when they do well
+            </button>
+
             {subTab === "board" ? (
               <Leaderboard selLeagueId={selLeagueId} teamById={teamById} />
             ) : (
@@ -189,12 +199,24 @@ export default function RankingsPage() {
                     {!locked && <button onClick={newEntry} className="bg-red-600 text-white font-bold px-5 py-2.5 rounded-xl">Start your ranking →</button>}
                   </div>
                 ) : (
-                  <RankEditor
-                    teams={teams} ranked={ranked} pool={pool} order={order} locked={locked} saving={saving}
-                    onAdd={add} onRemove={removeT} onMove={move} onSuggest={suggestOrder} onSave={save}
-                    onAddAll={() => setOrder((o) => [...o, ...pool.map((t) => String(t.id))])}
-                    onRetryTeams={loadTeams}
-                  />
+                  <>
+                    {selEntryId && !locked && (
+                      <input
+                        key={selEntryId}
+                        defaultValue={entries.find((e) => e.id === selEntryId)?.label || ""}
+                        onBlur={(e) => renameEntry(e.target.value)}
+                        placeholder="Name this entry (e.g. Dark Horses)"
+                        maxLength={24}
+                        className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-zinc-600"
+                      />
+                    )}
+                    <RankEditor
+                      teams={teams} ranked={ranked} pool={pool} order={order} locked={locked} saving={saving}
+                      onAdd={add} onRemove={removeT} onMove={move} onSuggest={suggestOrder} onSave={save}
+                      onAddAll={() => setOrder((o) => [...o, ...pool.map((t) => String(t.id))])}
+                      onRetryTeams={loadTeams}
+                    />
+                  </>
                 )}
               </>
             )}
