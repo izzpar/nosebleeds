@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Nav from "@/components/Nav";
 import Confetti from "@/components/Confetti";
 import { useAuth } from "@/components/AuthProvider";
@@ -191,7 +192,7 @@ export default function RankingsPage() {
                 </button>
 
             {subTab === "board" ? (
-              <Leaderboard selLeagueId={selLeagueId} teamById={teamById} />
+              <Leaderboard selLeagueId={selLeagueId} teamById={teamById} locked={locked} />
             ) : (
               <>
                 {/* Entry selector */}
@@ -308,53 +309,73 @@ function RankEditor({ teams, ranked, pool, order, locked, saving, onAdd, onRemov
   );
 }
 
-function Leaderboard({ selLeagueId, teamById }) {
+function Leaderboard({ selLeagueId, teamById, locked }) {
   const [rows, setRows] = useState(null);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       const flt = selLeagueId ? `group_id=eq.${selLeagueId}` : "group_id=is.null";
       const [entries, results] = await Promise.all([
-        sbJson(await sbFetch(`wc_ranking_entries?${flt}&select=user_id,display_name,handle,label,ranking`)),
+        sbJson(await sbFetch(`wc_ranking_entries?${flt}&select=user_id,display_name,handle,label,ranking,created_at`)),
         fetchResults(),
       ]);
-      const scored = entries
-        .filter((r) => Array.isArray(r.ranking) && r.ranking.length)
-        .map((r) => {
-          const { total, contributions } = rankingPoints(r.ranking, results);
-          const best = [...contributions].sort((a, b) => b.points - a.points)[0];
-          return { name: r.display_name || r.handle || "Player", label: r.label, total: Math.round(total), best };
-        })
-        .sort((a, b) => b.total - a.total);
-      if (!cancelled) setRows({ scored, noGames: (results.events || 0) === 0 });
+      const noGames = (results.events || 0) === 0;
+      // Reveal rankings/scores only once the tournament has kicked off (locked) or
+      // a match has been played. Before then, just show who's entered.
+      const reveal = locked || !noGames;
+      const list = entries.map((r) => {
+        const submitted = Array.isArray(r.ranking) && r.ranking.length > 0;
+        let total = 0, best = null;
+        if (submitted) {
+          const res = rankingPoints(r.ranking, results);
+          total = Math.round(res.total);
+          best = [...res.contributions].sort((a, b) => b.points - a.points)[0];
+        }
+        return { name: r.display_name || r.handle || "Player", handle: r.handle, label: r.label, submitted, total, best, created_at: r.created_at || "" };
+      }).sort((a, b) => reveal
+        ? (b.total - a.total)
+        : ((b.submitted - a.submitted) || a.created_at.localeCompare(b.created_at)));
+      if (!cancelled) setRows({ list, reveal, noGames });
     };
-    load().catch(() => { if (!cancelled) setRows({ scored: [], noGames: true }); });
+    load().catch(() => { if (!cancelled) setRows({ list: [], reveal: false, noGames: true }); });
     const t = setInterval(() => load().catch(() => {}), 45000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [selLeagueId]);
+  }, [selLeagueId, locked]);
 
-  if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading leaderboard…</p>;
-  if (rows.scored.length === 0) return <p className="text-zinc-600 text-sm py-8">No rankings submitted yet.</p>;
+  if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading…</p>;
+  if (rows.list.length === 0) return <p className="text-zinc-600 text-sm py-8">No one has entered yet.</p>;
+  const submittedCount = rows.list.filter((r) => r.submitted).length;
   return (
     <div>
-      {rows.noGames && (
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">{rows.list.length} entered</h3>
+        {!rows.reveal && <span className="text-[10px] text-zinc-500">🔒 rankings reveal at kickoff</span>}
+      </div>
+      {!rows.reveal && (
         <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-500">
-          No matches played yet — the board updates automatically once games kick off.
+          Everyone&apos;s rankings stay hidden until the first game kicks off (Jun 11). For now you can see who&apos;s in — {submittedCount}/{rows.list.length} have locked in a full ranking.
         </div>
       )}
       <div className="space-y-2">
-        {rows.scored.map((r, i) => {
+        {rows.list.map((r, i) => {
           const bt = r.best && teamById(r.best.team_id);
+          const NameTag = r.handle ? Link : "div";
+          const nameProps = r.handle ? { href: `/u/${r.handle}` } : {};
           return (
-            <div key={i} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-600 font-bold w-5">{i + 1}</span>
-                <div>
-                  <div className="font-bold">{r.name}{r.label ? <span className="text-[11px] text-zinc-500 font-normal"> · {r.label}</span> : null}</div>
-                  {bt && !rows.noGames && <div className="text-[11px] text-zinc-500">Top pick: {bt.name} (#{r.best.rank})</div>}
+            <div key={i} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-zinc-600 font-bold w-5">{rows.reveal ? i + 1 : "•"}</span>
+                <div className="min-w-0">
+                  <NameTag {...nameProps} className={`font-bold truncate block ${r.handle ? "hover:text-red-400" : ""}`}>
+                    {r.name}{r.handle ? <span className="text-[10px] text-zinc-600 font-normal"> ↗</span> : null}
+                    {r.label ? <span className="text-[11px] text-zinc-500 font-normal"> · {r.label}</span> : null}
+                  </NameTag>
+                  {rows.reveal
+                    ? (bt && <div className="text-[11px] text-zinc-500">Top pick: {bt.name} (#{r.best.rank})</div>)
+                    : <div className={`text-[11px] ${r.submitted ? "text-emerald-400" : "text-zinc-600"}`}>{r.submitted ? "✓ Ranking locked in" : "… hasn't finished ranking"}</div>}
                 </div>
               </div>
-              <span className="font-bold text-red-500 tabular-nums">{r.total}</span>
+              {rows.reveal && <span className="font-bold text-red-500 tabular-nums shrink-0">{r.total}</span>}
             </div>
           );
         })}
