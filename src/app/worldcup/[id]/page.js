@@ -48,7 +48,7 @@ export default function LeagueRoom() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [secondsLeft, setSecondsLeft] = useState(null);
-  const lastPickCount = useRef(0);
+  const lastPickCount = useRef(-1);
   const autoPicking = useRef(false);
   const autoStarting = useRef(false);
 
@@ -122,6 +122,10 @@ export default function LeagueRoom() {
   const draftComplete = totalPicks > 0 && picks.length >= totalPicks;
   const onClockPos = onClockPosition(picks.length, n);
   const onClockMember = members.find((m) => m.draft_position === onClockPos) || null;
+  // Who picks next (snake), and which round we're in — for a richer draft board.
+  const onDeckMember = members.find((m) => m.draft_position === onClockPosition(picks.length + 1, n)) || null;
+  const roundNum = n ? Math.floor(picks.length / n) + 1 : 1;
+  const totalRounds = perManager || 0;
   const isMyTurn =
     league?.status === "drafting" &&
     !draftComplete &&
@@ -138,15 +142,17 @@ export default function LeagueRoom() {
 
   const paused = !!league?.draft_paused;
 
-  // Advisory countdown — resets whenever a new pick lands, frozen while paused.
+  // Advisory countdown — starts on the first pick, resets whenever a new pick
+  // lands, frozen while paused.
   useEffect(() => {
-    if (league?.status !== "drafting" || draftComplete) { setSecondsLeft(null); return; }
+    if (league?.status !== "drafting" || draftComplete) { setSecondsLeft(null); lastPickCount.current = -1; return; }
+    // -1 sentinel ensures the very first pick (picks.length === 0) starts the clock.
     if (picks.length !== lastPickCount.current) {
       lastPickCount.current = picks.length;
       setSecondsLeft(league.pick_seconds || 90);
     }
     if (league?.draft_paused) return; // hold the clock while the commissioner has it paused
-    const t = setInterval(() => setSecondsLeft((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
+    const t = setInterval(() => setSecondsLeft((s) => (s == null ? (league.pick_seconds || 90) : Math.max(0, s - 1))), 1000);
     return () => clearInterval(t);
   }, [league, picks.length, draftComplete]);
 
@@ -439,7 +445,8 @@ export default function LeagueRoom() {
               perManager={n >= 2 ? perManager : 0}
               format={format}
               draftType={league.draft_type || "snake"}
-              draftAt={league.draft_at}
+              league={league}
+              onSaveSchedule={saveSettings}
               onStart={startDraft}
               busy={busy}
             />
@@ -466,6 +473,9 @@ export default function LeagueRoom() {
               poolLoading={poolLoading}
               pickedPlayerIds={pickedPlayerIds}
               onClockMember={onClockMember}
+              onDeckMember={onDeckMember}
+              roundNum={roundNum}
+              totalRounds={totalRounds}
               isMyTurn={isMyTurn}
               draftComplete={draftComplete}
               perManager={perManager}
@@ -484,6 +494,9 @@ export default function LeagueRoom() {
               teams={teams}
               pickedTeamIds={pickedTeamIds}
               onClockMember={onClockMember}
+              onDeckMember={onDeckMember}
+              roundNum={roundNum}
+              totalRounds={totalRounds}
               isMyTurn={isMyTurn}
               draftComplete={draftComplete}
               perManager={perManager}
@@ -544,9 +557,19 @@ function Shell({ children }) {
   );
 }
 
-function Lobby({ members, isCommish, perManager, format, draftType, draftAt, onStart, busy }) {
+function Lobby({ members, isCommish, perManager, format, draftType, league, onSaveSchedule, onStart, busy }) {
   const noun = format === "player" ? "players" : "nations";
   const isAuction = draftType === "auction";
+  const draftAt = league?.draft_at;
+  const [showSched, setShowSched] = useState(false);
+  const [when, setWhen] = useState(toLocalInput(draftAt));
+  const [secs, setSecs] = useState(league?.pick_seconds || 90);
+
+  const saveSchedule = () => {
+    onSaveSchedule({ draft_at: when ? new Date(when).toISOString() : null, pick_seconds: Math.max(10, parseInt(secs) || 90) });
+    setShowSched(false);
+  };
+
   return (
     <div>
       {draftAt && (
@@ -571,18 +594,49 @@ function Lobby({ members, isCommish, perManager, format, draftType, draftAt, onS
           ))}
         </div>
       </div>
+
+      {/* Commissioner: schedule the draft + set the pick clock, right here in the lobby. */}
       {isCommish && (
-        <p className="text-[12px] text-zinc-500 mb-3">
-          ⚙️ Set scoring, the pick timer, and draft order in the <span className="text-zinc-300 font-semibold">Settings</span> tab above.
-        </p>
+        <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold">⏰ Schedule &amp; pick clock</h3>
+              <p className="text-[11px] text-zinc-500">
+                {draftAt ? `Starts ${new Date(draftAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Not scheduled"} · {league?.pick_seconds || 90}s per pick
+              </p>
+            </div>
+            <button onClick={() => setShowSched((v) => !v)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white">
+              {showSched ? "Close" : "Edit"}
+            </button>
+          </div>
+          {showSched && (
+            <div className="mt-3 space-y-2">
+              <label className="block">
+                <span className="text-[12px] text-zinc-400">Date &amp; time (optional — auto-starts then)</span>
+                <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)}
+                  className="w-full mt-1 bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-zinc-600" />
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-zinc-300">Seconds per pick</span>
+                <input type="number" min={10} value={secs} onChange={(e) => setSecs(e.target.value)}
+                  className="w-20 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-sm text-right outline-none focus:border-zinc-600" />
+              </label>
+              <div className="flex gap-2">
+                {when && <button onClick={() => { setWhen(""); }} className="text-[12px] text-zinc-400 px-3 py-2">Clear date</button>}
+                <button onClick={saveSchedule} disabled={busy} className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2 rounded-xl text-sm">Save</button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
+
       {isCommish ? (
         <button
           onClick={onStart}
           disabled={busy || members.length < 2}
           className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-3 rounded-xl"
         >
-          {members.length < 2 ? "Need 2+ managers to start" : "Start draft 🎲"}
+          {members.length < 2 ? "Need 2+ managers to start" : "Start draft now 🎲"}
         </button>
       ) : (
         <p className="text-center text-zinc-500 text-sm py-2">Waiting for the commissioner to start…</p>
@@ -591,14 +645,78 @@ function Lobby({ members, isCommish, perManager, format, draftType, draftAt, onS
   );
 }
 
+// Shared "on the clock" banner — round, pick number, who's up, who's on deck, timer.
+function OnClockBar({ picks, totalPicks, roundNum, totalRounds, onClockName, onDeckName, isMyTurn, secondsLeft }) {
+  return (
+    <div className={`rounded-2xl px-4 py-3 mb-3 border ${isMyTurn ? "bg-red-950/40 border-red-700/60" : "bg-zinc-900/70 border-zinc-800"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+            Round {roundNum}{totalRounds ? `/${totalRounds}` : ""} · Pick {picks.length + 1} of {totalPicks}
+          </div>
+          <div className="font-bold text-lg leading-tight truncate">
+            {isMyTurn ? "🟢 You're on the clock" : `${onClockName} is picking`}
+          </div>
+          {onDeckName && <div className="text-[11px] text-zinc-500 truncate">On deck: {onDeckName}</div>}
+        </div>
+        {secondsLeft != null && (
+          <div className={`shrink-0 flex flex-col items-center justify-center w-14 h-14 rounded-full border-2 ${secondsLeft <= 10 ? "border-red-500 animate-pulse" : "border-zinc-700"}`}>
+            <span className={`text-xl font-bold tabular-nums leading-none ${secondsLeft <= 10 ? "text-red-500" : "text-zinc-200"}`}>{secondsLeft}</span>
+            <span className="text-[8px] text-zinc-500 mt-0.5">sec</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Shared recent-picks strip so the board feels live.
+function RecentPicks({ picks, members }) {
+  if (!picks.length) return null;
+  const nameOf = (uid) => { const m = members.find((x) => x.user_id === uid); return m?.display_name || m?.handle || "Player"; };
+  const last = picks.slice(-4).reverse();
+  return (
+    <div className="mb-4">
+      <div className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold mb-1">Recent picks</div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {last.map((p, i) => (
+          <div key={p.id} className="shrink-0 bg-zinc-900/70 border border-zinc-800 rounded-lg px-2.5 py-1.5 max-w-[9rem]">
+            <div className="text-[11px] font-bold truncate">{p.player_name || p.team_name}</div>
+            <div className="text-[9px] text-zinc-500 truncate">#{picks.length - i} · {nameOf(p.user_id)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Fixed confirm bar shown when a manager has tapped a pick but not confirmed.
+function ConfirmPickBar({ name, sub, onConfirm, onCancel, busy }) {
+  return (
+    <div className="fixed bottom-16 left-0 right-0 z-50 px-3">
+      <div className="max-w-2xl mx-auto bg-zinc-900 border border-red-700/60 rounded-2xl px-4 py-3 shadow-xl flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] text-zinc-500">Draft this pick?</div>
+          <div className="font-bold truncate">{name}{sub ? <span className="text-zinc-500 font-normal"> · {sub}</span> : null}</div>
+        </div>
+        <button onClick={onCancel} className="text-[12px] font-bold px-3 py-2 rounded-lg bg-zinc-800 text-zinc-300">Cancel</button>
+        <button onClick={onConfirm} disabled={busy} className="text-[13px] font-bold px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white">✓ Draft</button>
+      </div>
+    </div>
+  );
+}
+
 function DraftBoard({
-  members, picks, teams, pickedTeamIds, onClockMember, isMyTurn, draftComplete,
-  perManager, totalPicks, secondsLeft, onPick, isCommish, onUndo, busy, myPicks,
+  members, picks, teams, pickedTeamIds, onClockMember, onDeckMember, roundNum, totalRounds,
+  isMyTurn, draftComplete, perManager, totalPicks, secondsLeft, onPick, isCommish, onUndo, busy, myPicks,
 }) {
   const memberName = (uid) => {
     const m = members.find((x) => x.user_id === uid);
     return m?.display_name || m?.handle || "Player";
   };
+  const [pending, setPending] = useState(null);
+  // Drop a pending selection once the board moves on (someone picked / not my turn).
+  useEffect(() => { setPending(null); }, [picks.length, isMyTurn]);
   // Suggested order: strongest nations first, so users don't have to sort.
   const available = teams
     .filter((t) => !pickedTeamIds.has(String(t.id)))
@@ -613,25 +731,12 @@ function DraftBoard({
           <div className="text-[12px] text-zinc-500">Check the Standings tab once games kick off.</div>
         </div>
       ) : (
-        <div
-          className={`rounded-xl px-4 py-3 mb-4 flex items-center justify-between border ${
-            isMyTurn ? "bg-red-950/40 border-red-700/60" : "bg-zinc-900/70 border-zinc-800"
-          }`}
-        >
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">
-              Pick {picks.length + 1} of {totalPicks}
-            </div>
-            <div className="font-bold">
-              {isMyTurn ? "You're on the clock" : `${onClockMember ? memberName(onClockMember.user_id) : "—"} picking`}
-            </div>
-          </div>
-          {secondsLeft != null && (
-            <div className={`text-2xl font-bold tabular-nums ${secondsLeft <= 10 ? "text-red-500" : "text-zinc-300"}`}>
-              {secondsLeft}s
-            </div>
-          )}
-        </div>
+        <>
+          <OnClockBar picks={picks} totalPicks={totalPicks} roundNum={roundNum} totalRounds={totalRounds}
+            onClockName={onClockMember ? memberName(onClockMember.user_id) : "—"} onDeckName={onDeckMember ? memberName(onDeckMember.user_id) : ""}
+            isMyTurn={isMyTurn} secondsLeft={secondsLeft} />
+          <RecentPicks picks={picks} members={members} />
+        </>
       )}
 
       {/* available nations (suggested order: strongest first) */}
@@ -643,24 +748,25 @@ function DraftBoard({
             </h3>
             {isMyTurn && available[0] && (
               <button
-                onClick={() => onPick(available[0])}
+                onClick={() => setPending(available[0])}
                 disabled={busy}
-                className="text-[12px] bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-3 py-1 rounded-lg"
+                className="text-[12px] bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white font-bold px-3 py-1 rounded-lg"
               >
-                ⚡ Auto-pick {available[0].name}
+                ⚡ Best available
               </button>
             )}
           </div>
+          {isMyTurn && <p className="text-[11px] text-zinc-500 mb-2">Tap a nation to pick — you&apos;ll confirm before it&apos;s locked in.</p>}
           <div className="grid grid-cols-2 gap-2 mb-6">
             {available.map((t) => (
               <button
                 key={t.id}
-                onClick={() => onPick(t)}
+                onClick={() => setPending(t)}
                 disabled={!isMyTurn || busy}
                 className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border text-left transition-all ${
-                  isMyTurn
-                    ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.98]"
-                    : "bg-zinc-900/50 border-zinc-800 opacity-60"
+                  pending?.id === t.id ? "bg-red-950/50 border-red-500"
+                  : isMyTurn ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.98]"
+                  : "bg-zinc-900/50 border-zinc-800 opacity-60"
                 }`}
               >
                 {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
@@ -670,6 +776,10 @@ function DraftBoard({
             ))}
           </div>
         </>
+      )}
+      {pending && (
+        <ConfirmPickBar name={pending.name} sub={`strength ${nationStrength(pending.name)}`} busy={busy}
+          onCancel={() => setPending(null)} onConfirm={() => { onPick(pending); setPending(null); }} />
       )}
 
       {/* my squad */}
@@ -941,11 +1051,13 @@ const POS = ["ALL", "GK", "DEF", "MID", "FWD"];
 const POS_COLOR = { GK: "text-amber-400", DEF: "text-sky-400", MID: "text-emerald-400", FWD: "text-red-400" };
 
 function PlayerDraftBoard({
-  members, picks, players, poolLoading, pickedPlayerIds, onClockMember, isMyTurn,
+  members, picks, players, poolLoading, pickedPlayerIds, onClockMember, onDeckMember, roundNum, totalRounds, isMyTurn,
   draftComplete, perManager, totalPicks, secondsLeft, onPick, isCommish, onUndo, busy, myPicks,
 }) {
   const [q, setQ] = useState("");
   const [pos, setPos] = useState("ALL");
+  const [pending, setPending] = useState(null);
+  useEffect(() => { setPending(null); }, [picks.length, isMyTurn]);
   const memberName = (uid) => {
     const m = members.find((x) => x.user_id === uid);
     return m?.display_name || m?.handle || "Player";
@@ -972,15 +1084,12 @@ function PlayerDraftBoard({
           <div className="text-[12px] text-zinc-500">Your squad scores automatically once matches kick off.</div>
         </div>
       ) : (
-        <div className={`rounded-xl px-4 py-3 mb-4 flex items-center justify-between border ${isMyTurn ? "bg-red-950/40 border-red-700/60" : "bg-zinc-900/70 border-zinc-800"}`}>
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Pick {picks.length + 1} of {totalPicks}</div>
-            <div className="font-bold">{isMyTurn ? "You're on the clock" : `${onClockMember ? memberName(onClockMember.user_id) : "—"} picking`}</div>
-          </div>
-          {secondsLeft != null && (
-            <div className={`text-2xl font-bold tabular-nums ${secondsLeft <= 10 ? "text-red-500" : "text-zinc-300"}`}>{secondsLeft}s</div>
-          )}
-        </div>
+        <>
+          <OnClockBar picks={picks} totalPicks={totalPicks} roundNum={roundNum} totalRounds={totalRounds}
+            onClockName={onClockMember ? memberName(onClockMember.user_id) : "—"} onDeckName={onDeckMember ? memberName(onDeckMember.user_id) : ""}
+            isMyTurn={isMyTurn} secondsLeft={secondsLeft} />
+          <RecentPicks picks={picks} members={members} />
+        </>
       )}
 
       {/* my squad */}
@@ -1017,14 +1126,15 @@ function PlayerDraftBoard({
             </h3>
             {isMyTurn && shown[0] && (
               <button
-                onClick={() => onPick(shown[0])}
+                onClick={() => setPending(shown[0])}
                 disabled={busy}
-                className="text-[12px] bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-3 py-1 rounded-lg"
+                className="text-[12px] bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white font-bold px-3 py-1 rounded-lg"
               >
-                ⚡ Auto-pick {shown[0].name.split(" ").slice(-1)[0]}
+                ⚡ Best available
               </button>
             )}
           </div>
+          {isMyTurn && <p className="text-[11px] text-zinc-500 mb-2">Tap a player to pick — you&apos;ll confirm before it&apos;s locked in.</p>}
           {poolLoading && players.length === 0 ? (
             <p className="text-zinc-600 text-sm py-4">Loading squads…</p>
           ) : (
@@ -1047,9 +1157,9 @@ function PlayerDraftBoard({
                 {shown.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => onPick(p)}
+                    onClick={() => setPending(p)}
                     disabled={!isMyTurn || busy}
-                    className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${isMyTurn ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.99]" : "bg-zinc-900/50 border-zinc-800 opacity-70"}`}
+                    className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${pending?.id === p.id ? "bg-red-950/50 border-red-500" : isMyTurn ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.99]" : "bg-zinc-900/50 border-zinc-800 opacity-70"}`}
                   >
                     <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role] || "text-zinc-400"}`}>{p.role}</span>
                     {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded-full object-cover bg-zinc-800 shrink-0" loading="lazy" />}
@@ -1086,6 +1196,10 @@ function PlayerDraftBoard({
         <button onClick={onUndo} disabled={busy} className="text-[12px] text-zinc-500 hover:text-zinc-300 underline">
           Undo last pick (commissioner)
         </button>
+      )}
+      {pending && (
+        <ConfirmPickBar name={pending.name} sub={`${pending.role} · ${pending.team_name}`} busy={busy}
+          onCancel={() => setPending(null)} onConfirm={() => { onPick(pending); setPending(null); }} />
       )}
     </div>
   );
