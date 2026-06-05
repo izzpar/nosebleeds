@@ -159,7 +159,7 @@ export default function WorldCupHub() {
           <span className="text-xl">🏆</span>
           <div>
             <h1 className="text-lg font-bold leading-tight">Fantasy World Cup</h1>
-            <p className="text-[11px] text-zinc-500 leading-tight">Snake-draft nations · score as they win</p>
+            <p className="text-[11px] text-zinc-500 leading-tight">Rankings · salary cap · drafts · match ratings</p>
           </div>
         </div>
       </div>
@@ -169,25 +169,13 @@ export default function WorldCupHub() {
         <div className="rounded-3xl p-6 mb-6 text-center bg-gradient-to-br from-red-700 via-red-800 to-zinc-900 border border-red-500/30">
           <div className="text-5xl mb-2">🏆</div>
           <h2 className="text-2xl font-extrabold text-white leading-tight">Fantasy World Cup 2026</h2>
-          <p className="text-[12px] text-red-100/80 mt-1 mb-4">Draft · auction · salary cap · power ranking — free, with friends.</p>
+          <p className="text-[12px] text-red-100/80 mt-1 mb-4">Rank the nations, build a squad, draft with friends &amp; rate every match — all free. Pick a game below ↓</p>
           <KickoffCountdown variant="hero" />
-          <p className="text-[10px] text-red-200/60 mt-2">until kickoff — lock your teams before June 11</p>
+          <p className="text-[10px] text-red-200/60 mt-2">until kickoff — lock your picks before June 11</p>
           <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-white/90 underline mt-2">ℹ️ How the games &amp; scoring work</button>
         </div>
 
-        {!user ? (
-          <div className="text-center py-10">
-            <p className="text-zinc-400 mb-4">Sign in to draft with your friends.</p>
-            <button
-              onClick={() => router.push("/login")}
-              className="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-2.5 rounded-xl"
-            >
-              Log in
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Game modes */}
+        {/* Game modes — anyone can browse; the game pages prompt sign-in to save */}
             <button
               onClick={() => router.push("/worldcup/rankings")}
               className="w-full text-left bg-gradient-to-r from-red-950/60 to-zinc-900/70 border border-red-900/40 rounded-2xl px-4 py-3 mb-2 flex items-center gap-3 hover:border-red-700/60"
@@ -222,6 +210,14 @@ export default function WorldCupHub() {
               <span className="text-zinc-600">›</span>
             </button>
 
+            {!user ? (
+              <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl px-4 py-6 text-center mb-6">
+                <p className="text-zinc-200 font-bold mb-1">New here? Welcome 👋</p>
+                <p className="text-[12px] text-zinc-500 mb-4">Tap any game above to look around. Log in to save your picks, create private leagues, and invite friends.</p>
+                <button onClick={() => router.push("/login")} className="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-2.5 rounded-xl">Log in / sign up</button>
+              </div>
+            ) : (
+              <>
             {/* Your leagues */}
             <h2 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Your draft leagues</h2>
             {loading ? (

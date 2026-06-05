@@ -23,7 +23,9 @@ export default function OpengraphImage() {
         <div style={{ fontSize: 30, color: "#a1a1aa", marginTop: 24 }}>
           Rank nations · salary cap · drafts · rate every match
         </div>
-        <div style={{ fontSize: 26, color: "#71717a", marginTop: 36 }}>Free · with your friends</div>
+        <div style={{ display: "flex", marginTop: 44, background: "#dc2626", color: "white", fontSize: 30, fontWeight: 800, padding: "16px 44px", borderRadius: 999 }}>
+          Play free → thenosebleeds.app
+        </div>
       </div>
     ),
     { ...size }
