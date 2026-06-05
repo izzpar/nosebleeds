@@ -61,7 +61,8 @@ export function projectAndPrice(player) {
   else if (f.min < 300) avail = -4;
 
   const proj = clamp(Math.round(prior + perf + avail), 5, 99);
-  // Spread prices €4.0–€13.0 with cheap fringe options below proj 40.
-  const price = Math.round((4 + clamp((proj - 40) / 59, 0, 1) * 9) * 10) / 10;
+  // Cheaper, more affordable spread: €4.0–€11.0, with lots of sub-€6 options so a
+  // €100m / 15-player squad is comfortably buildable.
+  const price = Math.round((4 + clamp((proj - 45) / 50, 0, 1) * 7) * 10) / 10;
   return { proj, price, form: f };
 }
