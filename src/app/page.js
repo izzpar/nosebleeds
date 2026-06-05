@@ -18,13 +18,20 @@ const SPORT_PATHS = {
   mlb: "baseball/mlb",
   nba: "basketball/nba",
   nhl: "hockey/nhl",
+  wc: "soccer/fifa.world",
 };
 const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy for any remaining refs
+// 2026 World Cup window — used to default the date so the feed isn't empty pre-tournament.
+const WC_OPENER = "2026-06-11";
+const WC_FINAL = "2026-07-19";
+// Keep a YYYY-MM-DD date inside the tournament window (string compare is safe for ISO dates).
+const clampWcDate = (d) => (d < WC_OPENER ? WC_OPENER : d > WC_FINAL ? WC_FINAL : d);
 
 // Sport switcher config (also drives diary/profile toggles). Order = display order.
-// `team: false` sports (tennis) are player-based — no favorite-team picker, no
-// team game page; they route to their own detail flow.
+// `team: false` sports (tennis, World Cup) are not favorite-team based — no
+// favorite-team picker. World Cup still uses the shared /game/[id] page.
 const SPORTS = [
+  { id: "wc", emoji: "🏆", label: "World Cup", team: false },
   { id: "nfl", emoji: "🏈", label: "NFL", team: true },
   { id: "mlb", emoji: "⚾", label: "MLB", team: true },
   { id: "nba", emoji: "🏀", label: "NBA", team: true },
@@ -222,53 +229,6 @@ function Bdg({ r, size = "md" }) {
   );
 }
 
-// World Cup diary feed — the user's match + player ratings, alongside the other sports.
-function WcDiary({ entries }) {
-  if (!entries || entries.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <div className="text-5xl mb-3">🏆</div>
-        <div className="text-base font-bold text-white">No World Cup ratings yet</div>
-        <div className="text-sm text-zinc-500 mt-1">Rate matches, score players, and hype upcoming games</div>
-        <Link href="/worldcup/matches" className="inline-block mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Go to Match Ratings →</Link>
-      </div>
-    );
-  }
-  return (
-    <div>
-      {entries.map((e) => {
-        const m = e.match;
-        const showScore = m.status !== "upcoming";
-        return (
-          <Link key={e.fixture_id} href={`/worldcup/match/${e.fixture_id}`} className="block">
-            <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
-              {e.rating != null ? (
-                <Bdg r={Number(e.rating)} />
-              ) : e.hype != null ? (
-                <div className="w-9 h-9 rounded-xl flex flex-col items-center justify-center bg-zinc-800 shrink-0 leading-none">
-                  <span className="text-[10px]">🔥</span><span className="text-[11px] font-bold text-white">{Number(e.hype).toFixed(0)}</span>
-                </div>
-              ) : (
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-zinc-800 shrink-0 text-sm">⚽</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold text-white truncate">
-                  {m.home?.name} {showScore ? <span className="tabular-nums">{m.score?.home ?? 0}–{m.score?.away ?? 0}</span> : "v"} {m.away?.name}
-                </div>
-                <div className="text-[10px] text-zinc-600">{m.round || "World Cup"}{m.status === "upcoming" ? " · upcoming" : m.status === "live" ? " · live" : ""}</div>
-                <div className="flex gap-2 mt-1 flex-wrap">
-                  {e.hype != null && e.rating != null && <span className="text-[10px] text-zinc-500">🔥 {Number(e.hype).toFixed(0)}</span>}
-                  {e.players > 0 && <span className="text-[10px] text-emerald-400">★ {e.players} player{e.players === 1 ? "" : "s"} rated</span>}
-                </div>
-                {e.review && <div className="text-[11px] text-zinc-400 italic mt-1">&quot;{e.review}&quot;</div>}
-              </div>
-            </div>
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
 
 async function fetchNflWeek(year, week) {
   try {
@@ -321,7 +281,13 @@ async function fetchSportDate(sport, dateStr) {
       const aw = ts.find((t) => t.homeAway === "away");
       if (!ho || !aw) return null;
       const dt = new Date(e.date);
-      const st = c.status?.type?.name || "STATUS_FINAL";
+      // Use ESPN's reliable lifecycle state (pre|in|post) so soccer's status names
+      // (full-time, etc.) normalize to the canonical strings the UI expects.
+      const state = c.status?.type?.state;
+      const rawName = c.status?.type?.name || "STATUS_FINAL";
+      const isPre = state ? state === "pre" : rawName === "STATUS_SCHEDULED";
+      const isFinal = state ? state === "post" : rawName === "STATUS_FINAL";
+      const st = state === "in" ? "STATUS_IN_PROGRESS" : state === "post" ? "STATUS_FINAL" : state === "pre" ? "STATUS_SCHEDULED" : rawName;
       const dateStrLocal = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
       const timeStr = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       return {
@@ -334,7 +300,7 @@ async function fetchSportDate(sport, dateStr) {
         shortDate: dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
         net: c.broadcasts?.[0]?.names?.[0] || "", status: st,
         statusDetail: c.status?.type?.shortDetail || c.status?.type?.detail || "",
-        isPre: st === "STATUS_SCHEDULED", isFinal: st === "STATUS_FINAL",
+        isPre, isFinal,
         home: { name: ho.team.displayName, abbr: ho.team.abbreviation, color: "#" + (ho.team.color || "333"), logo: ho.team.logo, record: ho.records?.[0]?.summary || "", score: parseInt(ho.score) || 0 },
         away: { name: aw.team.displayName, abbr: aw.team.abbreviation, color: "#" + (aw.team.color || "333"), logo: aw.team.logo, record: aw.records?.[0]?.summary || "", score: parseInt(aw.score) || 0 },
         ot: (ho.linescores || []).length > otThreshold,
@@ -353,7 +319,7 @@ function HomeContent() {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0); // bumped by pull-to-refresh to re-run the games load effect
-  const [sport, setSportInternal] = useState("nfl"); // nfl | mlb | nba | nhl
+  const [sport, setSportInternal] = useState("wc"); // wc | nfl | mlb | nba | nhl | tennis
   const [week, setWeek] = useState(18);
   const [year, setYear] = useState(2024);
   // Date-based sports (MLB/NBA/NHL) use a date string YYYY-MM-DD instead of week/year
@@ -369,13 +335,16 @@ function HomeContent() {
     setProfileSport(s);
     setMyTeams([]); // clear team filter - different teams per sport
     setGameStatus("all");
+    if (s === "wc") setSelectedDate((d) => clampWcDate(d)); // jump into the tournament window
     try { localStorage.setItem("nb_sport", s); } catch (e) {}
   };
   useEffect(() => {
+    let s = "wc";
     try {
       const saved = localStorage.getItem("nb_sport");
-      if (VALID_SPORTS.includes(saved)) { setSportInternal(saved); setProfileSport(saved); }
+      if (VALID_SPORTS.includes(saved)) { s = saved; setSportInternal(saved); setProfileSport(saved); }
     } catch (e) {}
+    if (s === "wc") setSelectedDate((d) => clampWcDate(d));
   }, []);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
@@ -441,7 +410,6 @@ function HomeContent() {
   const [friendsFeed, setFriendsFeed] = useState([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState([]);
-  const [wcDiary, setWcDiary] = useState([]); // World Cup match/player ratings for the diary
 
   // Direct REST helper with JWT auto-refresh
   const sbFetch = async (path, options = {}, retried = false) => {
@@ -1107,6 +1075,10 @@ function HomeContent() {
   const gh = (gameId, gameSport) => gameHref(gameId, gameSport || sport);
 
   // Is this game in the currently-selected scope (NFL week/season, or a date)?
+  // Sports with favorite-team filters / rosters (NFL/MLB/NBA/NHL). Tennis & World
+  // Cup are team-less for the purpose of the team chips and the Players browser.
+  const hasTeams = !!SPORTS.find((s) => s.id === sport)?.team;
+
   const inCurrentScope = (x) => sport === "nfl"
     ? (x.sport === "nfl" && x.week === week && x.season === year)
     : (x.sport === sport && x.gameDate === selectedDate);
@@ -1144,30 +1116,6 @@ function HomeContent() {
   const sportLogs = logs.filter(l => (l.sport || "nfl") === profileSport);
   const sportRatedLogs = sportLogs.filter(l => l.rating > 0);
 
-  // Load the user's World Cup ratings (match + player) for the diary/profile.
-  useEffect(() => {
-    if (!user || (tab !== "diary" && tab !== "profile")) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [mr, pr, matchesRes] = await Promise.all([
-          sbJson(await sbFetch(`wc_match_ratings?user_id=eq.${user.id}&select=fixture_id,rating,hype,review,updated_at`)),
-          sbJson(await sbFetch(`wc_player_ratings?user_id=eq.${user.id}&select=fixture_id`)),
-          fetch("/api/wc-matches").then((r) => r.json()).catch(() => ({ matches: [] })),
-        ]);
-        if (cancelled) return;
-        const meta = {}; (matchesRes.matches || []).forEach((m) => { meta[String(m.id)] = m; });
-        const pcount = {}; pr.forEach((r) => { const k = String(r.fixture_id); pcount[k] = (pcount[k] || 0) + 1; });
-        const seen = new Set();
-        const entries = [];
-        mr.forEach((r) => { const fid = String(r.fixture_id); seen.add(fid); if (meta[fid]) entries.push({ fixture_id: fid, rating: r.rating, hype: r.hype, review: r.review, players: pcount[fid] || 0, match: meta[fid] }); });
-        Object.keys(pcount).forEach((fid) => { if (!seen.has(fid) && meta[fid]) entries.push({ fixture_id: fid, rating: null, hype: null, review: null, players: pcount[fid], match: meta[fid] }); });
-        entries.sort((a, b) => (b.match.kickoff || 0) - (a.match.kickoff || 0));
-        setWcDiary(entries);
-      } catch (e) { /* table may not exist yet */ }
-    })();
-    return () => { cancelled = true; };
-  }, [user, tab]);
   const gl = (id) => logs.find((l) => l.gameId === id);
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
@@ -1370,7 +1318,7 @@ function HomeContent() {
         )}
 
         {/* Players banner — Games tab (team sports only; tennis has no roster) */}
-        {tab === "games" && sport !== "tennis" && (
+        {tab === "games" && hasTeams && (
           <button onClick={() => setTab("players")} className="block w-full mb-3 text-left">
             <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
               <div className="text-2xl">🧢</div>
@@ -1400,7 +1348,7 @@ function HomeContent() {
         )}
 
         {/* Daily Recap banner — team date-sports link to yesterday's recap (no tennis recap) */}
-        {tab === "games" && isDateSport(sport) && sport !== "tennis" && (() => {
+        {tab === "games" && isDateSport(sport) && hasTeams && (() => {
           const d = new Date();
           d.setDate(d.getDate() - 1);
           const yday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1497,7 +1445,7 @@ function HomeContent() {
                     className={`px-3 py-1 rounded-full text-xs font-semibold ${sort === s.id ? "bg-red-600/10 text-red-400" : "text-zinc-500"}`}>{s.l}</button>
                 ))}
               </div>
-              {sport !== "tennis" && (
+              {hasTeams && (
                 <button onClick={() => setShowTeams(!showTeams)}
                   className={`px-3 py-1 rounded-full text-[10px] font-bold border ${myTeams.length ? "bg-red-600/10 text-red-400 border-red-600/30" : "text-zinc-500 border-zinc-800"}`}>
                   {myTeams.length ? `My Teams (${myTeams.length})` : "My Teams"}
@@ -1521,7 +1469,7 @@ function HomeContent() {
               </div>
             )}
 
-            {showTeams && sport !== "tennis" && (
+            {showTeams && hasTeams && (
               <div className="rounded-xl p-3 bg-zinc-900 border border-zinc-800 mb-3">
                 <div className="flex justify-between mb-2">
                   <span className="text-xs font-semibold text-white">Follow Teams</span>
@@ -1920,10 +1868,6 @@ function HomeContent() {
                 <button onClick={() => setProfileSport("wc")} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "wc" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏆<span className="hidden sm:inline ml-1">Cup</span></button>
               </div>
             </div>
-            {profileSport === "wc" ? (
-              <WcDiary entries={wcDiary} />
-            ) : (
-            <>
             {sportRatedLogs.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-5xl mb-3">📓</div>
@@ -2019,8 +1963,6 @@ function HomeContent() {
                 </Link>
               );
             })}
-            </>
-            )}
           </div>
         )}
 
@@ -2108,7 +2050,7 @@ function HomeContent() {
                   </button>
                 </div>
                 <button onClick={() => { setProfileSport("wc"); setTab("diary"); }} className="w-full mt-2 py-2 rounded-xl bg-gradient-to-r from-red-950/60 to-zinc-950 border border-red-900/40 text-zinc-300 text-xs font-semibold hover:border-red-700/60 transition-all text-center">
-                  🏆 World Cup ratings{wcDiary.length ? ` · ${wcDiary.length}` : ""} →
+                  🏆 World Cup ratings{logs.filter((l) => l.sport === "wc" && l.rating > 0).length ? ` · ${logs.filter((l) => l.sport === "wc" && l.rating > 0).length}` : ""} →
                 </button>
                 <Link href="/about" className="block w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all text-center">ℹ️ How It Works</Link>
                 <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all">Sign Out</button>
