@@ -32,7 +32,7 @@ function shuffle(arr) {
 export default function LeagueRoom() {
   const { id } = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const [league, setLeague] = useState(null);
   const [members, setMembers] = useState([]);
@@ -67,6 +67,20 @@ export default function LeagueRoom() {
   }, [id]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Self-heal a missing/"Player" name on my own member row from my profile.
+  useEffect(() => {
+    if (!user || !members.length) return;
+    const me = members.find((m) => m.user_id === user.id);
+    if (!me) return;
+    const myName = profile?.display_name || profile?.handle || user.email?.split("@")[0];
+    if (myName && (!me.display_name || me.display_name === "Player") && me.display_name !== myName) {
+      sbFetch(`wc_members?id=eq.${me.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ display_name: myName, handle: me.handle || profile?.handle || myName }),
+      }).then(loadAll).catch(() => {});
+    }
+  }, [members, user, profile, loadAll]);
 
   // Load the 48 nations once.
   useEffect(() => { fetchTeams().then(setTeams).catch(() => {}); }, []);

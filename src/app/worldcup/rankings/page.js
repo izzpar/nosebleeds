@@ -13,6 +13,7 @@ export default function RankingsPage() {
   const router = useRouter();
 
   const [teams, setTeams] = useState([]);
+  const [teamsErr, setTeamsErr] = useState(false);
   const [order, setOrder] = useState([]);      // array of team ids, best→worst
   const [loaded, setLoaded] = useState(false);
   const [subTab, setSubTab] = useState("mine"); // 'mine' | 'board'
@@ -24,8 +25,16 @@ export default function RankingsPage() {
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
   const teamById = useCallback((id) => teams.find((t) => String(t.id) === String(id)), [teams]);
 
-  // Load the 48 nations + this user's saved ranking.
-  useEffect(() => { fetchTeams().then(setTeams).catch(() => {}); }, []);
+  // Load the 48 nations (with retry) + this user's saved ranking.
+  const loadTeams = useCallback(async () => {
+    setTeamsErr(false);
+    try {
+      let t = await fetchTeams();
+      if (!t || !t.length) { await new Promise((r) => setTimeout(r, 600)); t = await fetchTeams(); }
+      if (t && t.length) setTeams(t); else setTeamsErr(true);
+    } catch (e) { setTeamsErr(true); }
+  }, []);
+  useEffect(() => { loadTeams(); }, [loadTeams]);
   useEffect(() => {
     if (!user) { setLoaded(true); return; }
     sbFetch(`wc_rankings?user_id=eq.${user.id}&select=ranking`).then(async (res) => {
@@ -120,10 +129,13 @@ export default function RankingsPage() {
           </div>
         ) : subTab === "mine" ? (
           <>
-            <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-400">
+            <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-2 text-[12px] text-zinc-400">
               Rank every nation 1–48. Teams score performance points as they play, and you earn more
               for teams you ranked <span className="text-zinc-200">higher</span> when they do well. {locked && <span className="text-amber-400">Rankings are locked.</span>}
             </div>
+            <button onClick={() => setSubTab("board")} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4">
+              👥 Play with friends? Create a private mini-league on the <span className="text-zinc-200">Leaderboard</span> tab →
+            </button>
 
             {/* Your ranking */}
             <div className="flex items-center justify-between mb-2">
@@ -162,11 +174,23 @@ export default function RankingsPage() {
             </div>
 
             {/* Pool */}
+            {!locked && teams.length === 0 && (
+              <div className="text-center py-8">
+                {teamsErr ? (
+                  <>
+                    <p className="text-zinc-500 text-sm mb-3">Couldn&apos;t load the teams.</p>
+                    <button onClick={loadTeams} className="bg-red-600 text-white font-bold px-4 py-2 rounded-xl text-sm">Retry</button>
+                  </>
+                ) : (
+                  <p className="text-zinc-600 text-sm">Loading teams…</p>
+                )}
+              </div>
+            )}
             {!locked && pool.length > 0 && (
               <>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Tap to add ({pool.length})</h3>
-                  <button onClick={addAllRemaining} className="text-[12px] text-zinc-400 underline">Add all (A–Z)</button>
+                  <button onClick={addAllRemaining} className="text-[12px] text-zinc-400 underline">Add all</button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {pool.map((t) => (
