@@ -25,6 +25,12 @@ function fmtGameTime(iso) {
     + " · " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
+// American-odds formatting (+130 / -150).
+function fmtML(ml) {
+  if (ml == null || Number.isNaN(Number(ml))) return "";
+  return ml > 0 ? `+${ml}` : `${ml}`;
+}
+
 // Sport-aware term for when a game starts / a pick locks
 function startTerm(sport) {
   return sport === "mlb" ? "first pitch" : sport === "nba" ? "tip-off" : sport === "nhl" ? "puck drop" : "kickoff";
@@ -530,6 +536,7 @@ export default function PredictionsPage() {
                       <div className="flex gap-2">
                         {[g.away, g.home].map((t, i) => {
                           const selected = pick?.pick_type === "winner" && pick?.pick_value === t.abbr;
+                          const ml = g.moneylines?.[t.abbr];
                           return (
                             <button
                               key={i}
@@ -538,6 +545,7 @@ export default function PredictionsPage() {
                               className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition-all ${selected ? "bg-green-500/15 text-green-400 border-green-500/50" : "bg-zinc-950 text-zinc-400 border-transparent hover:border-zinc-700"}`}
                             >
                               {t.abbr}
+                              {ml != null && <span className="block text-[10px] font-semibold opacity-70 mt-0.5">ML {fmtML(ml)}</span>}
                             </button>
                           );
                         })}
@@ -564,6 +572,7 @@ export default function PredictionsPage() {
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition-all ${selected ? "bg-green-500/15 text-green-400 border-green-500/50" : "bg-zinc-950 text-zinc-400 border-transparent hover:border-zinc-700"}`}
                               >
                                 {t.abbr} {lineLabel}
+                                <span className="block text-[10px] font-semibold opacity-70 mt-0.5">-110</span>
                               </button>
                             );
                           })}
