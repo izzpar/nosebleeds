@@ -157,10 +157,15 @@ export default function WorldCupHub() {
                     className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700"
                   >
                     <div>
-                      <div className="font-bold">{l.name}</div>
+                      <div className="font-bold">
+                        {l.name}{" "}
+                        <span className="text-[10px] font-normal text-zinc-500">
+                          {l.format === "player" ? "⚽" : "🏳️"} {l.draft_type === "auction" ? "Auction" : "Snake"}
+                        </span>
+                      </div>
                       <div className="text-[11px] text-zinc-500">
                         Code {l.invite_code} ·{" "}
-                        {l.status === "lobby" ? "Pre-draft" : l.status === "drafting" ? "Drafting" : "Drafted"}
+                        {l.status === "lobby" ? "Lobby" : l.status === "drafting" ? "Live" : "Done"}
                       </div>
                     </div>
                     <span className="text-zinc-600">›</span>
