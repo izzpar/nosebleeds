@@ -67,10 +67,27 @@ export async function fetchSeasonTeams(seasonId) {
 }
 
 // A national team's squad for a season, with each player's position.
+// Tries the season-specific squad first, falls back to the team's current squad.
 export async function fetchSquad(teamId, seasonId) {
-  return smFetch(`football/squads/teams/${teamId}/seasons/${seasonId}`, {
+  let r = await smFetch(`football/squads/seasons/${seasonId}/teams/${teamId}`, {
     searchParams: { include: "player.position" },
   });
+  if (!r.ok || r.json?.message || !(r.json?.data || []).length) {
+    r = await smFetch(`football/squads/teams/${teamId}`, {
+      searchParams: { include: "player.position" },
+    });
+  }
+  return r;
+}
+
+// The season's team list includes knockout-bracket placeholders ("Winner
+// Quarter-final 1", "Runner-up Group A", …). Keep only the real nations.
+const PLACEHOLDER_NAME = /winner|runner[- ]?up|loser|group [a-l]\b|quarter|semi|^final$|third|play-?off|\btbd\b|to be|placeholder/i;
+export function isRealNation(t) {
+  const img = t.image || t.image_path || "";
+  if (/placeholder/i.test(img)) return false;
+  if (PLACEHOLDER_NAME.test(t.name || "")) return false;
+  return true;
 }
 
 // Fixtures for a season (results + status), for scoring sweeps.

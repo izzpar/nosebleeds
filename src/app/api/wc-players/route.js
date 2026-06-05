@@ -6,7 +6,7 @@
 // Cached at the edge (squads change rarely). Hit /api/wc-players?debug=1 to see
 // a raw squad sample for verifying the response shape.
 
-import { hasKey, fetchSeasonTeams, fetchSquad, WC_SEASON, smFetch } from "@/lib/sportmonks";
+import { hasKey, fetchSeasonTeams, fetchSquad, isRealNation, WC_SEASON } from "@/lib/sportmonks";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,19 +31,31 @@ export async function GET(request) {
   }
   const debug = new URL(request.url).searchParams.get("debug");
 
-  // 1) The 48 nations in the 2026 season.
+  // 1) The 48 nations in the 2026 season (filtering out bracket placeholders).
   let teams = [];
+  let rawCount = 0;
   try {
     const { ok, json } = await fetchSeasonTeams(SEASON);
     if (!ok) return Response.json({ ok: false, error: json?.message || "could not load teams" });
-    teams = (json.data || []).map((t) => ({ id: t.id, name: t.name, image: t.image_path }));
+    rawCount = (json.data || []).length;
+    teams = (json.data || [])
+      .map((t) => ({ id: t.id, name: t.name, image: t.image_path }))
+      .filter(isRealNation);
   } catch (e) {
     return Response.json({ ok: false, error: String(e) });
   }
 
   if (debug && teams[0]) {
     const sample = await fetchSquad(teams[0].id, SEASON);
-    return Response.json({ ok: true, teamCount: teams.length, sampleTeam: teams[0], rawSquadSample: sample.json });
+    return Response.json({
+      ok: true,
+      rawTeamCount: rawCount,
+      realTeamCount: teams.length,
+      sampleTeam: teams[0],
+      sampleNations: teams.slice(0, 8).map((t) => t.name),
+      squadSize: (sample.json?.data || []).length,
+      rawSquadSample: sample.json,
+    });
   }
 
   // 2) Each squad, flattened to a browser-safe player list.
