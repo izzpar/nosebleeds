@@ -140,6 +140,7 @@ export default function WorldCupHub() {
           <p className="text-[12px] text-red-100/80 mt-1 mb-4">Draft · auction · salary cap · power ranking — free, with friends.</p>
           <KickoffCountdown variant="hero" />
           <p className="text-[10px] text-red-200/60 mt-2">until kickoff — lock your teams before June 11</p>
+          <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-white/90 underline mt-2">ℹ️ How the games &amp; scoring work</button>
         </div>
 
         {!user ? (
