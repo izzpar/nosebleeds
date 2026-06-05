@@ -16,6 +16,7 @@ import {
 } from "@/lib/worldcup";
 import AuctionRoom from "./AuctionRoom";
 import WaiverView from "./WaiverView";
+import Confetti from "@/components/Confetti";
 
 const POLL_MS = 2500;
 
@@ -413,6 +414,7 @@ export default function LeagueRoom() {
           {toast}
         </div>
       )}
+      <Confetti show={draftComplete && league.status === "done"} />
       <Nav />
     </div>
   );

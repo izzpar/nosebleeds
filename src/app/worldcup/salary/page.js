@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
 import GroupScope from "@/components/WcGroups";
+import Confetti from "@/components/Confetti";
 import { RANKING_LOCK_ISO } from "@/lib/worldcup";
 
 const BUDGET = 100;
@@ -40,6 +41,7 @@ export default function SalaryCapPage() {
   const [q, setQ] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [celebrate, setCelebrate] = useState(0);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
 
   // The round you're currently editing = the next one whose lock hasn't passed.
@@ -164,6 +166,7 @@ export default function SalaryCapPage() {
           squad, starters, bench, captain, updated_at: new Date().toISOString(),
         }),
       });
+      if (res.ok) setCelebrate((c) => c + 1);
       flash(res.ok ? `Saved for ${editRound.label} ✓` : "Couldn't save");
     } catch (e) { flash("Couldn't save"); } finally { setSaving(false); }
   };
@@ -322,6 +325,7 @@ export default function SalaryCapPage() {
       </div>
 
       {toast && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-50">{toast}</div>}
+      <Confetti show={celebrate} />
       <Nav />
     </div>
   );
