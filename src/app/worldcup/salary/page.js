@@ -410,14 +410,24 @@ function SalaryCapInner() {
                     ≈ <span className="text-zinc-300">€{avgPerSlot}m</span> per player for your {slotsLeft} remaining {slotsLeft === 1 ? "slot" : "slots"}
                   </p>
                 )}
-                <div className="flex gap-2 mb-4">
-                  <button onClick={() => setSubTab("board")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+                <div className="flex gap-2 mb-3">
+                  <button onClick={() => router.push("/worldcup/salary/global")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
                     🏆 Leaderboard →
                   </button>
-                  <button onClick={() => router.push("/worldcup/how")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
-                    ℹ️ Scoring &amp; transfers →
+                  <button onClick={() => setSubTab("leagues")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+                    👥 Your leagues →
                   </button>
                 </div>
+
+                {/* Scoring reminder */}
+                <details className="bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4 text-[12px]">
+                  <summary className="cursor-pointer text-zinc-400 font-semibold">ℹ️ How points work</summary>
+                  <div className="text-zinc-400 mt-2 space-y-1 leading-relaxed">
+                    <p>Per player, per match: <b>60+ min +2</b> (else +1) · <b>Goal</b> GK/DEF +6, MID +5, FWD +4 · Assist +3 · Shot on target +0.5 · Tackle +0.25 · Clean sheet (60+ min) GK/DEF +4, MID +1 · Save +1 per 3.</p>
+                    <p>Minus: goals conceded (GK/DEF) −1 per 2 · yellow −1 · red −3 · own goal −2.</p>
+                    <p><b>Captain</b> scores double. <b>Auto-subs:</b> if a starter doesn&apos;t play, your first eligible bench sub takes their place. Your team carries over each round; edit until each round&apos;s kickoff.</p>
+                  </div>
+                </details>
 
                 {/* Pitch — starting XI in formation */}
                 <div className="rounded-2xl p-3 mb-2 bg-gradient-to-b from-emerald-700/30 via-emerald-800/20 to-emerald-950/30 border border-emerald-900/40">
