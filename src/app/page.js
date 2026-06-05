@@ -222,6 +222,54 @@ function Bdg({ r, size = "md" }) {
   );
 }
 
+// World Cup diary feed — the user's match + player ratings, alongside the other sports.
+function WcDiary({ entries }) {
+  if (!entries || entries.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <div className="text-5xl mb-3">🏆</div>
+        <div className="text-base font-bold text-white">No World Cup ratings yet</div>
+        <div className="text-sm text-zinc-500 mt-1">Rate matches, score players, and hype upcoming games</div>
+        <Link href="/worldcup/matches" className="inline-block mt-4 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold">Go to Match Ratings →</Link>
+      </div>
+    );
+  }
+  return (
+    <div>
+      {entries.map((e) => {
+        const m = e.match;
+        const showScore = m.status !== "upcoming";
+        return (
+          <Link key={e.fixture_id} href={`/worldcup/match/${e.fixture_id}`} className="block">
+            <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 cursor-pointer hover:-translate-y-0.5 transition-transform">
+              {e.rating != null ? (
+                <Bdg r={Number(e.rating)} />
+              ) : e.hype != null ? (
+                <div className="w-9 h-9 rounded-xl flex flex-col items-center justify-center bg-zinc-800 shrink-0 leading-none">
+                  <span className="text-[10px]">🔥</span><span className="text-[11px] font-bold text-white">{Number(e.hype).toFixed(0)}</span>
+                </div>
+              ) : (
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-zinc-800 shrink-0 text-sm">⚽</div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-white truncate">
+                  {m.home?.name} {showScore ? <span className="tabular-nums">{m.score?.home ?? 0}–{m.score?.away ?? 0}</span> : "v"} {m.away?.name}
+                </div>
+                <div className="text-[10px] text-zinc-600">{m.round || "World Cup"}{m.status === "upcoming" ? " · upcoming" : m.status === "live" ? " · live" : ""}</div>
+                <div className="flex gap-2 mt-1 flex-wrap">
+                  {e.hype != null && e.rating != null && <span className="text-[10px] text-zinc-500">🔥 {Number(e.hype).toFixed(0)}</span>}
+                  {e.players > 0 && <span className="text-[10px] text-emerald-400">★ {e.players} player{e.players === 1 ? "" : "s"} rated</span>}
+                </div>
+                {e.review && <div className="text-[11px] text-zinc-400 italic mt-1">&quot;{e.review}&quot;</div>}
+              </div>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
 async function fetchNflWeek(year, week) {
   try {
     const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.nfl}/scoreboard?seasontype=2&week=${week}&dates=${year}`);
@@ -393,6 +441,7 @@ function HomeContent() {
   const [friendsFeed, setFriendsFeed] = useState([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState([]);
+  const [wcDiary, setWcDiary] = useState([]); // World Cup match/player ratings for the diary
 
   // Direct REST helper with JWT auto-refresh
   const sbFetch = async (path, options = {}, retried = false) => {
@@ -481,7 +530,9 @@ function HomeContent() {
     if (tab === "profile" && !authLoading && user === null) {
       router.push("/login");
     }
-  }, [tab, user, authLoading]);
+    // The profile stats are per-sport; "wc" only exists on the diary, so reset it here.
+    if (tab === "profile" && profileSport === "wc") setProfileSport("nfl");
+  }, [tab, user, authLoading, profileSport]);
 
   // Load the user's predictions for the profile picks section
   useEffect(() => {
@@ -1092,6 +1143,31 @@ function HomeContent() {
   // Sport-filtered logs for the Profile tab (default 'nfl' for rows without sport set)
   const sportLogs = logs.filter(l => (l.sport || "nfl") === profileSport);
   const sportRatedLogs = sportLogs.filter(l => l.rating > 0);
+
+  // Load the user's World Cup ratings (match + player) for the diary/profile.
+  useEffect(() => {
+    if (!user || (tab !== "diary" && tab !== "profile")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [mr, pr, matchesRes] = await Promise.all([
+          sbJson(await sbFetch(`wc_match_ratings?user_id=eq.${user.id}&select=fixture_id,rating,hype,review,updated_at`)),
+          sbJson(await sbFetch(`wc_player_ratings?user_id=eq.${user.id}&select=fixture_id`)),
+          fetch("/api/wc-matches").then((r) => r.json()).catch(() => ({ matches: [] })),
+        ]);
+        if (cancelled) return;
+        const meta = {}; (matchesRes.matches || []).forEach((m) => { meta[String(m.id)] = m; });
+        const pcount = {}; pr.forEach((r) => { const k = String(r.fixture_id); pcount[k] = (pcount[k] || 0) + 1; });
+        const seen = new Set();
+        const entries = [];
+        mr.forEach((r) => { const fid = String(r.fixture_id); seen.add(fid); if (meta[fid]) entries.push({ fixture_id: fid, rating: r.rating, hype: r.hype, review: r.review, players: pcount[fid] || 0, match: meta[fid] }); });
+        Object.keys(pcount).forEach((fid) => { if (!seen.has(fid) && meta[fid]) entries.push({ fixture_id: fid, rating: null, hype: null, review: null, players: pcount[fid], match: meta[fid] }); });
+        entries.sort((a, b) => (b.match.kickoff || 0) - (a.match.kickoff || 0));
+        setWcDiary(entries);
+      } catch (e) { /* table may not exist yet */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user, tab]);
   const gl = (id) => logs.find((l) => l.gameId === id);
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
@@ -1841,8 +1917,13 @@ function HomeContent() {
                 {SPORTS.map((s) => (
                   <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
                 ))}
+                <button onClick={() => setProfileSport("wc")} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === "wc" ? "bg-red-600 text-white" : "text-zinc-500"}`}>🏆<span className="hidden sm:inline ml-1">Cup</span></button>
               </div>
             </div>
+            {profileSport === "wc" ? (
+              <WcDiary entries={wcDiary} />
+            ) : (
+            <>
             {sportRatedLogs.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-5xl mb-3">📓</div>
@@ -1938,6 +2019,8 @@ function HomeContent() {
                 </Link>
               );
             })}
+            </>
+            )}
           </div>
         )}
 
@@ -2024,6 +2107,9 @@ function HomeContent() {
                     ✏️ Edit Profile
                   </button>
                 </div>
+                <button onClick={() => { setProfileSport("wc"); setTab("diary"); }} className="w-full mt-2 py-2 rounded-xl bg-gradient-to-r from-red-950/60 to-zinc-950 border border-red-900/40 text-zinc-300 text-xs font-semibold hover:border-red-700/60 transition-all text-center">
+                  🏆 World Cup ratings{wcDiary.length ? ` · ${wcDiary.length}` : ""} →
+                </button>
                 <Link href="/about" className="block w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all text-center">ℹ️ How It Works</Link>
                 <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all">Sign Out</button>
               </div>
