@@ -3,6 +3,7 @@ import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
+import WcBackdrop from "@/components/WcBackdrop";
 import { useAuth } from "@/components/AuthProvider";
 import { emotesFor, nameColor } from "@/lib/drops";
 import { makeRatingCard } from "@/lib/shareCard";
@@ -1471,8 +1472,9 @@ export default function GamePage({ params }) {
 
   return (
     <div className="min-h-screen pb-24">
+      {sport === "wc" && <WcBackdrop />}
       {/* Header */}
-      <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+      <div className={`sticky top-0 z-50 backdrop-blur-xl border-b border-zinc-800 ${sport === "wc" ? "bg-[#09090b]/70" : "bg-[#09090b]/90"}`}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
           <h1 className="text-sm font-bold text-white flex-1 text-center">{a.abbr} vs {h.abbr}{sport === "nfl" ? ` · Wk ${g.week}` : ""}</h1>

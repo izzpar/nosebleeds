@@ -7,6 +7,7 @@ import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import Confetti from "@/components/Confetti";
 import { RANKING_LOCK_ISO } from "@/lib/worldcup";
 import { fetchMyGroups, createGroup } from "@/lib/groups";
+import WcBackdrop from "@/components/WcBackdrop";
 
 const BUDGET = 100;
 const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };       // 15 total
@@ -259,7 +260,8 @@ export default function SalaryCapPage() {
 
   return (
     <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+      <WcBackdrop />
+      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
           <span className="text-xl">💰</span>

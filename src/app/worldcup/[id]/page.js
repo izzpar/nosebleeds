@@ -17,6 +17,7 @@ import {
 import AuctionRoom from "./AuctionRoom";
 import WaiverView from "./WaiverView";
 import Confetti from "@/components/Confetti";
+import WcBackdrop from "@/components/WcBackdrop";
 import { DEFAULT_PLAYER_SCORING, pointsFromComponents, isPlayerScoring } from "@/lib/playerScoring";
 
 const POLL_MS = 2500;
@@ -392,7 +393,8 @@ export default function LeagueRoom() {
 
   return (
     <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+      <WcBackdrop />
+      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
           <span className="text-xl">🏆</span>
@@ -551,6 +553,7 @@ export default function LeagueRoom() {
 function Shell({ children }) {
   return (
     <div className="min-h-screen pb-24">
+      <WcBackdrop />
       <div className="max-w-2xl mx-auto px-4 pt-6">{children}</div>
       <Nav />
     </div>

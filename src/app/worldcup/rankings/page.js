@@ -7,6 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import { fetchTeams, fetchResults, rankingPoints, rankingsLocked, nationStrength, WC_TEAMS_FALLBACK } from "@/lib/worldcup";
 import { fetchMyGroups, createGroup } from "@/lib/groups";
+import WcBackdrop from "@/components/WcBackdrop";
 
 const GLOBAL = { id: null, name: "🌍 Global", max_entries: 1, isGlobal: true };
 
@@ -121,7 +122,8 @@ export default function RankingsPage() {
 
   return (
     <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+      <WcBackdrop />
+      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
           <span className="text-xl">🔢</span>

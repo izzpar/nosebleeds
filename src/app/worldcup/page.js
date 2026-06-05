@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import KickoffCountdown from "@/components/KickoffCountdown";
+import WcBackdrop from "@/components/WcBackdrop";
 
 function makeCode() {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no easily-confused chars
@@ -152,7 +153,8 @@ export default function WorldCupHub() {
 
   return (
     <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
+      <WcBackdrop />
+      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <span className="text-xl">🏆</span>
           <div>
