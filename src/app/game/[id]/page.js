@@ -14,8 +14,9 @@ const SPORT_PATHS = {
   mlb: "baseball/mlb",
   nba: "basketball/nba",
   nhl: "hockey/nhl",
+  wc: "soccer/fifa.world",
 };
-const ALL_SPORTS = ["nfl", "mlb", "nba", "nhl"];
+const ALL_SPORTS = ["nfl", "mlb", "nba", "nhl", "wc"];
 // Period count that signals overtime/extras (MLB innings, NBA quarters, NHL periods)
 const OT_THRESHOLD = { mlb: 9, nba: 4, nhl: 3, nfl: 4 };
 const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy
@@ -408,6 +409,28 @@ async function fetchGameForSport(id, sport) {
     addCandidates("away", aw.team?.abbreviation || "", "#" + (aw.team?.color || "333"));
     addCandidates("home", ho.team?.abbreviation || "", "#" + (ho.team?.color || "333"));
 
+    // Soccer (World Cup) has no US-style boxscore — build the MVP candidates and a
+    // rateable lineup from the rosters instead.
+    const lineup = [];
+    if (sport === "wc") {
+      (d.rosters || []).forEach((r) => {
+        const tAbbr = r.team?.abbreviation || "";
+        const tColor = "#" + (r.team?.color || "333");
+        const side = r.homeAway === "home" ? "home" : "away";
+        (r.roster || []).forEach((entry) => {
+          const a = entry.athlete || {};
+          const name = a.displayName; if (!name) return;
+          const pos = entry.position?.abbreviation || a.position?.abbreviation || "";
+          lineup.push({ id: String(a.id || name), name, team: tAbbr, teamColor: tColor, position: pos, side, starter: !!entry.starter });
+          if (!seenNames.has(name)) {
+            seenNames.add(name);
+            mvpCandidates.push({ name, team: tAbbr, teamColor: tColor, position: pos, category: entry.starter ? "Starter" : "Sub", statLine: "" });
+          }
+        });
+      });
+      lineup.sort((a, b) => (b.starter - a.starter));
+    }
+
     // Probable starting pitchers (MLB) — from header competition competitors
     const probablePitchers = { away: null, home: null };
     if (sport === "mlb") {
@@ -436,12 +459,15 @@ async function fetchGameForSport(id, sport) {
       });
     }
 
-    const st = c.status?.type?.name || "STATUS_FINAL";
+    const cState = c.status?.type?.state; // pre|in|post — reliable across sports (incl. soccer)
+    const rawName = c.status?.type?.name || "STATUS_FINAL";
+    const st = cState === "in" ? "STATUS_IN_PROGRESS" : cState === "post" ? "STATUS_FINAL" : cState === "pre" ? "STATUS_SCHEDULED" : rawName;
     const statusDetail = c.status?.type?.shortDetail || c.status?.type?.detail || "";
     return {
       id, sport, status: st, statusDetail,
-      isPre: st === "STATUS_SCHEDULED", isFinal: st === "STATUS_FINAL",
-      isLive: st === "STATUS_IN_PROGRESS" || st === "STATUS_HALFTIME" || st === "STATUS_END_PERIOD" || st === "STATUS_END_OF_INNING" || st === "STATUS_DELAYED" || st === "STATUS_RAIN_DELAY",
+      isPre: cState ? cState === "pre" : st === "STATUS_SCHEDULED",
+      isFinal: cState ? cState === "post" : st === "STATUS_FINAL",
+      isLive: cState ? cState === "in" : (st === "STATUS_IN_PROGRESS" || st === "STATUS_HALFTIME" || st === "STATUS_END_PERIOD" || st === "STATUS_END_OF_INNING" || st === "STATUS_DELAYED" || st === "STATUS_RAIN_DELAY"),
       date: c.date, venue: d.gameInfo?.venue?.fullName || "",
       venueCity: d.gameInfo?.venue?.address?.city || "",
       venueState: d.gameInfo?.venue?.address?.state || "",
@@ -464,6 +490,7 @@ async function fetchGameForSport(id, sport) {
       },
       players,
       mvpCandidates,
+      lineup,
       teamStats,
       fullPlayerStats,
       injuries,
@@ -624,6 +651,86 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// World Cup per-player ratings — score every player who featured, 1–10. The
+// match rating itself uses the standard flow above; this is the extra section.
+function WcPlayerRatings({ gameId, lineup, home, away, user, profile, sbFetch, sbJson }) {
+  const [rows, setRows] = useState([]);
+  const [mine, setMine] = useState({});
+  const [open, setOpen] = useState(null);
+  const [toast, setToast] = useState("");
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 1600); };
+
+  const load = async () => {
+    const data = await sbJson(await sbFetch(`wc_player_ratings?fixture_id=eq.${gameId}&select=user_id,player_id,player_name,rating`));
+    setRows(data);
+    if (user) { const m = {}; data.filter((r) => r.user_id === user.id).forEach((r) => { m[String(r.player_id)] = Number(r.rating); }); setMine(m); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [gameId, user]);
+
+  // community average per player + Star Man
+  const byP = {};
+  rows.forEach((r) => { const k = String(r.player_id); (byP[k] = byP[k] || { sum: 0, n: 0 }); byP[k].sum += Number(r.rating); byP[k].n += 1; });
+  const avgOf = (id) => { const v = byP[String(id)]; return v ? v.sum / v.n : null; };
+  let motm = null;
+  Object.entries(byP).forEach(([k, v]) => { const a = v.sum / v.n; if (!motm || a > motm.avg) motm = { id: k, avg: a }; });
+
+  const rate = async (p, v) => {
+    if (!user) { flash("Sign in to rate"); return; }
+    setMine((m) => ({ ...m, [p.id]: v })); setOpen(null);
+    try {
+      await sbFetch("wc_player_ratings?on_conflict=user_id,fixture_id,player_id", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ user_id: user.id, fixture_id: String(gameId), player_id: String(p.id), player_name: p.name, team_id: p.team, rating: v, updated_at: new Date().toISOString() }),
+      });
+      load();
+    } catch (e) { flash("Couldn't save"); }
+  };
+
+  const ratedCount = Object.keys(mine).length;
+  return (
+    <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-3">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-bold text-white">⭐ Rate the players</h3>
+        {ratedCount > 0 && <span className="text-[10px] text-zinc-500">you rated {ratedCount}</span>}
+      </div>
+      <p className="text-[11px] text-zinc-500 mb-3">Score every player who featured, 1–10. 👑 = crowd&apos;s top-rated.</p>
+      {[["home", home], ["away", away]].map(([sideKey, team]) => {
+        const ps = lineup.filter((p) => p.side === sideKey);
+        if (ps.length === 0) return null;
+        return (
+          <div key={sideKey} className="mb-3">
+            <div className="text-[10px] text-zinc-500 font-bold mb-1.5 flex items-center gap-1.5">{team?.logo && <img src={team.logo} alt="" className="w-3.5 h-3.5 object-contain" />}{team?.name || team?.abbr}</div>
+            <div className="space-y-1">
+              {ps.map((p) => {
+                const my = mine[p.id]; const ca = avgOf(p.id); const isMotm = motm && motm.id === String(p.id);
+                const isOpen = open === p.id;
+                return (
+                  <div key={p.id} className={`rounded-lg border ${isOpen ? "border-zinc-600 bg-zinc-950" : "border-zinc-800 bg-zinc-950/50"}`}>
+                    <button onClick={() => setOpen(isOpen ? null : p.id)} className="w-full flex items-center gap-2 px-2.5 py-2 text-left">
+                      {p.position && <span className="text-[10px] font-bold text-zinc-500 w-8">{p.position}</span>}
+                      <span className="text-sm flex-1 truncate text-white">{isMotm && "👑 "}{p.name}</span>
+                      {ca != null && <span className="text-[10px] text-zinc-500">avg <span className="font-bold" style={{ color: rc(ca) }}>{ca.toFixed(1)}</span> · {byP[String(p.id)].n}</span>}
+                      <span className="w-7 h-7 rounded-md flex items-center justify-center text-[12px] font-bold shrink-0" style={{ backgroundColor: my ? rc(my) : "#27272a", color: my ? "#fff" : "#71717a" }}>{my || "–"}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="px-2.5 pb-2 grid grid-cols-10 gap-1">
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((v) => (
+                          <button key={v} onClick={() => rate(p, v)} className={`aspect-square rounded text-[11px] font-bold ${my === v ? "ring-2 ring-white/50 text-white" : "text-white/80"}`} style={{ backgroundColor: (my || 0) >= v ? rc(my) : "#3f3f46" }}>{v}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {toast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-[150]">{toast}</div>}
     </div>
   );
 }
@@ -1121,7 +1228,7 @@ export default function GamePage({ params }) {
   // Hot take — your rating is far from the community consensus
   const allAvg = allCommunityRatings.length > 0 ? allCommunityRatings.reduce((s, r) => s + parseFloat(r.rating), 0) / allCommunityRatings.length : null;
   const isHotTake = logged && allCommunityRatings.length >= 3 && allAvg != null && Math.abs(rating - allAvg) >= 3;
-  const leagueLabel = { nfl: "NFL", mlb: "MLB", nba: "NBA", nhl: "NHL" }[sport] || "";
+  const leagueLabel = { nfl: "NFL", mlb: "MLB", nba: "NBA", nhl: "NHL", wc: "World Cup" }[sport] || "";
   const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(sport === "nfl" ? `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL` : `${a.name} vs ${h.name} ${g.season} highlights ${leagueLabel}`)}`;
   const steps = ["Rating", "Details", "MVP", "Extras"];
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/game/${id}` : "";
@@ -2312,6 +2419,11 @@ export default function GamePage({ params }) {
               </div>
             )}
           </div>
+        )}
+
+        {/* World Cup: rate every player who featured (extra, below the match rating) */}
+        {sport === "wc" && !g.isPre && (g.lineup?.length > 0) && (
+          <WcPlayerRatings gameId={id} lineup={g.lineup} home={g.home} away={g.away} user={user} profile={profile} sbFetch={sbFetch} sbJson={sbJson} />
         )}
 
         {/* Save status indicator */}

@@ -58,9 +58,8 @@ export default function HowItWorksPage() {
         </Card>
 
         <Card icon="⭐" title="World Cup Match Ratings">
-          <p>Before kickoff, rate the <b>hype</b> 🔥. Once a game&apos;s underway, rate the <b>match 1–10</b>, drop a quick review, and score <b>every player who played</b> out of 10 — the crowd&apos;s highest-rated player is crowned 👑 <b>Star Man</b>.</p>
-          <p>See community averages on the match, each player, and the hype meter; the <b>Mine</b> tab keeps your rating history.</p>
-          <p className="text-zinc-500">No signup needed to browse — just your take on the football.</p>
+          <p>Rate World Cup games right in the main <b>Games</b> feed, exactly like NFL, NBA and the rest — give the match a score <b>1–10</b>, add a review, and pick your <b>MVP</b> &amp; biggest letdown.</p>
+          <p>Soccer matches also add a <b>Rate the players</b> section: score <b>every player who featured</b> out of 10, with the crowd&apos;s top performer crowned 👑. It all lands in your diary alongside the other sports.</p>
         </Card>
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2 mt-5">Fantasy leagues (draft with friends)</h3>
