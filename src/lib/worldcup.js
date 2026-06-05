@@ -62,9 +62,7 @@ function eventStageRank(event, leagueStageName) {
 }
 
 // ---- Teams ---------------------------------------------------------------
-export async function fetchTeams() {
-  const r = await fetch(`${WC_BASE}/teams`);
-  const d = await r.json();
+function parseEspnTeams(d) {
   const list = d?.sports?.[0]?.leagues?.[0]?.teams || [];
   return list
     .map(({ team }) => ({
@@ -75,6 +73,18 @@ export async function fetchTeams() {
       logo: team.logos?.[0]?.href || null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function fetchTeams() {
+  // Prefer the server proxy (reliable even when the client's network blocks ESPN).
+  try {
+    const r = await fetch("/api/wc-teams");
+    const d = await r.json();
+    if (d?.teams?.length) return d.teams;
+  } catch (e) {}
+  // Fallback: hit ESPN directly.
+  const r = await fetch(`${WC_BASE}/teams`);
+  return parseEspnTeams(await r.json());
 }
 
 // ---- Results -------------------------------------------------------------

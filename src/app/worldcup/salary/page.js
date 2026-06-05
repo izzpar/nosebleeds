@@ -184,7 +184,7 @@ export default function SalaryCapPage() {
       const aff = (priceOf(b.id) <= remaining + 1e-9 ? 1 : 0) - (priceOf(a.id) <= remaining + 1e-9 ? 1 : 0);
       return aff || (b.proj || 0) - (a.proj || 0);
     })
-    .slice(0, 60);
+    .slice(0, 120);
 
   return (
     <div className="min-h-screen pb-24">

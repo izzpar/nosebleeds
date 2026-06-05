@@ -62,18 +62,22 @@ export default function WorldCupHub() {
     if (!user || !name.trim() || busy) return;
     setBusy(true);
     try {
-      const { rows } = await sbInsert("wc_leagues", {
-        name: name.trim(),
-        invite_code: makeCode(),
-        commissioner_id: user.id,
+      const base = { name: name.trim(), invite_code: makeCode(), commissioner_id: user.id };
+      const full = {
+        ...base,
         format,
         draft_type: draftType,
         budget: draftType === "auction" ? Math.max(20, Math.min(1000, Number(budget) || 200)) : 200,
         squad_size: format === "player" ? Math.max(11, Math.min(23, Number(squadSize) || 15)) : 15,
         max_managers: format === "team" ? (TEAM_SIZES.includes(Number(maxManagers)) ? Number(maxManagers) : 8) : Math.max(2, Math.min(20, Number(maxManagers) || 8)),
-      });
+      };
+      let { res, rows } = await sbInsert("wc_leagues", full);
+      if (!res.ok) {
+        // A column may be missing if a migration wasn't run — fall back to core fields.
+        ({ res, rows } = await sbInsert("wc_leagues", base));
+      }
       const league = rows[0];
-      if (!league) { flash("Couldn't create league"); return; }
+      if (!res.ok || !league) { flash(`Couldn't create league (error ${res.status})`); return; }
       await sbInsert("wc_members", {
         league_id: league.id,
         user_id: user.id,
