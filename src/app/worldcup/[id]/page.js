@@ -49,6 +49,8 @@ export default function LeagueRoom() {
   const [toast, setToast] = useState("");
   const [secondsLeft, setSecondsLeft] = useState(null);
   const lastPickCount = useRef(0);
+  const autoPicking = useRef(false);
+  const autoStarting = useRef(false);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
 
@@ -153,6 +155,47 @@ export default function LeagueRoom() {
     }
   }, [isCommish, draftComplete, league, id, loadAll]);
 
+  // Auto-draft: when an on-the-clock manager's snake-draft timer hits 0, the
+  // commissioner's client picks the best available for them (handles no-shows).
+  const autoPick = useCallback(async () => {
+    if (autoPicking.current) return;
+    const onClockPos2 = onClockPosition(picks.length, members.length);
+    const onClock = members.find((m) => m.draft_position === onClockPos2);
+    if (!onClock) return;
+    autoPicking.current = true;
+    try {
+      let body;
+      if (isPlayer) {
+        const avail = players
+          .filter((p) => !pickedPlayerIds.has(String(p.id)))
+          .sort((a, b) => (typeof b.proj === "number" ? b.proj : playerProjection(b)) - (typeof a.proj === "number" ? a.proj : playerProjection(a)));
+        const pl = avail[0]; if (!pl) return;
+        body = { league_id: id, user_id: onClock.user_id, player_id: String(pl.id), player_name: pl.name, position: pl.role, team_name: pl.team_name, pick_number: picks.length };
+      } else {
+        const avail = teams.filter((t) => !pickedTeamIds.has(String(t.id))).sort((a, b) => nationStrength(b.name) - nationStrength(a.name));
+        const tm = avail[0]; if (!tm) return;
+        body = { league_id: id, user_id: onClock.user_id, team_id: tm.id, team_abbr: tm.abbr, team_name: tm.name, pick_number: picks.length };
+      }
+      const { res } = await sbInsert("wc_picks", body);
+      if (res.ok || res.status === 409) await loadAll();
+    } catch (e) { /* retry next tick */ } finally { autoPicking.current = false; }
+  }, [id, isPlayer, players, teams, picks.length, members, pickedPlayerIds, pickedTeamIds, loadAll]);
+
+  useEffect(() => {
+    if (!isCommish || league?.draft_type === "auction" || league?.status !== "drafting" || draftComplete) return;
+    if (secondsLeft !== null && secondsLeft <= 0) autoPick();
+  }, [isCommish, league, draftComplete, secondsLeft, autoPick]);
+
+  // Commissioner auto-starts a scheduled draft once its time arrives.
+  useEffect(() => {
+    if (!isCommish || autoStarting.current || league?.status !== "lobby" || !league?.draft_at || members.length < 2) return;
+    if (Date.now() >= new Date(league.draft_at).getTime()) {
+      autoStarting.current = true;
+      startDraft().finally(() => { autoStarting.current = false; });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCommish, league, members.length]);
+
   // ---- actions ----
   // Persist a draft order: write each member's draft_position to its index.
   const patchMemberPositions = async (orderedList) => {
@@ -190,9 +233,14 @@ export default function LeagueRoom() {
     if (!isCommish || busy) return;
     setBusy(true);
     try {
-      await sbFetch(`wc_leagues?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      let res = await sbFetch(`wc_leagues?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      if (!res.ok && "draft_at" in patch) {
+        // draft_at column may not exist yet — save the rest.
+        const { draft_at, ...rest } = patch;
+        res = await sbFetch(`wc_leagues?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(rest) });
+      }
       await loadAll();
-      flash("Settings saved");
+      flash(res.ok ? "Settings saved" : "Couldn't save settings");
     } catch (e) {
       flash("Couldn't save settings");
     } finally {
@@ -328,7 +376,7 @@ export default function LeagueRoom() {
         </div>
         {/* sub-tabs */}
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {["draft", "standings", ...(isPlayer ? ["waivers"] : []), ...(isCommish ? ["settings"] : [])].map((t) => (
+          {["draft", "standings", ...(isPlayer && league.status === "done" ? ["waivers"] : []), ...(isCommish ? ["settings"] : [])].map((t) => (
             <button
               key={t}
               onClick={() => setSubTab(t)}
@@ -351,6 +399,7 @@ export default function LeagueRoom() {
               perManager={n >= 2 ? perManager : 0}
               format={format}
               draftType={league.draft_type || "snake"}
+              draftAt={league.draft_at}
               onStart={startDraft}
               busy={busy}
             />
@@ -453,11 +502,18 @@ function Shell({ children }) {
   );
 }
 
-function Lobby({ members, isCommish, perManager, format, draftType, onStart, busy }) {
+function Lobby({ members, isCommish, perManager, format, draftType, draftAt, onStart, busy }) {
   const noun = format === "player" ? "players" : "nations";
   const isAuction = draftType === "auction";
   return (
     <div>
+      {draftAt && (
+        <div className="bg-red-950/30 border border-red-900/40 rounded-xl px-4 py-3 mb-3 text-center">
+          <div className="text-[11px] uppercase tracking-wide text-red-300/70">Draft scheduled</div>
+          <div className="font-bold text-white">{new Date(draftAt).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+          <div className="text-[10px] text-zinc-400 mt-0.5">Auto-starts then · no-shows are auto-drafted</div>
+        </div>
+      )}
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
         <h3 className="font-bold mb-1">Pre-{isAuction ? "auction" : "draft"} lobby</h3>
         <p className="text-[12px] text-zinc-500 mb-3">
@@ -681,6 +737,13 @@ const SCORE_FIELDS = [
   ["champion", "Champion"],
 ];
 
+// ISO timestamp <-> <input type="datetime-local"> value (local time).
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso); const p = (x) => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // Editable player-scoring fields (dotted paths into the scoring object).
 const PLAYER_SCORE_FIELDS = [
   ["play_60", "Played 60+"], ["play_1", "Played <60"],
@@ -700,6 +763,7 @@ function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
     JSON.parse(JSON.stringify(isPlayerScoring(league.scoring) ? league.scoring : DEFAULT_PLAYER_SCORING))
   );
   const [secs, setSecs] = useState(league.pick_seconds || 90);
+  const [draftAt, setDraftAt] = useState(toLocalInput(league.draft_at));
   const num = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? x : 0; };
   const isLobby = league.status === "lobby";
 
@@ -711,10 +775,11 @@ function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
   });
 
   const save = () => {
-    if (isPlayer) { onSave({ scoring: pform, pick_seconds: Math.max(10, num(secs)) }); return; }
+    const draft_at = draftAt ? new Date(draftAt).toISOString() : null;
+    if (isPlayer) { onSave({ scoring: pform, pick_seconds: Math.max(10, num(secs)), draft_at }); return; }
     const scoring = {};
     for (const [k] of SCORE_FIELDS) scoring[k] = num(form[k]);
-    onSave({ scoring, pick_seconds: Math.max(10, num(secs)) });
+    onSave({ scoring, pick_seconds: Math.max(10, num(secs)), draft_at });
   };
 
   return (
@@ -760,17 +825,20 @@ function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
         )}
       </div>
 
-      {/* Pick timer */}
+      {/* Draft schedule + pick timer */}
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
-        <h3 className="font-bold mb-1">Time per pick</h3>
-        <p className="text-[12px] text-zinc-500 mb-3">On-the-clock countdown shown during the draft (seconds).</p>
+        <h3 className="font-bold mb-1">Draft schedule</h3>
+        <p className="text-[12px] text-zinc-500 mb-2">Optional — the draft auto-starts at this time. Anyone who misses their pick is <span className="text-zinc-300">auto-drafted</span> the best available.</p>
         <input
-          type="number"
-          min={10}
-          value={secs}
-          onChange={(e) => setSecs(e.target.value)}
-          className="w-28 bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-zinc-600"
+          type="datetime-local"
+          value={draftAt}
+          onChange={(e) => setDraftAt(e.target.value)}
+          className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-zinc-600 mb-3"
         />
+        <label className="flex items-center justify-between gap-2">
+          <span className="text-[13px] text-zinc-300">Seconds per pick</span>
+          <input type="number" min={10} value={secs} onChange={(e) => setSecs(e.target.value)} className="w-20 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-sm text-right outline-none focus:border-zinc-600" />
+        </label>
       </div>
 
       {/* Scoring */}
