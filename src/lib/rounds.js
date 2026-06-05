@@ -24,7 +24,18 @@ export function buildRounds(fixtures) {
     })
     .filter((r) => r.lock != null)
     .sort((a, b) => a.lock - b.lock);
-  rounds.forEach((r, i) => { r.index = i; r.label = r.name || `Round ${i + 1}`; });
+  // Friendly labels: group matchdays are named "1/2/3"; knockouts come back
+  // nameless, so infer from match count (with the two 1-match rounds being the
+  // third-place playoff then the final, in date order).
+  const KO = { 16: "Round of 32", 8: "Round of 16", 4: "Quarter-finals", 2: "Semi-finals" };
+  let finalSeen = false;
+  rounds.forEach((r, i) => {
+    r.index = i;
+    if (r.name && /^\d+$/.test(r.name)) r.label = `Group Matchday ${r.name}`;
+    else if (KO[r.count]) r.label = KO[r.count];
+    else if (r.count === 1) { r.label = finalSeen ? "Final" : "Third Place"; finalSeen = true; }
+    else r.label = r.name || `Round ${i + 1}`;
+  });
   return rounds;
 }
 
