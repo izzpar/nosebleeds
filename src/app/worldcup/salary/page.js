@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
+import GroupScope from "@/components/WcGroups";
 import { rankingsLocked } from "@/lib/worldcup";
 
 const BUDGET = 100;
@@ -276,6 +277,7 @@ export default function SalaryCapPage() {
 
 function SalaryLeaderboard() {
   const [rows, setRows] = useState(null);
+  const [scopeIds, setScopeIds] = useState(null);
   useEffect(() => {
     (async () => {
       const entries = await sbJson(await sbFetch("wc_fantasy_entries?select=user_id,display_name,handle,starters,bench,captain"));
@@ -304,15 +306,19 @@ function SalaryLeaderboard() {
     })().catch(() => setRows([]));
   }, []);
   if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading…</p>;
-  if (!rows.length) return <p className="text-zinc-600 text-sm py-8">No teams yet — build yours!</p>;
+  const shown = scopeIds ? rows.filter((r) => scopeIds.includes(r.user_id)) : rows;
   return (
-    <div className="space-y-2">
-      {rows.map((r, i) => (
-        <div key={r.user_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
-          <div className="flex items-center gap-2"><span className="text-zinc-600 font-bold w-5">{i + 1}</span><span className="font-bold">{r.name}</span></div>
-          <span className="font-bold text-red-500 tabular-nums">{r.total} pts</span>
-        </div>
-      ))}
+    <div>
+      <GroupScope game="salary" onScope={setScopeIds} />
+      {shown.length === 0 && <p className="text-zinc-600 text-sm py-6">{scopeIds ? "No one in this group has a team yet." : "No teams yet — build yours!"}</p>}
+      <div className="space-y-2">
+        {shown.map((r, i) => (
+          <div key={r.user_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2"><span className="text-zinc-600 font-bold w-5">{i + 1}</span><span className="font-bold">{r.name}</span></div>
+            <span className="font-bold text-red-500 tabular-nums">{r.total} pts</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

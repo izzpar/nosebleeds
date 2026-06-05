@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
+import GroupScope from "@/components/WcGroups";
 import { fetchTeams, fetchResults, rankingPoints, rankingsLocked, RANKING_LOCK_ISO, nationStrength } from "@/lib/worldcup";
 
 export default function RankingsPage() {
@@ -187,6 +188,7 @@ export default function RankingsPage() {
 
 function Leaderboard({ teamById }) {
   const [rows, setRows] = useState(null);
+  const [scopeIds, setScopeIds] = useState(null); // null = global, else group member ids
 
   useEffect(() => {
     (async () => {
@@ -213,17 +215,19 @@ function Leaderboard({ teamById }) {
   }, []);
 
   if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading leaderboard…</p>;
-  if (rows.scored.length === 0) return <p className="text-zinc-600 text-sm py-8">No rankings submitted yet.</p>;
+  const shown = scopeIds ? rows.scored.filter((r) => scopeIds.includes(r.user_id)) : rows.scored;
 
   return (
     <div>
+      <GroupScope game="ranking" onScope={setScopeIds} />
       {rows.noGames && (
         <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-500">
           No matches played yet — the board updates automatically once games kick off.
         </div>
       )}
+      {shown.length === 0 && <p className="text-zinc-600 text-sm py-6">{scopeIds ? "No one in this group has ranked yet." : "No rankings submitted yet."}</p>}
       <div className="space-y-2">
-        {rows.scored.map((r, i) => {
+        {shown.map((r, i) => {
           const bt = r.best && teamById(r.best.team_id);
           return (
             <div key={r.user_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">

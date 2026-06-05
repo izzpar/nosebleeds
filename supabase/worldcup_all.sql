@@ -113,6 +113,22 @@ create table if not exists public.wc_fantasy_entries (
 );
 alter table public.wc_fantasy_entries add column if not exists bench jsonb not null default '[]'::jsonb;
 
+-- ---- Mini-leagues (groups) for the public games ----------------------------
+create table if not exists public.wc_groups (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, invite_code text not null unique,
+  game text not null, creator_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.wc_group_members (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.wc_groups(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  handle text, display_name text, created_at timestamptz not null default now(),
+  unique (group_id, user_id)
+);
+create index if not exists wc_group_members_group_idx on public.wc_group_members(group_id);
+
 -- ---- Row Level Security ----------------------------------------------------
 alter table public.wc_leagues         enable row level security;
 alter table public.wc_members         enable row level security;
@@ -121,6 +137,8 @@ alter table public.wc_rankings        enable row level security;
 alter table public.wc_player_points   enable row level security;
 alter table public.wc_fantasy_entries enable row level security;
 alter table public.wc_auction         enable row level security;
+alter table public.wc_groups          enable row level security;
+alter table public.wc_group_members   enable row level security;
 
 -- leagues
 drop policy if exists wc_leagues_select on public.wc_leagues;
@@ -182,3 +200,15 @@ create policy wc_auction_insert on public.wc_auction for insert to authenticated
 drop policy if exists wc_auction_update on public.wc_auction;
 create policy wc_auction_update on public.wc_auction for update to authenticated using (
   league_id in (select league_id from public.wc_members where user_id = auth.uid()));
+
+-- groups (mini-leagues)
+drop policy if exists wc_groups_select on public.wc_groups;
+create policy wc_groups_select on public.wc_groups for select to authenticated using (true);
+drop policy if exists wc_groups_insert on public.wc_groups;
+create policy wc_groups_insert on public.wc_groups for insert to authenticated with check (creator_id = auth.uid());
+drop policy if exists wc_group_members_select on public.wc_group_members;
+create policy wc_group_members_select on public.wc_group_members for select to authenticated using (true);
+drop policy if exists wc_group_members_insert on public.wc_group_members;
+create policy wc_group_members_insert on public.wc_group_members for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists wc_group_members_delete on public.wc_group_members;
+create policy wc_group_members_delete on public.wc_group_members for delete to authenticated using (user_id = auth.uid());
