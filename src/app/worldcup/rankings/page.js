@@ -36,7 +36,10 @@ export default function RankingsPage() {
   }, [user]);
 
   const ranked = order.map(teamById).filter(Boolean);
-  const pool = teams.filter((t) => !order.includes(String(t.id)));
+  // Pool of unranked teams, strongest first (FIFA-ranking-style seed).
+  const pool = teams
+    .filter((t) => !order.includes(String(t.id)))
+    .sort((a, b) => nationStrength(b.name) - nationStrength(a.name));
 
   const add = (id) => !locked && setOrder((o) => [...o, String(id)]);
   const remove = (id) => !locked && setOrder((o) => o.filter((x) => x !== String(id)));
