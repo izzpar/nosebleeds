@@ -744,7 +744,13 @@ export default function GamePage({ params }) {
   // Fandom filters key off the favorite team for THIS sport. NFL lives in
   // `favorite_team`; others in `favorite_team_<sport>`. Alias it back to
   // `favorite_team` via PostgREST so downstream filtering stays uniform.
-  const favSelect = sport === "nfl" ? "favorite_team" : `favorite_team:favorite_team_${sport}`;
+  // Only NFL/MLB/NBA/NHL have a favorite-team column. Requesting favorite_team_wc
+  // (World Cup / tennis) errors the whole profiles query → everyone shows as
+  // "Anonymous". So include it only when the column exists. Leading comma so the
+  // select string stays valid when it's empty.
+  const favSelect = sport === "nfl" ? ",favorite_team"
+    : ["mlb", "nba", "nhl"].includes(sport) ? `,favorite_team:favorite_team_${sport}`
+    : "";
   const sportTeamEmoji = { nfl: "🏈", mlb: "⚾", nba: "🏀", nhl: "🏒" }[sport] || "🏈";
   const { user, profile } = useAuth();
   const [game, setGame] = useState(null);
@@ -925,7 +931,7 @@ export default function GamePage({ params }) {
         if (data && data.length > 0) {
           // Fetch profiles to get favorite_team for each rater
           const userIds = [...new Set(data.map(r => r.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,${favSelect}`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -1071,7 +1077,7 @@ export default function GamePage({ params }) {
         if (cancelled) return;
         if (cData && cData.length > 0) {
           const userIds = [...new Set(cData.map(c => c.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,unlocked,${favSelect}`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,unlocked${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -1419,7 +1425,7 @@ export default function GamePage({ params }) {
         const refreshed = await sbJson(cRes);
         if (refreshed && refreshed.length > 0) {
           const userIds = [...new Set(refreshed.map(r => r.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,${favSelect}`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
