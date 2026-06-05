@@ -879,29 +879,62 @@ function PlayerDraftBoard({
   );
 }
 
-// Player-league standings. Live points arrive once the scoring cron runs during
-// the tournament; until then this shows each manager's drafted squad.
+// Player-league standings — totals from the live wc_player_points store
+// (written by the /api/wc-score cron during the tournament).
 function PlayerStandings({ members, picks }) {
-  const rows = members.map((m) => ({
-    ...m,
-    squad: picks.filter((p) => p.user_id === m.user_id),
-  }));
+  const [pts, setPts] = useState(null); // player_id -> { points, goals, assists }
+
+  useEffect(() => {
+    const ids = [...new Set(picks.map((p) => p.player_id).filter(Boolean))];
+    let cancelled = false;
+    (async () => {
+      const map = {};
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100).map((x) => encodeURIComponent(x)).join(",");
+        const res = await sbFetch(`wc_player_points?player_id=in.(${chunk})&select=player_id,points,goals,assists`);
+        for (const r of await sbJson(res)) map[String(r.player_id)] = r;
+      }
+      if (!cancelled) setPts(map);
+    })();
+    return () => { cancelled = true; };
+  }, [picks]);
+
+  if (!pts) return <p className="text-zinc-600 text-sm py-8">Loading points…</p>;
+
+  const ptOf = (pid) => Number(pts[String(pid)]?.points || 0);
+  const rows = members
+    .map((m) => {
+      const squad = picks
+        .filter((p) => p.user_id === m.user_id)
+        .sort((a, b) => ptOf(b.player_id) - ptOf(a.player_id));
+      const total = squad.reduce((s, p) => s + ptOf(p.player_id), 0);
+      return { ...m, squad, total: Math.round(total * 100) / 100 };
+    })
+    .sort((a, b) => b.total - a.total);
+  const anyPoints = rows.some((r) => r.total !== 0);
+
   return (
     <div>
-      <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-500">
-        Live points populate automatically once matches kick off (Jun 11) and the scoring engine runs.
-      </div>
+      {!anyPoints && (
+        <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-500">
+          Points populate automatically once matches kick off (Jun 11) and the scoring cron runs.
+        </div>
+      )}
       <div className="space-y-2">
-        {rows.map((r) => (
+        {rows.map((r, i) => (
           <div key={r.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="font-bold">{r.display_name || r.handle || "Player"}</span>
-              <span className="text-[11px] text-zinc-500">{r.squad.length} players</span>
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-600 font-bold w-5">{i + 1}</span>
+                <span className="font-bold">{r.display_name || r.handle || "Player"}</span>
+              </div>
+              <span className="font-bold text-red-500 tabular-nums">{r.total} pts</span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 pl-7">
               {r.squad.map((p) => (
                 <span key={p.id} className="text-[11px] bg-zinc-800/70 rounded px-1.5 py-0.5 text-zinc-300">
                   <span className={POS_COLOR[p.position] || ""}>{p.position}</span> {p.player_name}
+                  {anyPoints && <span className="text-zinc-500"> {ptOf(p.player_id)}</span>}
                 </span>
               ))}
             </div>
