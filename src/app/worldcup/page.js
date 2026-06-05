@@ -19,6 +19,8 @@ export default function WorldCupHub() {
   const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
+  const [format, setFormat] = useState("team"); // 'team' | 'player'
+  const [squadSize, setSquadSize] = useState(15);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -44,6 +46,8 @@ export default function WorldCupHub() {
         name: name.trim(),
         invite_code: makeCode(),
         commissioner_id: user.id,
+        format,
+        squad_size: format === "player" ? Math.max(11, Math.min(23, Number(squadSize) || 15)) : 15,
       });
       const league = rows[0];
       if (!league) { flash("Couldn't create league"); return; }
@@ -160,6 +164,32 @@ export default function WorldCupHub() {
                 maxLength={40}
                 className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2.5 text-sm mb-3 outline-none focus:border-zinc-600"
               />
+              {/* Draft format */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {[
+                  ["team", "🏳️ Nations", "Draft 48 national teams"],
+                  ["player", "⚽ Players", "Draft a squad of players"],
+                ].map(([id, label, desc]) => (
+                  <button
+                    key={id}
+                    onClick={() => setFormat(id)}
+                    className={`text-left rounded-xl px-3 py-2 border ${format === id ? "border-red-500 bg-red-950/30" : "border-zinc-800 bg-[#09090b]"}`}
+                  >
+                    <div className="text-sm font-bold">{label}</div>
+                    <div className="text-[10px] text-zinc-500 leading-tight">{desc}</div>
+                  </button>
+                ))}
+              </div>
+              {format === "player" && (
+                <label className="flex items-center justify-between gap-2 bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 mb-3">
+                  <span className="text-[13px] text-zinc-300">Players per manager</span>
+                  <input
+                    type="number" min={11} max={23} value={squadSize}
+                    onChange={(e) => setSquadSize(e.target.value)}
+                    className="w-16 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 text-sm text-right outline-none focus:border-zinc-600"
+                  />
+                </label>
+              )}
               <button
                 onClick={createLeague}
                 disabled={busy || !name.trim()}

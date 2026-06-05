@@ -33,6 +33,8 @@ export default function LeagueRoom() {
   const [members, setMembers] = useState([]);
   const [picks, setPicks] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [players, setPlayers] = useState([]);
+  const [poolLoading, setPoolLoading] = useState(false);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -76,9 +78,25 @@ export default function LeagueRoom() {
     if (subTab === "standings" && !results) fetchResults().then(setResults).catch(() => {});
   }, [subTab, results]);
 
+  // Load the player pool (all 48 squads) for player-format leagues.
+  useEffect(() => {
+    if (league?.format !== "player" || players.length) return;
+    setPoolLoading(true);
+    fetch("/api/wc-players")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.players)) setPlayers(d.players); })
+      .catch(() => {})
+      .finally(() => setPoolLoading(false));
+  }, [league, players.length]);
+
   // ---- derived draft state ----
+  const format = league?.format || "team";
+  const isPlayer = format === "player";
+  const squadSize = league?.squad_size || 15;
   const n = members.length;
-  const { perManager, totalPicks } = draftPlan(n, teams.length || 48);
+  const { perManager, totalPicks } = isPlayer
+    ? { perManager: squadSize, totalPicks: squadSize * n }
+    : draftPlan(n, teams.length || 48);
   const draftComplete = totalPicks > 0 && picks.length >= totalPicks;
   const onClockPos = onClockPosition(picks.length, n);
   const onClockMember = members.find((m) => m.draft_position === onClockPos) || null;
@@ -88,6 +106,7 @@ export default function LeagueRoom() {
     onClockMember?.user_id === user?.id;
   const isCommish = league && user && league.commissioner_id === user.id;
   const pickedTeamIds = new Set(picks.map((p) => String(p.team_id)));
+  const pickedPlayerIds = new Set(picks.map((p) => String(p.player_id)));
 
   // Advisory countdown — resets whenever a new pick lands.
   useEffect(() => {
@@ -199,6 +218,32 @@ export default function LeagueRoom() {
     }
   };
 
+  const pickPlayer = async (pl) => {
+    if (!isMyTurn || busy || pickedPlayerIds.has(String(pl.id))) return;
+    setBusy(true);
+    try {
+      const { res } = await sbInsert("wc_picks", {
+        league_id: id,
+        user_id: user.id,
+        player_id: String(pl.id),
+        player_name: pl.name,
+        position: pl.role,
+        team_name: pl.team_name,
+        pick_number: picks.length,
+      });
+      if (!res.ok) {
+        await loadAll();
+        flash(res.status === 409 ? "Too slow — someone took that player" : "Pick failed");
+        return;
+      }
+      await loadAll();
+    } catch (e) {
+      flash("Pick failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const undoLastPick = async () => {
     if (!isCommish || picks.length === 0 || busy) return;
     setBusy(true);
@@ -261,9 +306,29 @@ export default function LeagueRoom() {
             <Lobby
               members={members}
               isCommish={isCommish}
-              perManager={n >= 2 ? draftPlan(n, teams.length || 48).perManager : 0}
+              perManager={n >= 2 ? perManager : 0}
+              format={format}
               onStart={startDraft}
               busy={busy}
+            />
+          ) : isPlayer ? (
+            <PlayerDraftBoard
+              members={members}
+              picks={picks}
+              players={players}
+              poolLoading={poolLoading}
+              pickedPlayerIds={pickedPlayerIds}
+              onClockMember={onClockMember}
+              isMyTurn={isMyTurn}
+              draftComplete={draftComplete}
+              perManager={perManager}
+              totalPicks={totalPicks}
+              secondsLeft={secondsLeft}
+              onPick={pickPlayer}
+              isCommish={isCommish}
+              onUndo={undoLastPick}
+              busy={busy}
+              myPicks={myPicks}
             />
           ) : (
             <DraftBoard
@@ -285,13 +350,17 @@ export default function LeagueRoom() {
             />
           )
         ) : subTab === "standings" ? (
-          <Standings
-            members={members}
-            picks={picks}
-            results={results}
-            scoring={league.scoring || DEFAULT_SCORING}
-            status={league.status}
-          />
+          isPlayer ? (
+            <PlayerStandings members={members} picks={picks} />
+          ) : (
+            <Standings
+              members={members}
+              picks={picks}
+              results={results}
+              scoring={league.scoring || DEFAULT_SCORING}
+              status={league.status}
+            />
+          )
         ) : (
           <Settings
             league={league}
@@ -324,15 +393,16 @@ function Shell({ children }) {
   );
 }
 
-function Lobby({ members, isCommish, perManager, onStart, busy }) {
+function Lobby({ members, isCommish, perManager, format, onStart, busy }) {
+  const noun = format === "player" ? "players" : "nations";
   return (
     <div>
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
         <h3 className="font-bold mb-1">Pre-draft lobby</h3>
         <p className="text-[12px] text-zinc-500 mb-3">
-          Share the invite code. When everyone&apos;s in, the commissioner starts the draft — order is
-          randomized and it snakes (1·2·3 → 3·2·1).
-          {members.length >= 2 && <> Each manager will draft <span className="text-zinc-300">{perManager}</span> nations.</>}
+          Share the invite code. When everyone&apos;s in, the commissioner starts the draft — it
+          snakes (1·2·3 → 3·2·1).
+          {members.length >= 2 && <> Each manager will draft <span className="text-zinc-300">{perManager}</span> {noun}.</>}
         </p>
         <div className="space-y-1.5">
           {members.map((m, i) => (
@@ -634,6 +704,176 @@ function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
       >
         Save settings
       </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+const POS = ["ALL", "GK", "DEF", "MID", "FWD"];
+const POS_COLOR = { GK: "text-amber-400", DEF: "text-sky-400", MID: "text-emerald-400", FWD: "text-red-400" };
+
+function PlayerDraftBoard({
+  members, picks, players, poolLoading, pickedPlayerIds, onClockMember, isMyTurn,
+  draftComplete, perManager, totalPicks, secondsLeft, onPick, isCommish, onUndo, busy, myPicks,
+}) {
+  const [q, setQ] = useState("");
+  const [pos, setPos] = useState("ALL");
+  const memberName = (uid) => {
+    const m = members.find((x) => x.user_id === uid);
+    return m?.display_name || m?.handle || "Player";
+  };
+
+  const query = q.trim().toLowerCase();
+  const available = players
+    .filter((p) => !pickedPlayerIds.has(String(p.id)))
+    .filter((p) => pos === "ALL" || p.role === pos)
+    .filter((p) => !query || (p.name || "").toLowerCase().includes(query) || (p.team_name || "").toLowerCase().includes(query));
+  const shown = available.slice(0, 80);
+
+  // group my squad by position
+  const squadByPos = { GK: [], DEF: [], MID: [], FWD: [] };
+  for (const p of myPicks) (squadByPos[p.position] || squadByPos.MID).push(p);
+
+  return (
+    <div>
+      {draftComplete ? (
+        <div className="bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-4 py-3 mb-4 text-center">
+          <div className="font-bold text-emerald-400">Draft complete 🎉</div>
+          <div className="text-[12px] text-zinc-500">Your squad scores automatically once matches kick off.</div>
+        </div>
+      ) : (
+        <div className={`rounded-xl px-4 py-3 mb-4 flex items-center justify-between border ${isMyTurn ? "bg-red-950/40 border-red-700/60" : "bg-zinc-900/70 border-zinc-800"}`}>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Pick {picks.length + 1} of {totalPicks}</div>
+            <div className="font-bold">{isMyTurn ? "You're on the clock" : `${onClockMember ? memberName(onClockMember.user_id) : "—"} picking`}</div>
+          </div>
+          {secondsLeft != null && (
+            <div className={`text-2xl font-bold tabular-nums ${secondsLeft <= 10 ? "text-red-500" : "text-zinc-300"}`}>{secondsLeft}s</div>
+          )}
+        </div>
+      )}
+
+      {/* my squad */}
+      <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">
+        Your squad ({myPicks.length}/{perManager})
+      </h3>
+      <div className="space-y-1.5 mb-6">
+        {myPicks.length === 0 ? (
+          <p className="text-zinc-600 text-sm">No picks yet.</p>
+        ) : (
+          ["GK", "DEF", "MID", "FWD"].map((g) =>
+            squadByPos[g].length ? (
+              <div key={g} className="flex gap-2 items-start">
+                <span className={`text-[10px] font-bold w-8 pt-1.5 ${POS_COLOR[g]}`}>{g}</span>
+                <div className="flex flex-wrap gap-1.5 flex-1">
+                  {squadByPos[g].map((p) => (
+                    <span key={p.id} className="text-[12px] bg-zinc-800/70 rounded px-2 py-1">
+                      {p.player_name} <span className="text-zinc-500">{p.team_name}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null
+          )
+        )}
+      </div>
+
+      {/* pool */}
+      {!draftComplete && (
+        <>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Player pool</h3>
+          {poolLoading && players.length === 0 ? (
+            <p className="text-zinc-600 text-sm py-4">Loading squads…</p>
+          ) : (
+            <>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search player or nation…"
+                className="w-full bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2.5 text-sm mb-2 outline-none focus:border-zinc-600"
+              />
+              <div className="flex gap-1.5 mb-3">
+                {POS.map((p) => (
+                  <button key={p} onClick={() => setPos(p)} className={`text-[12px] font-bold px-3 py-1 rounded-full ${pos === p ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1">
+                {shown.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => onPick(p)}
+                    disabled={!isMyTurn || busy}
+                    className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${isMyTurn ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.99]" : "bg-zinc-900/50 border-zinc-800 opacity-70"}`}
+                  >
+                    <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role] || "text-zinc-400"}`}>{p.role}</span>
+                    <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
+                    <span className="text-[11px] text-zinc-500 truncate max-w-[35%]">{p.team_name}</span>
+                  </button>
+                ))}
+                {available.length === 0 && <p className="text-zinc-600 text-sm py-3">No players match.</p>}
+                {available.length > shown.length && (
+                  <p className="text-zinc-600 text-[12px] py-2 text-center">+{available.length - shown.length} more — refine your search</p>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* draft log */}
+      <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2 mt-6">Draft log</h3>
+      <div className="space-y-1 mb-4">
+        {[...picks].reverse().slice(0, 30).map((p) => (
+          <div key={p.id} className="flex items-center gap-2 text-sm bg-zinc-900/40 rounded-lg px-3 py-1.5">
+            <span className="text-zinc-600 w-8 text-[11px]">#{p.pick_number + 1}</span>
+            <span className="font-medium">{p.player_name}</span>
+            <span className="text-zinc-600 text-[11px]">{p.team_name}</span>
+            <span className="text-zinc-600 text-[11px] ml-auto">{memberName(p.user_id)}</span>
+          </div>
+        ))}
+        {picks.length === 0 && <p className="text-zinc-600 text-sm">No picks yet.</p>}
+      </div>
+
+      {isCommish && picks.length > 0 && (
+        <button onClick={onUndo} disabled={busy} className="text-[12px] text-zinc-500 hover:text-zinc-300 underline">
+          Undo last pick (commissioner)
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Player-league standings. Live points arrive once the scoring cron runs during
+// the tournament; until then this shows each manager's drafted squad.
+function PlayerStandings({ members, picks }) {
+  const rows = members.map((m) => ({
+    ...m,
+    squad: picks.filter((p) => p.user_id === m.user_id),
+  }));
+  return (
+    <div>
+      <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-500">
+        Live points populate automatically once matches kick off (Jun 11) and the scoring engine runs.
+      </div>
+      <div className="space-y-2">
+        {rows.map((r) => (
+          <div key={r.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-bold">{r.display_name || r.handle || "Player"}</span>
+              <span className="text-[11px] text-zinc-500">{r.squad.length} players</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {r.squad.map((p) => (
+                <span key={p.id} className="text-[11px] bg-zinc-800/70 rounded px-1.5 py-0.5 text-zinc-300">
+                  <span className={POS_COLOR[p.position] || ""}>{p.position}</span> {p.player_name}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
