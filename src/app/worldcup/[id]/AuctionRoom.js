@@ -10,7 +10,7 @@ const ANTISNIPE_SECONDS = 10; // a late bid bumps the clock back up to this
 // and anyone bids; the commissioner clicks "Sold" to settle — so there are no
 // settlement race conditions. Lot state lives in wc_auction (members can update).
 export default function AuctionRoom({
-  leagueId, members, picks, user, isCommish, format, items, perManager, totalPicks, budget, onReload,
+  leagueId, members, picks, user, isCommish, format, items, perManager, totalPicks, budget, paused, onReload,
 }) {
   const [lot, setLot] = useState(null);     // wc_auction row
   const [q, setQ] = useState("");
@@ -58,7 +58,7 @@ export default function AuctionRoom({
     sbFetch(`wc_auction?league_id=eq.${leagueId}`, { method: "PATCH", body: JSON.stringify({ ...body, updated_at: new Date().toISOString() }) });
 
   const nominate = async (item) => {
-    if (!myNominate || busy) return;
+    if (!myNominate || busy || paused) return;
     const ob = Math.max(1, Math.min(Number(openBid) || 1, myMax));
     if (ob > myMax) { flash("Over your budget"); return; }
     setBusy(true);
@@ -74,7 +74,7 @@ export default function AuctionRoom({
   };
 
   const bid = async (amount) => {
-    if (!lot?.item_id || busy || iAmHigh) return;
+    if (!lot?.item_id || busy || iAmHigh || paused) return;
     if (amount <= (lot.high_bid || 0)) { flash("Bid must be higher"); return; }
     if (amount > myMax) { flash("Over your budget"); return; }
     if (slotsLeftOf(user.id) <= 0) { flash("Your squad is full"); return; }
@@ -139,9 +139,9 @@ export default function AuctionRoom({
   // Commissioner's client auto-settles when the clock hits 0 (single settler,
   // so there are no double-settle races). Others just watch it resolve.
   useEffect(() => {
-    if (!isCommish || !lot?.item_id || !lot?.ends_at || settling.current) return;
+    if (!isCommish || paused || !lot?.item_id || !lot?.ends_at || settling.current) return;
     if (new Date(lot.ends_at).getTime() - now <= 0) sold();
-  }, [isCommish, lot, now]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isCommish, lot, now, paused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const skipNominator = async () => {
     if (!isCommish || lot?.item_id || busy) return;
@@ -171,6 +171,11 @@ export default function AuctionRoom({
 
   return (
     <div>
+      {paused && (
+        <div className="rounded-xl px-4 py-2.5 mb-3 bg-amber-950/40 border border-amber-700/50 text-[12px] text-amber-300 font-bold text-center">
+          ⏸ Auction paused by the commissioner — bidding is on hold
+        </div>
+      )}
       {/* current lot */}
       {lot?.item_id ? (
         <div className={`rounded-2xl px-4 py-4 mb-4 border ${iAmHigh ? "bg-emerald-950/30 border-emerald-700/50" : "bg-red-950/30 border-red-800/50"}`}>

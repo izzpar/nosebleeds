@@ -175,7 +175,7 @@ export default function WorldCupHub() {
             >
               <span className="text-2xl">🔢</span>
               <div className="flex-1">
-                <div className="font-bold">Power Ranking {myStatus.ranking && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
+                <div className="font-bold">World Cup Nations Ranking {myStatus.ranking && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
                 <div className="text-[11px] text-zinc-400">{myStatus.ranking ? "View your rank on the global leaderboard" : "Rank all 48 nations · climb the global leaderboard"}</div>
               </div>
               <span className="text-zinc-600">›</span>
@@ -186,7 +186,7 @@ export default function WorldCupHub() {
             >
               <span className="text-2xl">💰</span>
               <div className="flex-1">
-                <div className="font-bold">Salary Cap {myStatus.salary && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
+                <div className="font-bold">World Cup Salary Cap {myStatus.salary && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
                 <div className="text-[11px] text-zinc-400">{myStatus.salary ? "Manage your team & check the leaderboard" : "€100m budget · pick any players · global leaderboard"}</div>
               </div>
               <span className="text-zinc-600">›</span>

@@ -194,7 +194,7 @@ export default function SalaryCapPage() {
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
           <span className="text-xl">💰</span>
           <div className="flex-1">
-            <h1 className="text-base font-bold leading-tight">Salary Cap</h1>
+            <h1 className="text-base font-bold leading-tight">World Cup Salary Cap</h1>
             <p className="text-[11px] text-zinc-500 leading-tight">
               €{BUDGET}m budget · {editRound === undefined ? "…" : editRound ? <>editing <span className="text-zinc-300">{editRound.label}</span> · locks {lockLabel(editRound.lock)}</> : "season locked"}
             </p>

@@ -35,7 +35,7 @@ export default function HowItWorksPage() {
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Solo or with friends</h3>
 
-        <Card icon="🔢" title="Power Ranking">
+        <Card icon="🔢" title="World Cup Nations Ranking">
           <p>Rank all 48 nations from 1 to 48. Each team earns <b>performance points</b> as it plays, and you earn more for teams you ranked <b>higher</b> — so correctly backing a dark horse near the top is worth a lot.</p>
           <Scoring>
             <p>Each team&apos;s performance: <b>Win +3</b>, Draw +1, every <b>Goal +1</b>, Clean sheet +2, plus knockout bonuses (Reach R16 +4 · QF +8 · SF +12 · Final +16 · <b>Champion +25</b>).</p>
@@ -47,7 +47,7 @@ export default function HowItWorksPage() {
           <p className="text-zinc-500">Open to everyone (Global), or make a private league on the <b>Leagues</b> tab and name your entries.</p>
         </Card>
 
-        <Card icon="💰" title="Salary Cap">
+        <Card icon="💰" title="World Cup Salary Cap">
           <p>Build a 15-player squad under a <b>€100m budget</b> (2 GK, 5 DEF, 5 MID, 3 FWD), pick your <b>starting 11</b> on the pitch + a <b>captain</b> (double points), and order your bench. Edit freely until each round&apos;s kickoff; your team carries over between rounds (<b>transfers</b>).</p>
           <Scoring>
             <p>Per player, per match: <b>60+ min +2</b> (else +1) · <b>Goal</b> GK/DEF +6, MID +5, FWD +4 · Assist +3 · Shot on target +0.5 · Tackle +0.25 · Clean sheet (60+ min) GK/DEF +4, MID +1 · Save +1 per 3.</p>
