@@ -109,17 +109,58 @@ export default function LeagueRoom() {
   }, [isCommish, draftComplete, league, id, loadAll]);
 
   // ---- actions ----
+  // Persist a draft order: write each member's draft_position to its index.
+  const patchMemberPositions = async (orderedList) => {
+    for (let i = 0; i < orderedList.length; i++) {
+      await sbFetch(`wc_members?id=eq.${orderedList[i].id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ draft_position: i }),
+      });
+    }
+    await loadAll();
+  };
+
+  const randomizeOrder = async () => {
+    if (!isCommish || busy) return;
+    setBusy(true);
+    try { await patchMemberPositions(shuffle(members)); }
+    catch (e) { flash("Couldn't shuffle"); }
+    finally { setBusy(false); }
+  };
+
+  const moveMember = async (memberId, dir) => {
+    if (!isCommish || busy) return;
+    const arr = [...members];
+    const idx = arr.findIndex((m) => m.id === memberId);
+    const j = idx + dir;
+    if (idx < 0 || j < 0 || j >= arr.length) return;
+    [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    setBusy(true);
+    try { await patchMemberPositions(arr); }
+    catch (e) { flash("Couldn't reorder"); }
+    finally { setBusy(false); }
+  };
+
+  const saveSettings = async (patch) => {
+    if (!isCommish || busy) return;
+    setBusy(true);
+    try {
+      await sbFetch(`wc_leagues?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      await loadAll();
+      flash("Settings saved");
+    } catch (e) {
+      flash("Couldn't save settings");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const startDraft = async () => {
     if (!isCommish || n < 2 || busy) return;
     setBusy(true);
     try {
-      const order = shuffle(members);
-      for (let i = 0; i < order.length; i++) {
-        await sbFetch(`wc_members?id=eq.${order[i].id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ draft_position: i }),
-        });
-      }
+      // Lock in the current order (whatever the commissioner arranged) as 0..n-1.
+      await patchMemberPositions(members);
       await sbFetch(`wc_leagues?id=eq.${id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "drafting" }),
@@ -200,7 +241,7 @@ export default function LeagueRoom() {
         </div>
         {/* sub-tabs */}
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {["draft", "standings"].map((t) => (
+          {(isCommish ? ["draft", "standings", "settings"] : ["draft", "standings"]).map((t) => (
             <button
               key={t}
               onClick={() => setSubTab(t)}
@@ -243,13 +284,22 @@ export default function LeagueRoom() {
               myPicks={myPicks}
             />
           )
-        ) : (
+        ) : subTab === "standings" ? (
           <Standings
             members={members}
             picks={picks}
             results={results}
             scoring={league.scoring || DEFAULT_SCORING}
             status={league.status}
+          />
+        ) : (
+          <Settings
+            league={league}
+            members={members}
+            onSave={saveSettings}
+            onMove={moveMember}
+            onRandomize={randomizeOrder}
+            busy={busy}
           />
         )}
       </div>
@@ -293,6 +343,11 @@ function Lobby({ members, isCommish, perManager, onStart, busy }) {
           ))}
         </div>
       </div>
+      {isCommish && (
+        <p className="text-[12px] text-zinc-500 mb-3">
+          ⚙️ Set scoring, the pick timer, and draft order in the <span className="text-zinc-300 font-semibold">Settings</span> tab above.
+        </p>
+      )}
       {isCommish ? (
         <button
           onClick={onStart}
@@ -464,6 +519,121 @@ function Standings({ members, picks, results, scoring, status }) {
         Goal {scoring.goal} · Clean sheet {scoring.clean_sheet} · Reach R16 +{scoring.r16} · QF +{scoring.qf} ·
         SF +{scoring.sf} · Final +{scoring.final} · Champion +{scoring.champion}
       </div>
+    </div>
+  );
+}
+
+// Commissioner-only config: scoring, pick timer, and pre-draft order.
+const SCORE_FIELDS = [
+  ["win", "Win"],
+  ["draw", "Draw"],
+  ["goal", "Goal scored"],
+  ["clean_sheet", "Clean sheet"],
+  ["r16", "Reach Round of 16"],
+  ["qf", "Reach Quarterfinal"],
+  ["sf", "Reach Semifinal"],
+  ["final", "Reach Final"],
+  ["champion", "Champion"],
+];
+
+function Settings({ league, members, onSave, onMove, onRandomize, busy }) {
+  const base = { ...DEFAULT_SCORING, ...(league.scoring || {}) };
+  const [form, setForm] = useState(base);
+  const [secs, setSecs] = useState(league.pick_seconds || 90);
+  const num = (v) => { const x = parseInt(v, 10); return Number.isFinite(x) ? x : 0; };
+  const isLobby = league.status === "lobby";
+
+  const save = () => {
+    const scoring = {};
+    for (const [k] of SCORE_FIELDS) scoring[k] = num(form[k]);
+    onSave({ scoring, pick_seconds: Math.max(10, num(secs)) });
+  };
+
+  return (
+    <div>
+      {/* Draft order */}
+      <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
+        <h3 className="font-bold mb-1">Draft order</h3>
+        <p className="text-[12px] text-zinc-500 mb-3">
+          {isLobby
+            ? "Arrange the snake order, or shuffle it. This locks when you start the draft."
+            : "The draft has started — order is locked."}
+        </p>
+        <div className="space-y-1.5 mb-3">
+          {members.map((m, i) => (
+            <div key={m.id} className="flex items-center gap-2 text-sm bg-zinc-900/40 rounded-lg px-3 py-1.5">
+              <span className="text-zinc-600 w-5">{i + 1}</span>
+              <span className="flex-1 truncate">{m.display_name || m.handle || "Player"}</span>
+              {isLobby && (
+                <span className="flex gap-1">
+                  <button
+                    onClick={() => onMove(m.id, -1)}
+                    disabled={busy || i === 0}
+                    className="w-7 h-7 rounded-md bg-zinc-800 disabled:opacity-30 text-zinc-300"
+                  >↑</button>
+                  <button
+                    onClick={() => onMove(m.id, 1)}
+                    disabled={busy || i === members.length - 1}
+                    className="w-7 h-7 rounded-md bg-zinc-800 disabled:opacity-30 text-zinc-300"
+                  >↓</button>
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+        {isLobby && (
+          <button
+            onClick={onRandomize}
+            disabled={busy || members.length < 2}
+            className="text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white font-bold px-4 py-2 rounded-xl"
+          >
+            🎲 Randomize order
+          </button>
+        )}
+      </div>
+
+      {/* Pick timer */}
+      <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
+        <h3 className="font-bold mb-1">Time per pick</h3>
+        <p className="text-[12px] text-zinc-500 mb-3">On-the-clock countdown shown during the draft (seconds).</p>
+        <input
+          type="number"
+          min={10}
+          value={secs}
+          onChange={(e) => setSecs(e.target.value)}
+          className="w-28 bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-zinc-600"
+        />
+      </div>
+
+      {/* Scoring */}
+      <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
+        <h3 className="font-bold mb-1">Scoring</h3>
+        <p className="text-[12px] text-zinc-500 mb-3">
+          Points each nation earns. Round bonuses are cumulative (a finalist banks R16 + QF + SF + Final).
+          Changes re-score the standings instantly.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {SCORE_FIELDS.map(([key, label]) => (
+            <label key={key} className="flex items-center justify-between gap-2 bg-zinc-900/40 rounded-lg px-3 py-2">
+              <span className="text-[13px] text-zinc-300">{label}</span>
+              <input
+                type="number"
+                value={form[key]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                className="w-16 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-sm text-right outline-none focus:border-zinc-600"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <button
+        onClick={save}
+        disabled={busy}
+        className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-3 rounded-xl"
+      >
+        Save settings
+      </button>
     </div>
   );
 }
