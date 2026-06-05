@@ -2,97 +2,121 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
-import { useAuth } from "@/components/AuthProvider";
-import { sbFetch, sbJson } from "@/lib/sbrest";
-import GroupScope from "@/components/WcGroups";
 import Confetti from "@/components/Confetti";
-import { fetchTeams, fetchResults, rankingPoints, rankingsLocked, RANKING_LOCK_ISO, nationStrength } from "@/lib/worldcup";
+import { useAuth } from "@/components/AuthProvider";
+import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
+import { fetchTeams, fetchResults, rankingPoints, rankingsLocked, nationStrength, WC_TEAMS_FALLBACK } from "@/lib/worldcup";
+import { fetchMyGroups, createGroup } from "@/lib/groups";
+
+const GLOBAL = { id: null, name: "🌍 Global", max_entries: 1, isGlobal: true };
 
 export default function RankingsPage() {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const locked = rankingsLocked();
 
   const [teams, setTeams] = useState([]);
-  const [teamsErr, setTeamsErr] = useState(false);
-  const [order, setOrder] = useState([]);      // array of team ids, best→worst
-  const [loaded, setLoaded] = useState(false);
-  const [subTab, setSubTab] = useState("mine"); // 'mine' | 'board'
+  const [leagues, setLeagues] = useState([GLOBAL]);
+  const [selLeagueId, setSelLeagueId] = useState(null); // null = Global
+  const [entries, setEntries] = useState([]);
+  const [selEntryId, setSelEntryId] = useState(null);
+  const [order, setOrder] = useState([]);
+  const [subTab, setSubTab] = useState("mine");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [celebrate, setCelebrate] = useState(0);
-  const locked = rankingsLocked();
+  const [creatingLeague, setCreatingLeague] = useState(false);
+  const [lgName, setLgName] = useState("");
+  const [lgMax, setLgMax] = useState(1);
+  const [copied, setCopied] = useState(false);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
   const teamById = useCallback((id) => teams.find((t) => String(t.id) === String(id)), [teams]);
+  const selLeague = leagues.find((l) => (l.id || null) === selLeagueId) || GLOBAL;
 
-  // Load the 48 nations (with retry) + this user's saved ranking.
+  // ---- data ----
   const loadTeams = useCallback(async () => {
-    setTeamsErr(false);
-    try {
-      let t = await fetchTeams();
-      if (!t || !t.length) { await new Promise((r) => setTimeout(r, 600)); t = await fetchTeams(); }
-      if (t && t.length) setTeams(t); else setTeamsErr(true);
-    } catch (e) { setTeamsErr(true); }
+    try { const t = await fetchTeams(); if (t?.length) { setTeams(t); return; } } catch (e) {}
+    setTeams(WC_TEAMS_FALLBACK);
   }, []);
   useEffect(() => { loadTeams(); }, [loadTeams]);
-  useEffect(() => {
-    if (!user) { setLoaded(true); return; }
-    sbFetch(`wc_rankings?user_id=eq.${user.id}&select=ranking`).then(async (res) => {
-      const rows = await sbJson(res);
-      if (rows[0]?.ranking?.length) setOrder(rows[0].ranking.map(String));
-      setLoaded(true);
-    });
+
+  const loadLeagues = useCallback(async () => {
+    if (!user) return;
+    try { setLeagues([GLOBAL, ...(await fetchMyGroups(user.id, "ranking"))]); } catch (e) {}
   }, [user]);
+  useEffect(() => { loadLeagues(); }, [loadLeagues]);
 
+  const loadEntries = useCallback(async () => {
+    if (!user) return;
+    const flt = selLeagueId ? `group_id=eq.${selLeagueId}` : "group_id=is.null";
+    const rows = await sbJson(await sbFetch(`wc_ranking_entries?${flt}&user_id=eq.${user.id}&select=*&order=created_at.asc`));
+    setEntries(rows);
+    setSelEntryId((prev) => (rows.find((r) => r.id === prev) ? prev : rows[0]?.id || null));
+  }, [user, selLeagueId]);
+  useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  useEffect(() => {
+    const e = entries.find((x) => x.id === selEntryId);
+    setOrder((e?.ranking || []).map(String));
+  }, [selEntryId, entries]);
+
+  // ---- ranking editor ----
   const ranked = order.map(teamById).filter(Boolean);
-  // Pool of unranked teams, strongest first (FIFA-ranking-style seed).
-  const pool = teams
-    .filter((t) => !order.includes(String(t.id)))
-    .sort((a, b) => nationStrength(b.name) - nationStrength(a.name));
-
+  const pool = teams.filter((t) => !order.includes(String(t.id))).sort((a, b) => nationStrength(b.name) - nationStrength(a.name));
   const add = (id) => !locked && setOrder((o) => [...o, String(id)]);
-  const remove = (id) => !locked && setOrder((o) => o.filter((x) => x !== String(id)));
+  const removeT = (id) => !locked && setOrder((o) => o.filter((x) => x !== String(id)));
   const move = (id, dir) => {
     if (locked) return;
-    setOrder((o) => {
-      const i = o.indexOf(String(id));
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= o.length) return o;
-      const n = [...o];
-      [n[i], n[j]] = [n[j], n[i]];
-      return n;
-    });
+    setOrder((o) => { const i = o.indexOf(String(id)); const j = i + dir; if (i < 0 || j < 0 || j >= o.length) return o; const n = [...o]; [n[i], n[j]] = [n[j], n[i]]; return n; });
   };
-  const addAllRemaining = () =>
-    !locked && setOrder((o) => [...o, ...pool.map((t) => String(t.id))]);
-  // Fill the whole ranking by suggested strength (then the user can tweak).
-  const suggestOrder = () =>
-    !locked &&
-    setOrder([...teams].sort((a, b) => nationStrength(b.name) - nationStrength(a.name)).map((t) => String(t.id)));
+  const suggestOrder = () => !locked && setOrder([...teams].sort((a, b) => nationStrength(b.name) - nationStrength(a.name)).map((t) => String(t.id)));
+
+  // ---- actions ----
+  const newEntry = async () => {
+    if (!user || locked) return;
+    const max = selLeague.max_entries || 1;
+    if (entries.length >= max) { flash(`Max ${max} ${max === 1 ? "entry" : "entries"} here`); return; }
+    const { rows } = await sbInsert("wc_ranking_entries", {
+      group_id: selLeagueId, user_id: user.id,
+      handle: profile?.handle || user.email?.split("@")[0],
+      display_name: profile?.display_name || profile?.handle || user.email?.split("@")[0],
+      label: `Entry ${entries.length + 1}`, ranking: [],
+    });
+    await loadEntries();
+    if (rows[0]) setSelEntryId(rows[0].id);
+  };
 
   const save = async () => {
-    if (!user || saving || locked) return;
+    if (!user || !selEntryId || saving || locked) return;
     if (order.length !== teams.length) { flash(`Rank all ${teams.length} teams first`); return; }
     setSaving(true);
     try {
-      const res = await sbFetch("wc_rankings?on_conflict=user_id", {
-        method: "POST",
-        headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-        body: JSON.stringify({
-          user_id: user.id,
-          handle: profile?.handle,
-          display_name: profile?.display_name || profile?.handle,
-          ranking: order,
-          updated_at: new Date().toISOString(),
-        }),
+      const res = await sbFetch(`wc_ranking_entries?id=eq.${selEntryId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ranking: order, updated_at: new Date().toISOString() }),
       });
       if (res.ok) setCelebrate((c) => c + 1);
-      flash(res.ok ? "Ranking saved ✓" : "Couldn't save");
-    } catch (e) {
-      flash("Couldn't save");
-    } finally {
-      setSaving(false);
-    }
+      flash(res.ok ? "Saved ✓" : "Couldn't save");
+      await loadEntries();
+    } catch (e) { flash("Couldn't save"); } finally { setSaving(false); }
+  };
+
+  const createLeague = async () => {
+    if (!lgName.trim()) return;
+    const g = await createGroup(lgName, "ranking", user.id, profile, lgMax);
+    if (g) { setLgName(""); setCreatingLeague(false); await loadLeagues(); setSelLeagueId(g.id); setSubTab("mine"); }
+  };
+
+  const copyInvite = () => {
+    if (!selLeague.invite_code) return;
+    try { navigator.clipboard.writeText(`${window.location.origin}/worldcup/g/${selLeague.invite_code}`); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
+  };
+
+  const renameEntry = async (label) => {
+    if (!selEntryId) return;
+    await sbFetch(`wc_ranking_entries?id=eq.${selEntryId}`, { method: "PATCH", body: JSON.stringify({ label }) });
+    setEntries((es) => es.map((e) => (e.id === selEntryId ? { ...e, label } : e)));
   };
 
   return (
@@ -103,20 +127,12 @@ export default function RankingsPage() {
           <span className="text-xl">🔢</span>
           <div className="flex-1">
             <h1 className="text-base font-bold leading-tight">Power Ranking</h1>
-            <p className="text-[11px] text-zinc-500 leading-tight">
-              Rank all 48 · {locked ? "locked" : "locks at kickoff Jun 11"}
-            </p>
+            <p className="text-[11px] text-zinc-500 leading-tight">Rank all 48 · {locked ? "locked" : "locks at kickoff Jun 11"}</p>
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {[["mine", "My Ranking"], ["board", "Leaderboard"]].map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setSubTab(id)}
-              className={`pb-2 font-bold border-b-2 ${subTab === id ? "text-white border-red-500" : "text-zinc-600 border-transparent"}`}
-            >
-              {label}
-            </button>
+          {[["mine", "My Entries"], ["board", "Leaderboard"]].map(([id, label]) => (
+            <button key={id} onClick={() => setSubTab(id)} className={`pb-2 font-bold border-b-2 ${subTab === id ? "text-white border-red-500" : "text-zinc-600 border-transparent"}`}>{label}</button>
           ))}
         </div>
       </div>
@@ -127,152 +143,195 @@ export default function RankingsPage() {
             <p className="text-zinc-400 mb-4">Sign in to submit your ranking.</p>
             <button onClick={() => router.push("/login")} className="bg-red-600 text-white font-bold px-6 py-2.5 rounded-xl">Log in</button>
           </div>
-        ) : subTab === "mine" ? (
+        ) : (
           <>
-            <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-2 text-[12px] text-zinc-400">
-              Rank every nation 1–48. Teams score performance points as they play, and you earn more
-              for teams you ranked <span className="text-zinc-200">higher</span> when they do well. {locked && <span className="text-amber-400">Rankings are locked.</span>}
-            </div>
-            <button onClick={() => setSubTab("board")} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4">
-              👥 Play with friends? Create a private mini-league on the <span className="text-zinc-200">Leaderboard</span> tab →
-            </button>
-
-            {/* Your ranking */}
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">
-                Your ranking ({ranked.length}/{teams.length})
-              </h3>
-              {!locked && (
-                <div className="flex items-center gap-2">
-                  <button onClick={suggestOrder} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1.5 rounded-lg">
-                    ✨ Suggest
-                  </button>
-                  {order.length === teams.length && (
-                    <button onClick={save} disabled={saving} className="text-sm bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-lg">
-                      {saving ? "Saving…" : "Save"}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="space-y-1.5 mb-6">
-              {ranked.length === 0 && <p className="text-zinc-600 text-sm">Tap teams below to start ranking.</p>}
-              {ranked.map((t, i) => (
-                <div key={t.id} className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2">
-                  <span className="text-red-500 font-bold w-6 text-sm">{i + 1}</span>
-                  {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
-                  <span className="text-sm font-medium flex-1 truncate">{t.name}</span>
-                  {!locked && (
-                    <span className="flex gap-1">
-                      <button onClick={() => move(t.id, -1)} disabled={i === 0} className="w-7 h-7 rounded bg-zinc-800 disabled:opacity-30">↑</button>
-                      <button onClick={() => move(t.id, 1)} disabled={i === ranked.length - 1} className="w-7 h-7 rounded bg-zinc-800 disabled:opacity-30">↓</button>
-                      <button onClick={() => remove(t.id)} className="w-7 h-7 rounded bg-zinc-800 text-zinc-400">✕</button>
-                    </span>
-                  )}
-                </div>
+            {/* League selector */}
+            <div className="flex gap-1.5 flex-wrap items-center mb-2">
+              {leagues.map((l) => (
+                <button key={l.id || "global"} onClick={() => setSelLeagueId(l.id || null)} className={`text-[12px] font-bold px-3 py-1 rounded-full ${selLeagueId === (l.id || null) ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{l.name}</button>
               ))}
+              <button onClick={() => setCreatingLeague((v) => !v)} className="text-[12px] font-bold px-3 py-1 rounded-full bg-zinc-800 text-zinc-400">＋ League</button>
             </div>
-
-            {/* Pool */}
-            {!locked && teams.length === 0 && (
-              <div className="text-center py-8">
-                {teamsErr ? (
-                  <>
-                    <p className="text-zinc-500 text-sm mb-3">Couldn&apos;t load the teams.</p>
-                    <button onClick={loadTeams} className="bg-red-600 text-white font-bold px-4 py-2 rounded-xl text-sm">Retry</button>
-                  </>
-                ) : (
-                  <p className="text-zinc-600 text-sm">Loading teams…</p>
-                )}
+            {creatingLeague && (
+              <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
+                <input value={lgName} onChange={(e) => setLgName(e.target.value)} placeholder="League name" maxLength={32} className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
+                <label className="flex items-center justify-between text-[12px] text-zinc-400 mb-2">
+                  Max entries per person
+                  <input type="number" min={1} max={10} value={lgMax} onChange={(e) => setLgMax(Number(e.target.value))} className="w-16 bg-[#09090b] border border-zinc-800 rounded-md px-2 py-1 text-right" />
+                </label>
+                <button onClick={createLeague} disabled={!lgName.trim()} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2 rounded-lg text-sm">Create &amp; invite</button>
               </div>
             )}
-            {!locked && pool.length > 0 && (
+            {selLeague.invite_code && (
+              <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-3">
+                {copied ? "✓ Invite link copied!" : <>🔗 Invite friends to <span className="text-zinc-200">{selLeague.name}</span> — tap to copy</>}
+              </button>
+            )}
+
+            <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline mb-3 block">
+              ℹ️ How scoring works — you earn more for teams you rank higher when they do well
+            </button>
+
+            {subTab === "board" ? (
+              <Leaderboard selLeagueId={selLeagueId} teamById={teamById} />
+            ) : (
               <>
+                {/* Entry selector */}
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Tap to add ({pool.length})</h3>
-                  <button onClick={addAllRemaining} className="text-[12px] text-zinc-400 underline">Add all</button>
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">
+                    Your {entries.length > 1 || (selLeague.max_entries || 1) > 1 ? "entries" : "entry"}
+                  </h3>
+                  {!locked && entries.length < (selLeague.max_entries || 1) && (
+                    <button onClick={newEntry} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1 rounded-lg">＋ New entry</button>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {pool.map((t) => (
-                    <button key={t.id} onClick={() => add(t.id)} className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 hover:border-red-500 rounded-xl px-3 py-2.5 text-left active:scale-[0.98]">
-                      {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
-                      <span className="text-sm font-medium truncate">{t.name}</span>
-                    </button>
-                  ))}
-                </div>
+                {entries.length > 1 && (
+                  <div className="flex gap-1.5 flex-wrap mb-3">
+                    {entries.map((e, i) => (
+                      <button key={e.id} onClick={() => setSelEntryId(e.id)} className={`text-[12px] px-3 py-1 rounded-full ${selEntryId === e.id ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{e.label || `Entry ${i + 1}`}</button>
+                    ))}
+                  </div>
+                )}
+
+                {entries.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-zinc-500 text-sm mb-3">No ranking yet for {selLeague.name}.</p>
+                    {!locked && <button onClick={newEntry} className="bg-red-600 text-white font-bold px-5 py-2.5 rounded-xl">Start your ranking →</button>}
+                  </div>
+                ) : (
+                  <>
+                    {selEntryId && !locked && (
+                      <input
+                        key={selEntryId}
+                        defaultValue={entries.find((e) => e.id === selEntryId)?.label || ""}
+                        onBlur={(e) => renameEntry(e.target.value)}
+                        placeholder="Name this entry (e.g. Dark Horses)"
+                        maxLength={24}
+                        className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-zinc-600"
+                      />
+                    )}
+                    <RankEditor
+                      teams={teams} ranked={ranked} pool={pool} order={order} locked={locked} saving={saving}
+                      onAdd={add} onRemove={removeT} onMove={move} onSuggest={suggestOrder} onSave={save}
+                      onAddAll={() => setOrder((o) => [...o, ...pool.map((t) => String(t.id))])}
+                      onRetryTeams={loadTeams}
+                    />
+                  </>
+                )}
               </>
             )}
           </>
-        ) : (
-          <Leaderboard teamById={teamById} />
         )}
       </div>
 
-      {toast && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-50">{toast}</div>
-      )}
+      {toast && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-50">{toast}</div>}
       <Confetti show={celebrate} />
       <Nav />
     </div>
   );
 }
 
-function Leaderboard({ teamById }) {
-  const [rows, setRows] = useState(null);
-  const [scopeIds, setScopeIds] = useState(null); // null = global, else group member ids
+function RankEditor({ teams, ranked, pool, order, locked, saving, onAdd, onRemove, onMove, onSuggest, onSave, onAddAll, onRetryTeams }) {
+  return (
+    <>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Ranking ({ranked.length}/{teams.length})</h3>
+        {!locked && (
+          <div className="flex items-center gap-2">
+            <button onClick={onSuggest} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1.5 rounded-lg">✨ Suggest</button>
+            {order.length === teams.length && (
+              <button onClick={onSave} disabled={saving} className="text-sm bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-lg">{saving ? "Saving…" : "Save"}</button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="space-y-1.5 mb-6">
+        {ranked.length === 0 && <p className="text-zinc-600 text-sm">Tap teams below to start ranking.</p>}
+        {ranked.map((t, i) => (
+          <div key={t.id} className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2">
+            <span className="text-red-500 font-bold w-6 text-sm">{i + 1}</span>
+            {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
+            <span className="text-sm font-medium flex-1 truncate">{t.name}</span>
+            {!locked && (
+              <span className="flex gap-1">
+                <button onClick={() => onMove(t.id, -1)} disabled={i === 0} className="w-7 h-7 rounded bg-zinc-800 disabled:opacity-30">↑</button>
+                <button onClick={() => onMove(t.id, 1)} disabled={i === ranked.length - 1} className="w-7 h-7 rounded bg-zinc-800 disabled:opacity-30">↓</button>
+                <button onClick={() => onRemove(t.id)} className="w-7 h-7 rounded bg-zinc-800 text-zinc-400">✕</button>
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      {!locked && teams.length === 0 && (
+        <div className="text-center py-8">
+          <p className="text-zinc-500 text-sm mb-3">Couldn&apos;t load teams.</p>
+          <button onClick={onRetryTeams} className="bg-red-600 text-white font-bold px-4 py-2 rounded-xl text-sm">Retry</button>
+        </div>
+      )}
+      {!locked && pool.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Tap to add ({pool.length})</h3>
+            <button onClick={onAddAll} className="text-[12px] text-zinc-400 underline">Add all</button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {pool.map((t) => (
+              <button key={t.id} onClick={() => onAdd(t.id)} className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 hover:border-red-500 rounded-xl px-3 py-2.5 text-left active:scale-[0.98]">
+                {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
+                <span className="text-sm font-medium truncate">{t.name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
+function Leaderboard({ selLeagueId, teamById }) {
+  const [rows, setRows] = useState(null);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [res, results] = await Promise.all([
-        sbFetch("wc_rankings?select=user_id,display_name,handle,ranking"),
+      const flt = selLeagueId ? `group_id=eq.${selLeagueId}` : "group_id=is.null";
+      const [entries, results] = await Promise.all([
+        sbJson(await sbFetch(`wc_ranking_entries?${flt}&select=user_id,display_name,handle,label,ranking`)),
         fetchResults(),
       ]);
-      const rankings = await sbJson(res);
-      const scored = rankings
+      const scored = entries
         .filter((r) => Array.isArray(r.ranking) && r.ranking.length)
         .map((r) => {
           const { total, contributions } = rankingPoints(r.ranking, results);
           const best = [...contributions].sort((a, b) => b.points - a.points)[0];
-          return {
-            user_id: r.user_id,
-            name: r.display_name || r.handle || "Player",
-            total: Math.round(total),
-            best,
-          };
+          return { name: r.display_name || r.handle || "Player", label: r.label, total: Math.round(total), best };
         })
         .sort((a, b) => b.total - a.total);
       if (!cancelled) setRows({ scored, noGames: (results.events || 0) === 0 });
     };
-    load().catch(() => { if (!cancelled) setRows((r) => r || { scored: [], noGames: true }); });
-    const t = setInterval(() => load().catch(() => {}), 45000); // live refresh
+    load().catch(() => { if (!cancelled) setRows({ scored: [], noGames: true }); });
+    const t = setInterval(() => load().catch(() => {}), 45000);
     return () => { cancelled = true; clearInterval(t); };
-  }, []);
+  }, [selLeagueId]);
 
   if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading leaderboard…</p>;
-  const shown = scopeIds ? rows.scored.filter((r) => scopeIds.includes(r.user_id)) : rows.scored;
-
+  if (rows.scored.length === 0) return <p className="text-zinc-600 text-sm py-8">No rankings submitted yet.</p>;
   return (
     <div>
-      <GroupScope game="ranking" onScope={setScopeIds} />
       {rows.noGames && (
         <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 mb-4 text-[12px] text-zinc-500">
           No matches played yet — the board updates automatically once games kick off.
         </div>
       )}
-      {shown.length === 0 && <p className="text-zinc-600 text-sm py-6">{scopeIds ? "No one in this group has ranked yet." : "No rankings submitted yet."}</p>}
       <div className="space-y-2">
-        {shown.map((r, i) => {
+        {rows.scored.map((r, i) => {
           const bt = r.best && teamById(r.best.team_id);
           return (
-            <div key={r.user_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
+            <div key={i} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-zinc-600 font-bold w-5">{i + 1}</span>
                 <div>
-                  <div className="font-bold">{r.name}</div>
-                  {bt && !rows.noGames && (
-                    <div className="text-[11px] text-zinc-500">Top pick: {bt.name} (#{r.best.rank})</div>
-                  )}
+                  <div className="font-bold">{r.name}{r.label ? <span className="text-[11px] text-zinc-500 font-normal"> · {r.label}</span> : null}</div>
+                  {bt && !rows.noGames && <div className="text-[11px] text-zinc-500">Top pick: {bt.name} (#{r.best.rank})</div>}
                 </div>
               </div>
               <span className="font-bold text-red-500 tabular-nums">{r.total}</span>
