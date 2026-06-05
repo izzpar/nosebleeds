@@ -21,6 +21,7 @@ export default function SalaryCapPage() {
   const [poolLoading, setPoolLoading] = useState(true);
   const [squad, setSquad] = useState([]);       // player ids
   const [starters, setStarters] = useState([]); // player ids (subset)
+  const [bench, setBench] = useState([]);       // non-starters, in auto-sub order
   const [captain, setCaptain] = useState(null);
   const [subTab, setSubTab] = useState("team");
   const [pos, setPos] = useState("GK");
@@ -38,11 +39,26 @@ export default function SalaryCapPage() {
   }, []);
   useEffect(() => {
     if (!user) return;
-    sbFetch(`wc_fantasy_entries?user_id=eq.${user.id}&select=squad,starters,captain`).then(async (res) => {
+    sbFetch(`wc_fantasy_entries?user_id=eq.${user.id}&select=squad,starters,bench,captain`).then(async (res) => {
       const r = (await sbJson(res))[0];
-      if (r) { setSquad((r.squad || []).map(String)); setStarters((r.starters || []).map(String)); setCaptain(r.captain ? String(r.captain) : null); }
+      if (r) {
+        setSquad((r.squad || []).map(String));
+        setStarters((r.starters || []).map(String));
+        setBench((r.bench || []).map(String));
+        setCaptain(r.captain ? String(r.captain) : null);
+      }
     });
   }, [user]);
+
+  // Keep the bench list = squad minus starters, preserving the user's order.
+  useEffect(() => {
+    const nonStarters = squad.filter((id) => !starters.includes(id));
+    setBench((prev) => {
+      const kept = prev.filter((id) => nonStarters.includes(id));
+      const added = nonStarters.filter((id) => !kept.includes(id));
+      return [...kept, ...added];
+    });
+  }, [squad, starters]);
 
   const byId = useMemo(() => {
     const m = {}; for (const p of pool) m[String(p.id)] = p; return m;
@@ -78,6 +94,14 @@ export default function SalaryCapPage() {
     if (posCount(starters, role) >= START_MAX[role]) { flash(`Max ${START_MAX[role]} ${role} on the pitch`); return; }
     setStarters((s) => [...s, id]);
   };
+  const moveBench = (id, dir) => {
+    if (locked) return;
+    setBench((b) => {
+      const i = b.indexOf(id); const j = i + dir;
+      if (i < 0 || j < 0 || j >= b.length) return b;
+      const n = [...b]; [n[i], n[j]] = [n[j], n[i]]; return n;
+    });
+  };
 
   const squadFull = squad.length === 15 && POS.every((p) => posCount(squad, p) === SQUAD_REQ[p]);
   const startersValid =
@@ -96,7 +120,7 @@ export default function SalaryCapPage() {
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify({
           user_id: user.id, handle: profile?.handle, display_name: profile?.display_name || profile?.handle,
-          squad, starters, captain, spent, updated_at: new Date().toISOString(),
+          squad, starters, bench, captain, spent, updated_at: new Date().toISOString(),
         }),
       });
       flash(res.ok ? "Team saved ✓" : "Couldn't save");
@@ -176,6 +200,33 @@ export default function SalaryCapPage() {
               </div>
             ))}
 
+            {/* bench / auto-sub order */}
+            {squad.length > starters.length && (
+              <div className="mb-4 mt-2">
+                <div className="text-[11px] font-bold text-zinc-400 mb-1">
+                  Bench <span className="text-zinc-600 font-normal">— if a starter doesn&apos;t play, the first bench sub who played takes their points</span>
+                </div>
+                <div className="space-y-1">
+                  {bench.map((id, i) => {
+                    const p = byId[id]; if (!p) return null;
+                    return (
+                      <div key={id} className="flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-1.5 text-[12px]">
+                        <span className="text-zinc-600 w-4">{i + 1}</span>
+                        <span className={`${POS_COLOR[p.role]} font-bold w-8 text-[10px]`}>{p.role}</span>
+                        <span className="flex-1 truncate">{p.name}</span>
+                        {!locked && (
+                          <span className="flex gap-1">
+                            <button onClick={() => moveBench(id, -1)} disabled={i === 0} className="w-6 h-6 rounded bg-zinc-800 disabled:opacity-30">↑</button>
+                            <button onClick={() => moveBench(id, 1)} disabled={i === bench.length - 1} className="w-6 h-6 rounded bg-zinc-800 disabled:opacity-30">↓</button>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {!locked && (
               <button onClick={save} disabled={saving} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl my-4">
                 {saving ? "Saving…" : canSave ? "Save team" : "Pick 15 + 11 starters + captain"}
@@ -227,19 +278,26 @@ function SalaryLeaderboard() {
   const [rows, setRows] = useState(null);
   useEffect(() => {
     (async () => {
-      const entries = await sbJson(await sbFetch("wc_fantasy_entries?select=user_id,display_name,handle,starters,captain"));
-      const ids = [...new Set(entries.flatMap((e) => e.starters || []).map(String))];
-      const pmap = {};
+      const entries = await sbJson(await sbFetch("wc_fantasy_entries?select=user_id,display_name,handle,starters,bench,captain"));
+      const ids = [...new Set(entries.flatMap((e) => [...(e.starters || []), ...(e.bench || [])]).map(String))];
+      const pmap = {}; const mmap = {};
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100).map((x) => encodeURIComponent(x)).join(",");
         if (!chunk) continue;
-        for (const r of await sbJson(await sbFetch(`wc_player_points?player_id=in.(${chunk})&select=player_id,points`)))
+        for (const r of await sbJson(await sbFetch(`wc_player_points?player_id=in.(${chunk})&select=player_id,points,minutes`))) {
           pmap[String(r.player_id)] = Number(r.points || 0);
+          mmap[String(r.player_id)] = Number(r.minutes || 0);
+        }
       }
+      const played = (id) => (mmap[id] || 0) > 0;
       const scored = entries.map((e) => {
         const starters = (e.starters || []).map(String);
-        let total = starters.reduce((s, id) => s + (pmap[id] || 0), 0);
-        if (e.captain && starters.includes(String(e.captain))) total += pmap[String(e.captain)] || 0; // captain doubles
+        const benchAvail = (e.bench || []).map(String).filter(played); // in order
+        let bi = 0;
+        const fielded = starters.map((id) => (played(id) ? id : bi < benchAvail.length ? benchAvail[bi++] : null));
+        let total = fielded.reduce((s, id) => s + (id ? pmap[id] || 0 : 0), 0);
+        const cap = e.captain && String(e.captain);
+        if (cap && fielded.includes(cap)) total += pmap[cap] || 0; // captain doubles
         return { user_id: e.user_id, name: e.display_name || e.handle || "Player", total: Math.round(total * 100) / 100 };
       }).sort((a, b) => b.total - a.total);
       setRows(scored);

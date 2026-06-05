@@ -106,10 +106,12 @@ create table if not exists public.wc_fantasy_entries (
   display_name text,
   squad        jsonb not null default '[]'::jsonb,
   starters     jsonb not null default '[]'::jsonb,
+  bench        jsonb not null default '[]'::jsonb,
   captain      text,
   spent        numeric not null default 0,
   updated_at   timestamptz not null default now()
 );
+alter table public.wc_fantasy_entries add column if not exists bench jsonb not null default '[]'::jsonb;
 
 -- ---- Row Level Security ----------------------------------------------------
 alter table public.wc_leagues         enable row level security;

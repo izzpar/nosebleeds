@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 
 const POS_COLOR = { GK: "text-amber-400", DEF: "text-sky-400", MID: "text-emerald-400", FWD: "text-red-400" };
-const BID_SECONDS = 30;
+const NOMINATE_SECONDS = 30; // fresh clock on nomination
+const ANTISNIPE_SECONDS = 10; // a late bid bumps the clock back up to this
 
 // Live auction. The commissioner is the auctioneer: managers nominate (in turn)
 // and anyone bids; the commissioner clicks "Sold" to settle — so there are no
@@ -18,6 +19,7 @@ export default function AuctionRoom({
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
+  const settling = useRef(false);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2400); };
 
   const loadLot = useCallback(async () => {
@@ -65,7 +67,7 @@ export default function AuctionRoom({
         item_id: String(item.id), item_kind: item.kind, item_name: item.name,
         item_team: item.team || null, item_position: item.position || null,
         high_bid: ob, high_bidder: user.id, high_bidder_name: memberName(user.id),
-        ends_at: new Date(Date.now() + BID_SECONDS * 1000).toISOString(),
+        ends_at: new Date(Date.now() + NOMINATE_SECONDS * 1000).toISOString(),
       });
       await loadLot();
     } catch (e) { flash("Couldn't nominate"); } finally { setBusy(false); }
@@ -78,9 +80,15 @@ export default function AuctionRoom({
     if (slotsLeftOf(user.id) <= 0) { flash("Your squad is full"); return; }
     setBusy(true);
     try {
+      // Anti-snipe: a bid in the final 10s bumps the clock back up to 10s;
+      // otherwise the clock keeps running.
+      const curEnds = lot.ends_at ? new Date(lot.ends_at).getTime() : Date.now();
+      const ends = curEnds - Date.now() < ANTISNIPE_SECONDS * 1000
+        ? Date.now() + ANTISNIPE_SECONDS * 1000
+        : curEnds;
       await patchLot({
         high_bid: amount, high_bidder: user.id, high_bidder_name: memberName(user.id),
-        ends_at: new Date(Date.now() + BID_SECONDS * 1000).toISOString(),
+        ends_at: new Date(ends).toISOString(),
       });
       await loadLot();
     } catch (e) { flash("Bid failed"); } finally { setBusy(false); }
@@ -97,7 +105,8 @@ export default function AuctionRoom({
   };
 
   const sold = async () => {
-    if (!isCommish || !lot?.item_id || busy) return;
+    if (!isCommish || !lot?.item_id || settling.current) return;
+    settling.current = true;
     setBusy(true);
     try {
       const isPlayer = lot.item_kind === "player";
@@ -124,8 +133,15 @@ export default function AuctionRoom({
       });
       await onReload();
       await loadLot();
-    } catch (e) { flash("Couldn't settle"); } finally { setBusy(false); }
+    } catch (e) { flash("Couldn't settle"); } finally { setBusy(false); settling.current = false; }
   };
+
+  // Commissioner's client auto-settles when the clock hits 0 (single settler,
+  // so there are no double-settle races). Others just watch it resolve.
+  useEffect(() => {
+    if (!isCommish || !lot?.item_id || !lot?.ends_at || settling.current) return;
+    if (new Date(lot.ends_at).getTime() - now <= 0) sold();
+  }, [isCommish, lot, now]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const skipNominator = async () => {
     if (!isCommish || lot?.item_id || busy) return;
@@ -187,7 +203,7 @@ export default function AuctionRoom({
           <div className="text-[11px] text-zinc-500 mt-2 text-center">Your budget left: {remainingOf(user?.id)} · max bid {Math.max(0, myMax)}</div>
           {isCommish && (
             <button onClick={sold} disabled={busy} className="w-full mt-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg">
-              🔨 Sold to {memberName(lot.high_bidder)} for {lot.high_bid}
+              🔨 Sell now → {memberName(lot.high_bidder)} ({lot.high_bid}) · or wait for 0
             </button>
           )}
         </div>
