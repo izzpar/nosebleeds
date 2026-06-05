@@ -54,9 +54,28 @@ create index if not exists wc_picks_league_idx   on public.wc_picks(league_id);
 -- Backfill columns if the tables pre-date the player-draft / format changes.
 alter table public.wc_leagues add column if not exists format     text not null default 'team';
 alter table public.wc_leagues add column if not exists squad_size int  not null default 15;
+alter table public.wc_leagues add column if not exists draft_type text not null default 'snake';
+alter table public.wc_leagues add column if not exists budget     int  not null default 200;
 alter table public.wc_picks   add column if not exists player_id   text;
 alter table public.wc_picks   add column if not exists player_name text;
 alter table public.wc_picks   add column if not exists position    text;
+alter table public.wc_picks   add column if not exists price       int  not null default 0;
+
+-- Live auction lot state (one row per league).
+create table if not exists public.wc_auction (
+  league_id        uuid primary key references public.wc_leagues(id) on delete cascade,
+  nominator_pos    int not null default 0,
+  item_id          text,
+  item_kind        text,
+  item_name        text,
+  item_team        text,
+  item_position    text,
+  high_bid         int default 0,
+  high_bidder      uuid,
+  high_bidder_name text,
+  ends_at          timestamptz,
+  updated_at       timestamptz not null default now()
+);
 
 -- ---- Power Ranking (1–48) --------------------------------------------------
 create table if not exists public.wc_rankings (
@@ -99,6 +118,7 @@ alter table public.wc_picks           enable row level security;
 alter table public.wc_rankings        enable row level security;
 alter table public.wc_player_points   enable row level security;
 alter table public.wc_fantasy_entries enable row level security;
+alter table public.wc_auction         enable row level security;
 
 -- leagues
 drop policy if exists wc_leagues_select on public.wc_leagues;
@@ -150,3 +170,13 @@ drop policy if exists wc_fantasy_insert on public.wc_fantasy_entries;
 create policy wc_fantasy_insert on public.wc_fantasy_entries for insert to authenticated with check (user_id = auth.uid());
 drop policy if exists wc_fantasy_update on public.wc_fantasy_entries;
 create policy wc_fantasy_update on public.wc_fantasy_entries for update to authenticated using (user_id = auth.uid());
+
+-- auction (members of the league can nominate/bid)
+drop policy if exists wc_auction_select on public.wc_auction;
+create policy wc_auction_select on public.wc_auction for select to authenticated using (true);
+drop policy if exists wc_auction_insert on public.wc_auction;
+create policy wc_auction_insert on public.wc_auction for insert to authenticated with check (
+  league_id in (select league_id from public.wc_members where user_id = auth.uid()));
+drop policy if exists wc_auction_update on public.wc_auction;
+create policy wc_auction_update on public.wc_auction for update to authenticated using (
+  league_id in (select league_id from public.wc_members where user_id = auth.uid()));

@@ -14,6 +14,7 @@ import {
   nationStrength,
   playerProjection,
 } from "@/lib/worldcup";
+import AuctionRoom from "./AuctionRoom";
 
 const POLL_MS = 2500;
 
@@ -107,8 +108,14 @@ export default function LeagueRoom() {
     !draftComplete &&
     onClockMember?.user_id === user?.id;
   const isCommish = league && user && league.commissioner_id === user.id;
+  const isAuction = league?.draft_type === "auction";
   const pickedTeamIds = new Set(picks.map((p) => String(p.team_id)));
   const pickedPlayerIds = new Set(picks.map((p) => String(p.player_id)));
+
+  // Normalized items for the auction (teams or players).
+  const auctionItems = isPlayer
+    ? players.map((p) => ({ id: p.id, name: p.name, kind: "player", team: p.team_name, position: p.role, proj: typeof p.proj === "number" ? p.proj : playerProjection(p) }))
+    : teams.map((t) => ({ id: t.id, name: t.name, kind: "team", proj: nationStrength(t.name) }));
 
   // Advisory countdown — resets whenever a new pick lands.
   useEffect(() => {
@@ -182,6 +189,14 @@ export default function LeagueRoom() {
     try {
       // Lock in the current order (whatever the commissioner arranged) as 0..n-1.
       await patchMemberPositions(members);
+      // For auctions, seed the live lot row so members can nominate/bid.
+      if (league?.draft_type === "auction") {
+        await sbFetch("wc_auction", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({ league_id: id, nominator_pos: 0 }),
+        });
+      }
       await sbFetch(`wc_leagues?id=eq.${id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "drafting" }),
@@ -310,8 +325,23 @@ export default function LeagueRoom() {
               isCommish={isCommish}
               perManager={n >= 2 ? perManager : 0}
               format={format}
+              draftType={league.draft_type || "snake"}
               onStart={startDraft}
               busy={busy}
+            />
+          ) : isAuction ? (
+            <AuctionRoom
+              leagueId={id}
+              members={members}
+              picks={picks}
+              user={user}
+              isCommish={isCommish}
+              format={format}
+              items={auctionItems}
+              perManager={perManager}
+              totalPicks={totalPicks}
+              budget={league.budget || 200}
+              onReload={loadAll}
             />
           ) : isPlayer ? (
             <PlayerDraftBoard
@@ -395,16 +425,16 @@ function Shell({ children }) {
   );
 }
 
-function Lobby({ members, isCommish, perManager, format, onStart, busy }) {
+function Lobby({ members, isCommish, perManager, format, draftType, onStart, busy }) {
   const noun = format === "player" ? "players" : "nations";
+  const isAuction = draftType === "auction";
   return (
     <div>
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-4">
-        <h3 className="font-bold mb-1">Pre-draft lobby</h3>
+        <h3 className="font-bold mb-1">Pre-{isAuction ? "auction" : "draft"} lobby</h3>
         <p className="text-[12px] text-zinc-500 mb-3">
-          Share the invite code. When everyone&apos;s in, the commissioner starts the draft — it
-          snakes (1·2·3 → 3·2·1).
-          {members.length >= 2 && <> Each manager will draft <span className="text-zinc-300">{perManager}</span> {noun}.</>}
+          Share the invite code. When everyone&apos;s in, the commissioner starts the {isAuction ? "auction — nominate players and bid; the commissioner calls “sold”" : "draft — it snakes (1·2·3 → 3·2·1)"}.
+          {members.length >= 2 && <> Each manager builds a squad of <span className="text-zinc-300">{perManager}</span> {noun}.</>}
         </p>
         <div className="space-y-1.5">
           {members.map((m, i) => (
