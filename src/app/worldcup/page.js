@@ -46,6 +46,15 @@ export default function WorldCupHub() {
 
   useEffect(() => { loadLeagues(); }, [loadLeagues]);
 
+  // Finish a league join that started before sign-in (invite link → login → here).
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const pl = localStorage.getItem("nb_pending_league");
+      if (pl) { localStorage.removeItem("nb_pending_league"); router.push(`/worldcup/join/${pl}`); }
+    } catch (e) {}
+  }, [user, router]);
+
   // Quick "have I entered?" status for the game cards.
   useEffect(() => {
     if (!user) return;

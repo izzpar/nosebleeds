@@ -297,6 +297,13 @@ export default function LeagueRoom() {
   const copyCode = () => {
     try { navigator.clipboard.writeText(league.invite_code); flash("Code copied"); } catch (e) {}
   };
+  const copyLink = () => {
+    try {
+      const link = `${window.location.origin}/worldcup/join/${league.invite_code}`;
+      navigator.clipboard.writeText(link);
+      flash("Invite link copied — text it to friends!");
+    } catch (e) {}
+  };
 
   // ---- render ----
   if (loading) return <Shell><p className="text-zinc-600 text-sm py-10">Loading…</p></Shell>;
@@ -312,9 +319,10 @@ export default function LeagueRoom() {
           <span className="text-xl">🏆</span>
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-bold leading-tight truncate">{league.name}</h1>
-            <button onClick={copyCode} className="text-[11px] text-zinc-500 leading-tight">
-              Invite code <span className="text-zinc-300 font-mono tracking-widest">{league.invite_code}</span> · tap to copy
-            </button>
+            <div className="text-[11px] text-zinc-500 leading-tight flex items-center gap-2">
+              <button onClick={copyLink} className="text-red-400 font-semibold">🔗 Copy invite link</button>
+              <button onClick={copyCode}>code <span className="text-zinc-300 font-mono tracking-widest">{league.invite_code}</span></button>
+            </div>
           </div>
         </div>
         {/* sub-tabs */}
