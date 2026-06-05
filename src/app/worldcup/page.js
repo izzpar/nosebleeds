@@ -16,6 +16,30 @@ function makeCode() {
 // Team-draft league sizes must divide 48 so the nations split evenly.
 const TEAM_SIZES = [2, 3, 4, 6, 8, 12, 16, 24];
 
+const kindLabel = (l) => `${l.format === "player" ? "⚽ Players" : "🏳️ Nations"} · ${l.draft_type === "auction" ? "💸 Auction" : "🐍 Snake"}`;
+
+// When the draft is / was, and its completion state.
+function draftTiming(l) {
+  if (l.status === "drafting") return { text: "🔴 Drafting now", cls: "text-red-400" };
+  if (l.status === "done") return { text: "✓ Draft completed", cls: "text-emerald-400" };
+  if (l.draft_at) {
+    const d = new Date(l.draft_at);
+    const past = d.getTime() < Date.now();
+    return {
+      text: past ? "Starting…" : `🗓 Drafts ${d.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`,
+      cls: past ? "text-amber-400" : "text-zinc-300",
+    };
+  }
+  return { text: "In lobby · not scheduled", cls: "text-zinc-500" };
+}
+
+// Section order/labels for grouping leagues on the hub.
+const LEAGUE_SECTIONS = [
+  ["drafting", "🔴 Live now"],
+  ["lobby", "🗓 Upcoming"],
+  ["done", "✓ Completed"],
+];
+
 export default function WorldCupHub() {
   const { user, profile } = useAuth();
   const router = useRouter();
@@ -203,28 +227,45 @@ export default function WorldCupHub() {
             ) : leagues.length === 0 ? (
               <p className="text-zinc-600 text-sm py-4">No leagues yet. Create one or join with a code.</p>
             ) : (
-              <div className="space-y-2 mb-8">
-                {leagues.map((l) => (
-                  <button
-                    key={l.id}
-                    onClick={() => router.push(`/worldcup/${l.id}`)}
-                    className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700"
-                  >
-                    <div>
-                      <div className="font-bold">
-                        {l.name}{" "}
-                        <span className="text-[10px] font-normal text-zinc-500">
-                          {l.format === "player" ? "⚽" : "🏳️"} {l.draft_type === "auction" ? "Auction" : "Snake"}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-zinc-500">
-                        Code {l.invite_code} ·{" "}
-                        {l.status === "lobby" ? "Lobby" : l.status === "drafting" ? "Live" : "Done"}
+              <div className="space-y-4 mb-8">
+                {LEAGUE_SECTIONS.map(([status, label]) => {
+                  const group = leagues
+                    .filter((l) => (l.status || "lobby") === status)
+                    .sort((a, b) => {
+                      if (status !== "lobby") return 0;
+                      const at = a.draft_at ? new Date(a.draft_at).getTime() : Infinity;
+                      const bt = b.draft_at ? new Date(b.draft_at).getTime() : Infinity;
+                      return at - bt; // scheduled (soonest) first, unscheduled last
+                    });
+                  if (group.length === 0) return null;
+                  return (
+                    <div key={status}>
+                      <div className="text-[11px] font-bold text-zinc-500 mb-1.5">{label} ({group.length})</div>
+                      <div className="space-y-2">
+                        {group.map((l) => {
+                          const t = draftTiming(l);
+                          return (
+                            <button
+                              key={l.id}
+                              onClick={() => router.push(`/worldcup/${l.id}`)}
+                              className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700"
+                            >
+                              <div className="min-w-0">
+                                <div className="font-bold truncate">{l.name}</div>
+                                <div className="text-[11px] text-zinc-500 mt-0.5">{kindLabel(l)}</div>
+                                <div className={`text-[11px] mt-0.5 ${t.cls}`}>{t.text}</div>
+                              </div>
+                              <div className="text-right shrink-0 ml-2">
+                                <div className="text-[10px] text-zinc-600">code</div>
+                                <div className="text-[11px] font-mono tracking-widest text-zinc-400">{l.invite_code}</div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                    <span className="text-zinc-600">›</span>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             )}
 
