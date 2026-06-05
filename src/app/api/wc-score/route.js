@@ -8,6 +8,7 @@
 
 import { smFetch, parsePlayerStats, WC_SEASON } from "@/lib/sportmonks";
 import { playerMatchPoints } from "@/lib/playerScoring";
+import { buildRounds, fixtureRoundMap } from "@/lib/rounds";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -29,18 +30,16 @@ async function sb(path, options = {}) {
   });
 }
 
-// All season fixtures (paginated), keeping only completed ones.
-async function completedFixtures() {
+// All season fixtures (paginated), with round + state for round-building.
+async function allFixtures() {
   const out = [];
   for (let page = 1; page <= 6; page++) {
     const { ok, json } = await smFetch("football/fixtures", {
-      searchParams: { filters: `fixtureSeasons:${SEASON}`, include: "state", per_page: 50, page },
+      searchParams: { filters: `fixtureSeasons:${SEASON}`, include: "state;round", per_page: 50, page },
     });
     if (!ok) break;
     const data = json.data || [];
-    for (const f of data) {
-      if (FINISHED.has(f.state?.developer_name)) out.push(f.id);
-    }
+    out.push(...data);
     if (data.length < 50) break;
   }
   return out;
@@ -56,37 +55,45 @@ export async function GET(request) {
   if (!SERVICE_KEY) return Response.json({ error: "missing SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
   if (!process.env.SPORTMONKS_API_KEY) return Response.json({ error: "missing SPORTMONKS_API_KEY" }, { status: 500 });
 
-  const fixtureIds = await completedFixtures();
-  if (fixtureIds.length === 0) {
+  const fixtures = await allFixtures();
+  const rounds = buildRounds(fixtures);
+  const roundOf = fixtureRoundMap(rounds);
+  const completedIds = fixtures.filter((f) => FINISHED.has(f.state?.developer_name)).map((f) => f.id);
+  if (completedIds.length === 0) {
     return Response.json({ ok: true, fixtures: 0, players: 0, message: "no completed matches yet" });
   }
 
-  // Accumulate per-player totals across all completed fixtures (full recompute).
-  const totals = {}; // player_id -> {points, matches, goals, assists, minutes, name, team_id}
+  // Accumulate cumulative per-player totals + per-(player,round) points.
+  const totals = {};      // player_id -> {points, matches, goals, assists, minutes, name, team_id}
+  const roundPts = {};    // `${player_id}|${round_id}` -> points
   const BATCH = 10;
-  for (let i = 0; i < fixtureIds.length; i += BATCH) {
-    const slice = fixtureIds.slice(i, i + BATCH);
-    const fixtures = await Promise.all(
+  for (let i = 0; i < completedIds.length; i += BATCH) {
+    const slice = completedIds.slice(i, i + BATCH);
+    const detail = await Promise.all(
       slice.map((id) =>
         smFetch(`football/fixtures/${id}`, { searchParams: { include: "lineups.details.type" } })
           .then((r) => (r.ok ? r.json.data : null))
           .catch(() => null)
       )
     );
-    for (const fx of fixtures) {
+    for (const fx of detail) {
       if (!fx) continue;
+      const rid = roundOf[String(fx.id)] || "0";
       for (const p of parsePlayerStats(fx)) {
         if (!p.player_id || !p.played) continue;
         const key = String(p.player_id);
+        const pts = playerMatchPoints(p);
         const t = (totals[key] = totals[key] || {
           points: 0, matches: 0, goals: 0, assists: 0, minutes: 0,
           name: p.name, team_id: p.team_id,
         });
-        t.points += playerMatchPoints(p);
+        t.points += pts;
         t.matches += 1;
         t.goals += Number(p.stats[52] || 0);
         t.assists += Number(p.stats[79] || 0);
         t.minutes += p.minutes;
+        const rk = `${key}|${rid}`;
+        roundPts[rk] = (roundPts[rk] || 0) + pts;
       }
     }
   }
@@ -103,17 +110,35 @@ export async function GET(request) {
     updated_at: new Date().toISOString(),
   }));
 
-  // Bulk upsert.
+  // Bulk upsert cumulative totals.
   const res = await sb("wc_player_points?on_conflict=player_id", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(rows),
   });
 
+  // Bulk upsert per-round points (powers per-round snapshot scoring).
+  const roundRows = Object.entries(roundPts).map(([k, pts]) => {
+    const [player_id, round_id] = k.split("|");
+    return { player_id, round_id, points: Math.round(pts * 100) / 100 };
+  });
+  let roundStatus = 204;
+  if (roundRows.length) {
+    const rr = await sb("wc_player_round_points?on_conflict=player_id,round_id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(roundRows),
+    });
+    roundStatus = rr.status;
+  }
+
   return Response.json({
     ok: res.ok,
-    fixtures: fixtureIds.length,
+    fixtures: completedIds.length,
+    rounds: rounds.length,
     players: rows.length,
+    roundRows: roundRows.length,
     status: res.status,
+    roundStatus,
   });
 }

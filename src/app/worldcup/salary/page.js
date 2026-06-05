@@ -5,7 +5,8 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
 import GroupScope from "@/components/WcGroups";
-import { rankingsLocked } from "@/lib/worldcup";
+import Confetti from "@/components/Confetti";
+import { RANKING_LOCK_ISO } from "@/lib/worldcup";
 
 const BUDGET = 100;
 const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };       // 15 total
@@ -14,12 +15,23 @@ const START_MAX = { GK: 1, DEF: 5, MID: 5, FWD: 3 };       // formation ceiling
 const POS = ["GK", "DEF", "MID", "FWD"];
 const POS_COLOR = { GK: "text-amber-400", DEF: "text-sky-400", MID: "text-emerald-400", FWD: "text-red-400" };
 
+function lockLabel(ts) {
+  const diff = ts - Date.now();
+  if (diff <= 0) return "now";
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  if (d > 0) return `in ${d}d ${h}h`;
+  const m = Math.floor((diff % 3600000) / 60000);
+  return `in ${h}h ${m}m`;
+}
+
 export default function SalaryCapPage() {
   const { user, profile } = useAuth();
   const router = useRouter();
 
   const [pool, setPool] = useState([]);
   const [poolLoading, setPoolLoading] = useState(true);
+  const [rounds, setRounds] = useState(null);    // from /api/wc-rounds (with fallback)
   const [squad, setSquad] = useState([]);       // player ids
   const [starters, setStarters] = useState([]); // player ids (subset)
   const [bench, setBench] = useState([]);       // non-starters, in auto-sub order
@@ -29,27 +41,55 @@ export default function SalaryCapPage() {
   const [q, setQ] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
-  const locked = rankingsLocked();
+  const [celebrate, setCelebrate] = useState(0);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
 
-  // Priced player pool + my saved entry.
+  // The round you're currently editing = the next one whose lock hasn't passed.
+  const editRound = useMemo(() => {
+    if (!rounds) return undefined;            // still loading
+    return rounds.find((r) => r.lock > Date.now()) || null; // null = all rounds locked
+  }, [rounds]);
+  const locked = editRound === null;          // no open round left to edit
+
+  // Priced player pool.
   useEffect(() => {
     fetch("/api/wc-players").then((r) => r.json()).then((d) => {
       if (Array.isArray(d.players)) setPool(d.players);
     }).catch(() => {}).finally(() => setPoolLoading(false));
   }, []);
+
+  // Rounds (with a single-round fallback if the API is unavailable).
   useEffect(() => {
-    if (!user) return;
-    sbFetch(`wc_fantasy_entries?user_id=eq.${user.id}&select=squad,starters,bench,captain`).then(async (res) => {
-      const r = (await sbJson(res))[0];
-      if (r) {
-        setSquad((r.squad || []).map(String));
-        setStarters((r.starters || []).map(String));
-        setBench((r.bench || []).map(String));
-        setCaptain(r.captain ? String(r.captain) : null);
+    const fallback = [{ round_id: "all", index: 0, label: "Tournament", lock: new Date(RANKING_LOCK_ISO).getTime() }];
+    fetch("/api/wc-rounds").then((r) => r.json()).then((d) => {
+      setRounds(d.rounds && d.rounds.length ? d.rounds : fallback);
+    }).catch(() => setRounds(fallback));
+  }, []);
+
+  // Load my lineup for the round being edited (carry over the most recent one).
+  useEffect(() => {
+    if (!user || editRound === undefined || editRound === null) return;
+    (async () => {
+      const idxOf = {};
+      (rounds || []).forEach((r) => { idxOf[String(r.round_id)] = r.index; });
+      const mine = await sbJson(await sbFetch(`wc_fantasy_lineups?user_id=eq.${user.id}&select=*`));
+      let chosen = mine.find((l) => String(l.round_id) === String(editRound.round_id));
+      if (!chosen) {
+        chosen = mine
+          .filter((l) => (idxOf[String(l.round_id)] ?? -1) < editRound.index)
+          .sort((a, b) => (idxOf[String(b.round_id)] ?? -1) - (idxOf[String(a.round_id)] ?? -1))[0];
       }
-    });
-  }, [user]);
+      if (!chosen) {
+        chosen = (await sbJson(await sbFetch(`wc_fantasy_entries?user_id=eq.${user.id}&select=squad,starters,bench,captain`)))[0];
+      }
+      if (chosen) {
+        setSquad((chosen.squad || []).map(String));
+        setStarters((chosen.starters || []).map(String));
+        setBench((chosen.bench || []).map(String));
+        setCaptain(chosen.captain ? String(chosen.captain) : null);
+      }
+    })();
+  }, [user, editRound, rounds]);
 
   // Keep the bench list = squad minus starters, preserving the user's order.
   useEffect(() => {
@@ -113,18 +153,21 @@ export default function SalaryCapPage() {
   const canSave = squadFull && startersValid && captain && starters.includes(captain) && !locked;
 
   const save = async () => {
+    if (!editRound) return;
     if (!user || saving || !canSave) { if (!canSave) flash("Complete a valid 15 squad, 11 starters + captain"); return; }
     setSaving(true);
     try {
-      const res = await sbFetch("wc_fantasy_entries?on_conflict=user_id", {
+      // Per-round snapshot — this round's team is locked in at its kickoff.
+      const res = await sbFetch("wc_fantasy_lineups?on_conflict=user_id,round_id", {
         method: "POST",
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify({
-          user_id: user.id, handle: profile?.handle, display_name: profile?.display_name || profile?.handle,
-          squad, starters, bench, captain, spent, updated_at: new Date().toISOString(),
+          user_id: user.id, round_id: editRound.round_id,
+          squad, starters, bench, captain, updated_at: new Date().toISOString(),
         }),
       });
-      flash(res.ok ? "Team saved ✓" : "Couldn't save");
+      if (res.ok) setCelebrate((c) => c + 1);
+      flash(res.ok ? `Saved for ${editRound.label} ✓` : "Couldn't save");
     } catch (e) { flash("Couldn't save"); } finally { setSaving(false); }
   };
 
@@ -145,7 +188,9 @@ export default function SalaryCapPage() {
           <span className="text-xl">💰</span>
           <div className="flex-1">
             <h1 className="text-base font-bold leading-tight">Salary Cap</h1>
-            <p className="text-[11px] text-zinc-500 leading-tight">€{BUDGET}m budget · {locked ? "locked" : "locks at kickoff"}</p>
+            <p className="text-[11px] text-zinc-500 leading-tight">
+              €{BUDGET}m budget · {editRound === undefined ? "…" : editRound ? <>editing <span className="text-zinc-300">{editRound.label}</span> · locks {lockLabel(editRound.lock)}</> : "season locked"}
+            </p>
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
@@ -163,10 +208,19 @@ export default function SalaryCapPage() {
           </div>
         ) : subTab === "board" ? (
           <SalaryLeaderboard />
-        ) : poolLoading ? (
-          <p className="text-zinc-600 text-sm py-8">Loading players…</p>
+        ) : poolLoading || editRound === undefined ? (
+          <p className="text-zinc-600 text-sm py-8">Loading…</p>
+        ) : locked ? (
+          <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl px-4 py-8 text-center text-sm text-zinc-400">
+            The tournament is over — squads are locked. Check the leaderboard for final standings. 🏆
+          </div>
         ) : (
           <>
+            {editRound && (
+              <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-3 py-2 mb-3 text-[11px] text-zinc-400">
+                🔁 Editing your <span className="text-zinc-200">{editRound.label}</span> team — unlimited changes until it locks <span className="text-zinc-200">{lockLabel(editRound.lock)}</span>. Your team carries over to each new round.
+              </div>
+            )}
             {/* budget bar */}
             <div className="grid grid-cols-3 gap-2 mb-4">
               {[["Budget left", `€${remaining}m`, remaining < 0 ? "text-red-500" : "text-emerald-400"],
@@ -255,6 +309,7 @@ export default function SalaryCapPage() {
                       <button key={p.id} onClick={() => addPlayer(p)} disabled={!ok}
                         className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${ok ? "bg-zinc-900 border-zinc-700 hover:border-red-500" : "bg-zinc-900/40 border-zinc-800 opacity-50"}`}>
                         <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role]}`}>{p.role}</span>
+                        {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded-full object-cover bg-zinc-800 shrink-0" loading="lazy" />}
                         <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
                         <span className="text-[11px] text-zinc-500 truncate max-w-[26%]">{p.team_name}</span>
                         <span className="text-[11px] text-zinc-400 w-7 text-right">{p.proj}</span>
@@ -270,6 +325,7 @@ export default function SalaryCapPage() {
       </div>
 
       {toast && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-50">{toast}</div>}
+      <Confetti show={celebrate} />
       <Nav />
     </div>
   );
@@ -279,31 +335,61 @@ function SalaryLeaderboard() {
   const [rows, setRows] = useState(null);
   const [scopeIds, setScopeIds] = useState(null);
   useEffect(() => {
-    (async () => {
-      const entries = await sbJson(await sbFetch("wc_fantasy_entries?select=user_id,display_name,handle,starters,bench,captain"));
-      const ids = [...new Set(entries.flatMap((e) => [...(e.starters || []), ...(e.bench || [])]).map(String))];
-      const pmap = {}; const mmap = {};
-      for (let i = 0; i < ids.length; i += 100) {
-        const chunk = ids.slice(i, i + 100).map((x) => encodeURIComponent(x)).join(",");
-        if (!chunk) continue;
-        for (const r of await sbJson(await sbFetch(`wc_player_points?player_id=in.(${chunk})&select=player_id,points,minutes`))) {
-          pmap[String(r.player_id)] = Number(r.points || 0);
-          mmap[String(r.player_id)] = Number(r.minutes || 0);
-        }
+    let cancelled = false;
+    const load = async () => {
+      const [roundsRes, lineups, rps] = await Promise.all([
+        fetch("/api/wc-rounds").then((r) => r.json()).catch(() => ({ rounds: [] })),
+        sbJson(await sbFetch("wc_fantasy_lineups?select=user_id,round_id,starters,bench,captain")),
+        sbJson(await sbFetch("wc_player_round_points?select=player_id,round_id,points")),
+      ]);
+      const rounds = roundsRes.rounds || [];
+      const idxOf = {}; rounds.forEach((r) => { idxOf[String(r.round_id)] = r.index; });
+      // points by round: { round_id: { player_id: points } } (presence = played that round)
+      const ptByRound = {};
+      for (const r of rps) (ptByRound[String(r.round_id)] = ptByRound[String(r.round_id)] || {})[String(r.player_id)] = Number(r.points || 0);
+
+      const byUser = {};
+      for (const l of lineups) (byUser[l.user_id] = byUser[l.user_id] || []).push(l);
+      const userIds = Object.keys(byUser);
+      const nameOf = {};
+      if (userIds.length) {
+        const profs = await sbJson(await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name`));
+        profs.forEach((p) => { nameOf[p.user_id] = p.display_name || p.handle || "Player"; });
       }
-      const played = (id) => (mmap[id] || 0) > 0;
-      const scored = entries.map((e) => {
-        const starters = (e.starters || []).map(String);
-        const benchAvail = (e.bench || []).map(String).filter(played); // in order
+
+      const scoreRound = (lu, pts) => {
+        const starters = (lu.starters || []).map(String);
+        const benchAvail = (lu.bench || []).map(String).filter((id) => pts[id] !== undefined);
         let bi = 0;
-        const fielded = starters.map((id) => (played(id) ? id : bi < benchAvail.length ? benchAvail[bi++] : null));
-        let total = fielded.reduce((s, id) => s + (id ? pmap[id] || 0 : 0), 0);
-        const cap = e.captain && String(e.captain);
-        if (cap && fielded.includes(cap)) total += pmap[cap] || 0; // captain doubles
-        return { user_id: e.user_id, name: e.display_name || e.handle || "Player", total: Math.round(total * 100) / 100 };
+        const fielded = starters.map((id) => (pts[id] !== undefined ? id : bi < benchAvail.length ? benchAvail[bi++] : null));
+        let t = fielded.reduce((s, id) => s + (id ? pts[id] || 0 : 0), 0);
+        const cap = lu.captain && String(lu.captain);
+        if (cap && fielded.includes(cap)) t += pts[cap] || 0; // captain doubles
+        return t;
+      };
+
+      const scored = userIds.map((uid) => {
+        const ls = byUser[uid];
+        let total = 0;
+        for (const round of rounds) {
+          const pts = ptByRound[String(round.round_id)];
+          if (!pts) continue; // round not scored yet
+          // applicable lineup = this round's, else carried forward from the latest prior round
+          let lu = ls.find((l) => String(l.round_id) === String(round.round_id));
+          if (!lu) {
+            lu = ls
+              .filter((l) => (idxOf[String(l.round_id)] ?? -1) < round.index)
+              .sort((a, b) => (idxOf[String(b.round_id)] ?? -1) - (idxOf[String(a.round_id)] ?? -1))[0];
+          }
+          if (lu) total += scoreRound(lu, pts);
+        }
+        return { user_id: uid, name: nameOf[uid] || "Player", total: Math.round(total * 100) / 100 };
       }).sort((a, b) => b.total - a.total);
-      setRows(scored);
-    })().catch(() => setRows([]));
+      if (!cancelled) setRows(scored);
+    };
+    load().catch(() => { if (!cancelled) setRows((r) => r || []); });
+    const t = setInterval(() => load().catch(() => {}), 45000); // live refresh
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
   if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading…</p>;
   const shown = scopeIds ? rows.filter((r) => scopeIds.includes(r.user_id)) : rows;

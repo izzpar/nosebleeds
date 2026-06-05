@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
 import GroupScope from "@/components/WcGroups";
+import Confetti from "@/components/Confetti";
 import { fetchTeams, fetchResults, rankingPoints, rankingsLocked, RANKING_LOCK_ISO, nationStrength } from "@/lib/worldcup";
 
 export default function RankingsPage() {
@@ -17,6 +18,7 @@ export default function RankingsPage() {
   const [subTab, setSubTab] = useState("mine"); // 'mine' | 'board'
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [celebrate, setCelebrate] = useState(0);
   const locked = rankingsLocked();
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
@@ -72,6 +74,7 @@ export default function RankingsPage() {
           updated_at: new Date().toISOString(),
         }),
       });
+      if (res.ok) setCelebrate((c) => c + 1);
       flash(res.ok ? "Ranking saved ✓" : "Couldn't save");
     } catch (e) {
       flash("Couldn't save");
@@ -181,6 +184,7 @@ export default function RankingsPage() {
       {toast && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-sm px-4 py-2 rounded-full z-50">{toast}</div>
       )}
+      <Confetti show={celebrate} />
       <Nav />
     </div>
   );
@@ -191,7 +195,8 @@ function Leaderboard({ teamById }) {
   const [scopeIds, setScopeIds] = useState(null); // null = global, else group member ids
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    const load = async () => {
       const [res, results] = await Promise.all([
         sbFetch("wc_rankings?select=user_id,display_name,handle,ranking"),
         fetchResults(),
@@ -210,8 +215,11 @@ function Leaderboard({ teamById }) {
           };
         })
         .sort((a, b) => b.total - a.total);
-      setRows({ scored, noGames: (results.events || 0) === 0 });
-    })().catch(() => setRows({ scored: [], noGames: true }));
+      if (!cancelled) setRows({ scored, noGames: (results.events || 0) === 0 });
+    };
+    load().catch(() => { if (!cancelled) setRows((r) => r || { scored: [], noGames: true }); });
+    const t = setInterval(() => load().catch(() => {}), 45000); // live refresh
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
 
   if (!rows) return <p className="text-zinc-600 text-sm py-8">Loading leaderboard…</p>;

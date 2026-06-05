@@ -13,17 +13,22 @@ function makeCode() {
   return s;
 }
 
+// Team-draft league sizes must divide 48 so the nations split evenly.
+const TEAM_SIZES = [2, 3, 4, 6, 8, 12, 16, 24];
+
 export default function WorldCupHub() {
   const { user, profile } = useAuth();
   const router = useRouter();
 
   const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [myStatus, setMyStatus] = useState({ salary: false, ranking: false });
   const [name, setName] = useState("");
   const [format, setFormat] = useState("team"); // 'team' | 'player'
   const [draftType, setDraftType] = useState("snake"); // 'snake' | 'auction'
   const [budget, setBudget] = useState(200);
   const [squadSize, setSquadSize] = useState(15);
+  const [maxManagers, setMaxManagers] = useState(8);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -41,6 +46,18 @@ export default function WorldCupHub() {
 
   useEffect(() => { loadLeagues(); }, [loadLeagues]);
 
+  // Quick "have I entered?" status for the game cards.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const [sal, rank] = await Promise.all([
+        sbJson(await sbFetch(`wc_fantasy_lineups?user_id=eq.${user.id}&select=round_id&limit=1`)),
+        sbJson(await sbFetch(`wc_rankings?user_id=eq.${user.id}&select=user_id&limit=1`)),
+      ]);
+      setMyStatus({ salary: sal.length > 0, ranking: rank.length > 0 });
+    })().catch(() => {});
+  }, [user]);
+
   const createLeague = async () => {
     if (!user || !name.trim() || busy) return;
     setBusy(true);
@@ -53,6 +70,7 @@ export default function WorldCupHub() {
         draft_type: draftType,
         budget: draftType === "auction" ? Math.max(20, Math.min(1000, Number(budget) || 200)) : 200,
         squad_size: format === "player" ? Math.max(11, Math.min(23, Number(squadSize) || 15)) : 15,
+        max_managers: format === "team" ? (TEAM_SIZES.includes(Number(maxManagers)) ? Number(maxManagers) : 8) : Math.max(2, Math.min(20, Number(maxManagers) || 8)),
       });
       const league = rows[0];
       if (!league) { flash("Couldn't create league"); return; }
@@ -78,6 +96,14 @@ export default function WorldCupHub() {
       const found = await sbJson(res);
       const league = found[0];
       if (!league) { flash("No league with that code"); return; }
+      // Capacity check (unless already a member, or draft already started).
+      const memRes = await sbFetch(`wc_members?league_id=eq.${league.id}&select=user_id`);
+      const mems = await sbJson(memRes);
+      const alreadyIn = mems.some((m) => m.user_id === user.id);
+      if (!alreadyIn && league.max_managers && mems.length >= league.max_managers) {
+        flash(`League is full (${league.max_managers} managers)`); return;
+      }
+      if (!alreadyIn && league.status !== "lobby") { flash("Draft already started"); return; }
       const ins = await sbInsert("wc_members", {
         league_id: league.id,
         user_id: user.id,
@@ -135,8 +161,8 @@ export default function WorldCupHub() {
             >
               <span className="text-2xl">🔢</span>
               <div className="flex-1">
-                <div className="font-bold">Power Ranking</div>
-                <div className="text-[11px] text-zinc-400">Rank all 48 nations · climb the global leaderboard</div>
+                <div className="font-bold">Power Ranking {myStatus.ranking && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
+                <div className="text-[11px] text-zinc-400">{myStatus.ranking ? "View your rank on the global leaderboard" : "Rank all 48 nations · climb the global leaderboard"}</div>
               </div>
               <span className="text-zinc-600">›</span>
             </button>
@@ -146,8 +172,8 @@ export default function WorldCupHub() {
             >
               <span className="text-2xl">💰</span>
               <div className="flex-1">
-                <div className="font-bold">Salary Cap</div>
-                <div className="text-[11px] text-zinc-400">€100m budget · pick any players · global leaderboard</div>
+                <div className="font-bold">Salary Cap {myStatus.salary && <span className="text-[10px] text-emerald-400 font-normal">✓ entered</span>}</div>
+                <div className="text-[11px] text-zinc-400">{myStatus.salary ? "Manage your team & check the leaderboard" : "€100m budget · pick any players · global leaderboard"}</div>
               </div>
               <span className="text-zinc-600">›</span>
             </button>
@@ -202,13 +228,37 @@ export default function WorldCupHub() {
                 ].map(([id, label, desc]) => (
                   <button
                     key={id}
-                    onClick={() => setFormat(id)}
+                    onClick={() => { setFormat(id); if (id === "team" && !TEAM_SIZES.includes(Number(maxManagers))) setMaxManagers(8); }}
                     className={`text-left rounded-xl px-3 py-2 border ${format === id ? "border-red-500 bg-red-950/30" : "border-zinc-800 bg-[#09090b]"}`}
                   >
                     <div className="text-sm font-bold">{label}</div>
                     <div className="text-[10px] text-zinc-500 leading-tight">{desc}</div>
                   </button>
                 ))}
+              </div>
+              {/* League size (managers) */}
+              <div className="bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 mb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[13px] text-zinc-300">League size</span>
+                  {format === "team" ? (
+                    <select
+                      value={maxManagers}
+                      onChange={(e) => setMaxManagers(Number(e.target.value))}
+                      className="bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 text-sm outline-none focus:border-zinc-600"
+                    >
+                      {TEAM_SIZES.map((n) => (
+                        <option key={n} value={n}>{n} managers · {48 / n} teams each</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="number" min={2} max={20} value={maxManagers}
+                      onChange={(e) => setMaxManagers(Number(e.target.value))}
+                      className="w-16 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 text-sm text-right outline-none focus:border-zinc-600"
+                    />
+                  )}
+                </div>
+                {format === "team" && <div className="text-[10px] text-zinc-600 mt-1">Team drafts split all 48 nations evenly.</div>}
               </div>
               {format === "player" && (
                 <label className="flex items-center justify-between gap-2 bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 mb-3">

@@ -15,6 +15,8 @@ import {
   playerProjection,
 } from "@/lib/worldcup";
 import AuctionRoom from "./AuctionRoom";
+import WaiverView from "./WaiverView";
+import Confetti from "@/components/Confetti";
 
 const POLL_MS = 2500;
 
@@ -303,7 +305,7 @@ export default function LeagueRoom() {
         </div>
         {/* sub-tabs */}
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {(isCommish ? ["draft", "standings", "settings"] : ["draft", "standings"]).map((t) => (
+          {["draft", "standings", ...(isPlayer ? ["waivers"] : []), ...(isCommish ? ["settings"] : [])].map((t) => (
             <button
               key={t}
               onClick={() => setSubTab(t)}
@@ -393,6 +395,8 @@ export default function LeagueRoom() {
               status={league.status}
             />
           )
+        ) : subTab === "waivers" ? (
+          <WaiverView leagueId={id} members={members} picks={picks} players={players} user={user} />
         ) : (
           <Settings
             league={league}
@@ -410,6 +414,7 @@ export default function LeagueRoom() {
           {toast}
         </div>
       )}
+      <Confetti show={draftComplete && league.status === "done"} />
       <Nav />
     </div>
   );
@@ -871,6 +876,7 @@ function PlayerDraftBoard({
                     className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 border text-left ${isMyTurn ? "bg-zinc-900 border-zinc-700 hover:border-red-500 active:scale-[0.99]" : "bg-zinc-900/50 border-zinc-800 opacity-70"}`}
                   >
                     <span className={`text-[10px] font-bold w-8 ${POS_COLOR[p.role] || "text-zinc-400"}`}>{p.role}</span>
+                    {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded-full object-cover bg-zinc-800 shrink-0" loading="lazy" />}
                     <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
                     <span className="text-[11px] text-zinc-500 truncate max-w-[30%]">{p.team_name}</span>
                     <span className="text-[11px] text-zinc-400 tabular-nums w-7 text-right" title="Projection">{projOf(p)}</span>
