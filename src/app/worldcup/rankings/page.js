@@ -24,7 +24,7 @@ function RankingsInner() {
   const [entries, setEntries] = useState([]);
   const [selEntryId, setSelEntryId] = useState(null);
   const [order, setOrder] = useState([]);
-  const [subTab, setSubTab] = useState("mine");
+  const [subTab, setSubTab] = useState("leagues");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [celebrate, setCelebrate] = useState(0);
@@ -144,7 +144,7 @@ function RankingsInner() {
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {[["mine", "Rank"], ["leagues", "Leagues"], ["board", "Leaderboard"]].map(([id, label]) => (
+          {[["leagues", "Leagues"], ["mine", "Entry"], ["board", "Leaderboard"]].map(([id, label]) => (
             <button key={id} onClick={() => setSubTab(id)} className={`pb-2 font-bold border-b-2 ${subTab === id ? "text-white border-red-500" : "text-zinc-600 border-transparent"}`}>{label}</button>
           ))}
         </div>

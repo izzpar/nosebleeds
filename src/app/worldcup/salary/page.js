@@ -48,7 +48,7 @@ function SalaryCapInner() {
   const [bench, setBench] = useState([]);       // non-starters, in auto-sub order
   const [captain, setCaptain] = useState(null);
 
-  const [subTab, setSubTab] = useState("team");
+  const [subTab, setSubTab] = useState("leagues");
   const [pos, setPos] = useState("GK");
   const [q, setQ] = useState("");
   const [saving, setSaving] = useState(false);
@@ -283,7 +283,7 @@ function SalaryCapInner() {
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {[["team", "My Team"], ["leagues", "Leagues"], ["board", "Leaderboard"]].map(([id, label]) => (
+          {[["leagues", "Leagues"], ["team", "My Team"], ["board", "Leaderboard"]].map(([id, label]) => (
             <button key={id} onClick={() => setSubTab(id)} className={`pb-2 font-bold border-b-2 ${subTab === id ? "text-white border-red-500" : "text-zinc-600 border-transparent"}`}>{label}</button>
           ))}
         </div>
