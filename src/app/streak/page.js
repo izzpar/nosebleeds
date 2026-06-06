@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+import { Icon } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
@@ -354,7 +355,7 @@ export default function StreakPage() {
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link href="/predictions" className="text-zinc-400 hover:text-white text-sm font-medium">← Predictions</Link>
-          <h1 className="text-sm font-bold text-white flex-1 text-center">🔥 Beat the Streak</h1>
+          <h1 className="text-sm font-bold text-white flex-1 flex items-center justify-center gap-1.5"><Icon name="flame" className="w-4 h-4 text-orange-500" /> Beat the Streak</h1>
           <div className="w-20" />
         </div>
       </div>
@@ -363,19 +364,19 @@ export default function StreakPage() {
         {/* Streak counter hero */}
         <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-orange-900/50 via-zinc-900 to-zinc-900 border border-orange-600/30 p-5 mb-4 text-center">
           <div className="text-[10px] font-bold text-orange-400 tracking-widest uppercase">Current Streak</div>
-          <div className="text-6xl font-extrabold text-white mt-1 mb-1">{curStreak}<span className="text-2xl text-orange-500">🔥</span></div>
+          <div className="text-6xl font-extrabold text-white mt-1 mb-1 flex items-center justify-center gap-1">{curStreak}<Icon name="flame" className="w-7 h-7 text-orange-500" /></div>
           <div className="text-[11px] text-zinc-500">Best ever: {bestStreak} · {settled.filter(p => p.status === "won").length} correct all-time</div>
         </div>
 
         {/* How it works */}
         <div className="rounded-xl bg-zinc-900/60 border border-zinc-800 p-3 mb-4 text-center">
-          <span className="text-[11px] text-zinc-400">One pick per day across all sports. Pick a team to win — or a hot MLB hitter to get a hit. Hit it and your streak grows; miss and you're back to zero. 🔥</span>
+          <span className="text-[11px] text-zinc-400">One pick per day across all sports. Pick a team to win — or a hot MLB hitter to get a hit. Hit it and your streak grows; miss and you're back to zero.</span>
         </div>
 
         {/* Today's pick status */}
         {hasPickedToday && (
           <div className="rounded-2xl bg-zinc-900 border-2 border-orange-600/40 p-4 mb-4">
-            <div className="text-[10px] font-bold text-orange-400 tracking-widest uppercase mb-1">✓ Today's Pick</div>
+            <div className="text-[10px] font-bold text-orange-400 tracking-widest uppercase mb-1 flex items-center gap-1"><Icon name="check" className="w-3 h-3" /> Today's Pick</div>
             <div className="text-base font-bold text-white">{todaysPick.pick_label}</div>
             <div className="text-[10px] text-zinc-500 mt-0.5">
               {todaysPick.status === "pending" ? `Locks at ${fmtTime(todaysPick.locks_at)} · you can still change it below` : `Result: ${todaysPick.status.toUpperCase()}`}
@@ -386,8 +387,8 @@ export default function StreakPage() {
         {pendingCount > 0 && (
           <div className="flex justify-end mb-3">
             <button onClick={handleCheck} disabled={checking}
-              className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors">
-              {checking ? "Checking…" : "↻ Check results"}
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors inline-flex items-center gap-1">
+              <Icon name="refresh" className={`w-3 h-3 ${checking ? "animate-spin" : ""}`} /> {checking ? "Checking…" : "Check results"}
             </button>
           </div>
         )}
@@ -395,14 +396,14 @@ export default function StreakPage() {
         {/* Today's prop pool */}
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-base font-bold text-white">Today's Picks</h2>
-          <Link href="/leaderboard" className="text-[10px] font-bold text-orange-400 hover:text-orange-300">🏆 Streak leaders ›</Link>
+          <Link href="/leaderboard" className="text-[10px] font-bold text-orange-400 hover:text-orange-300 inline-flex items-center gap-1"><Icon name="trophy" className="w-3 h-3" /> Streak leaders ›</Link>
         </div>
 
         {loading && <div className="text-center py-12 text-zinc-500 text-sm">Loading today's slate…</div>}
 
         {!loading && props.length === 0 && (
           <div className="text-center py-16">
-            <div className="text-5xl mb-3">🔥</div>
+            <Icon name="flame" className="w-12 h-12 text-orange-500/70 mx-auto mb-3" />
             <div className="text-base font-bold text-white">No games on the board today</div>
             <div className="text-sm text-zinc-500 mt-1 max-w-xs mx-auto">Beat the Streak runs on each day's slate across NFL, MLB, NBA & NHL. Check back on a game day for matchups to pick.</div>
           </div>
@@ -447,8 +448,9 @@ export default function StreakPage() {
                 </Link>
                 {/* Pick / selected button */}
                 <button onClick={() => pickProp(prop)} disabled={isSaving}
-                  className={`w-full mt-3 py-2 rounded-xl text-xs font-bold transition-all ${selected ? "bg-orange-600 text-white" : "bg-zinc-950 text-zinc-300 border border-zinc-700 hover:border-orange-600"}`}>
-                  {isSaving ? "Saving…" : selected ? "✓ Your pick today — tap to keep" : "Make this my pick"}
+                  className={`w-full mt-3 py-2 rounded-xl text-xs font-bold transition-all inline-flex items-center justify-center gap-1.5 ${selected ? "bg-orange-600 text-white" : "bg-zinc-950 text-zinc-300 border border-zinc-700 hover:border-orange-600"}`}>
+                  {selected && !isSaving && <Icon name="check" className="w-3.5 h-3.5" strokeWidth={3} />}
+                  {isSaving ? "Saving…" : selected ? "Your pick today — tap to keep" : "Make this my pick"}
                 </button>
               </div>
             );
@@ -479,8 +481,8 @@ export default function StreakPage() {
             <div className="flex flex-wrap gap-1.5">
               {settled.slice().reverse().map(p => (
                 <div key={p.id} title={p.pick_label}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-extrabold ${p.status === "won" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                  {p.status === "won" ? "✓" : "✗"}
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.status === "won" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+                  <Icon name={p.status === "won" ? "check" : "x"} className="w-4 h-4" strokeWidth={3} />
                 </div>
               ))}
             </div>
