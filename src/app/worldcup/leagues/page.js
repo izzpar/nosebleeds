@@ -58,10 +58,12 @@ export default function DraftLeaguesPage() {
   useEffect(() => { loadLeagues(); }, [loadLeagues]);
 
   const createLeague = async () => {
-    if (!user || !name.trim() || busy) return;
+    if (!user) { flash("Sign in to create a league"); return; }
+    if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const base = { name: name.trim(), invite_code: makeCode(), commissioner_id: user.id };
+      const invite = makeCode();
+      const base = { name: name.trim(), invite_code: invite, commissioner_id: user.id };
       const full = {
         ...base, format, draft_type: draftType,
         budget: draftType === "auction" ? Math.max(20, Math.min(1000, Number(budget) || 200)) : 200,
@@ -70,11 +72,27 @@ export default function DraftLeaguesPage() {
       };
       let { res, rows } = await sbInsert("wc_leagues", full);
       if (!res.ok) ({ res, rows } = await sbInsert("wc_leagues", base));
-      const league = rows[0];
-      if (!res.ok || !league) { flash(`Couldn't create league (error ${res.status})`); return; }
+      let league = rows[0];
+      // RLS may allow the insert but not return the row (you're not a member yet),
+      // so re-fetch it by the invite code we just generated.
+      if (res.ok && !league) {
+        league = (await sbJson(await sbFetch(`wc_leagues?invite_code=eq.${invite}&select=*`)))[0];
+      }
+      if (!league) { flash(`Couldn't create league (error ${res.status}). Tell me this number.`); return; }
       await sbInsert("wc_members", { league_id: league.id, user_id: user.id, handle: profile?.handle || user.email?.split("@")[0], display_name: profile?.display_name || profile?.handle || user.email?.split("@")[0] });
       router.push(`/worldcup/${league.id}`);
-    } catch (e) { flash("Something went wrong"); } finally { setBusy(false); }
+    } catch (e) { flash("Something went wrong: " + (e?.message || e)); } finally { setBusy(false); }
+  };
+
+  const deleteLeague = async (l) => {
+    if (!user || l.commissioner_id !== user.id) return;
+    if (!confirm(`Delete "${l.name}"? This removes it for everyone in the league.`)) return;
+    try {
+      await sbFetch(`wc_members?league_id=eq.${l.id}`, { method: "DELETE" });
+      const res = await sbFetch(`wc_leagues?id=eq.${l.id}`, { method: "DELETE" });
+      if (res.ok) { flash("League deleted"); setLeagues((ls) => ls.filter((x) => x.id !== l.id)); }
+      else flash(`Couldn't delete (error ${res.status})`);
+    } catch (e) { flash("Couldn't delete"); }
   };
 
   const joinLeague = async () => {
@@ -141,18 +159,26 @@ export default function DraftLeaguesPage() {
                       <div className="space-y-2">
                         {group.map((l) => {
                           const t = draftTiming(l);
+                          const mine = l.commissioner_id === user.id;
                           return (
-                            <button key={l.id} onClick={() => router.push(`/worldcup/${l.id}`)} className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700">
-                              <div className="min-w-0">
+                            <div key={l.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:border-zinc-700">
+                              <button onClick={() => router.push(`/worldcup/${l.id}`)} className="min-w-0 text-left flex-1">
                                 <div className="font-bold truncate">{l.name}</div>
                                 <div className="text-[11px] text-zinc-500 mt-0.5">{kindLabel(l)}</div>
                                 <div className={`text-[11px] mt-0.5 ${t.cls}`}>{t.text}</div>
+                              </button>
+                              <div className="flex items-center gap-2 shrink-0 ml-2">
+                                <div className="text-right">
+                                  <div className="text-[10px] text-zinc-600">code</div>
+                                  <div className="text-[11px] font-mono tracking-widest text-zinc-400">{l.invite_code}</div>
+                                </div>
+                                {mine && (
+                                  <button onClick={() => deleteLeague(l)} className="text-zinc-600 hover:text-red-400 p-1.5" title="Delete league">
+                                    <Icon name="trash" className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
-                              <div className="text-right shrink-0 ml-2">
-                                <div className="text-[10px] text-zinc-600">code</div>
-                                <div className="text-[11px] font-mono tracking-widest text-zinc-400">{l.invite_code}</div>
-                              </div>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
