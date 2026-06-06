@@ -8,6 +8,7 @@ import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import { fetchTeams, rankingsLocked, nationStrength, WC_TEAMS_FALLBACK } from "@/lib/worldcup";
 import { fetchMyGroups, createGroup } from "@/lib/groups";
 import WcBackdrop from "@/components/WcBackdrop";
+import { Icon } from "@/components/ui";
 
 const GLOBAL = { id: null, name: "🌍 Global", max_entries: 1, isGlobal: true };
 
@@ -160,7 +161,7 @@ function RankingsInner() {
       <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
-          <span className="text-xl">🔢</span>
+          <Icon name="ranking" className="w-5 h-5 text-red-500" />
           <div className="flex-1">
             <h1 className="text-base font-bold leading-tight">World Cup Nations Ranking</h1>
             <p className="text-[11px] text-zinc-500 leading-tight">Build rankings · enter them in leagues · {locked ? "locked" : "locks Jun 11"}</p>
@@ -193,7 +194,7 @@ function RankingsInner() {
                 </button>
               ))}
             </div>
-            <button onClick={() => setCreatingLeague((v) => !v)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 rounded-xl mb-3">＋ Create a league</button>
+            <button onClick={() => setCreatingLeague((v) => !v)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 rounded-xl mb-3 inline-flex items-center justify-center gap-1.5"><Icon name="plus" className="w-4 h-4" /> Create a league</button>
             {creatingLeague && (
               <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
                 <input value={lgName} onChange={(e) => setLgName(e.target.value)} placeholder="League name" maxLength={32} className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
@@ -221,8 +222,8 @@ function RankingsInner() {
               />
             )}
             <div className="flex items-center justify-between mb-3">
-              <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline">ℹ️ How scoring works</button>
-              <button onClick={() => deleteEntryById(selEntryId)} className="text-[11px] text-zinc-500 hover:text-red-400">🗑 Delete this ranking</button>
+              <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline inline-flex items-center gap-1"><Icon name="info" className="w-3 h-3" /> How scoring works</button>
+              <button onClick={() => deleteEntryById(selEntryId)} className="text-[11px] text-zinc-500 hover:text-red-400 inline-flex items-center gap-1"><Icon name="trash" className="w-3 h-3" /> Delete this ranking</button>
             </div>
             <RankEditor
               teams={teams} ranked={ranked} pool={pool} order={order} locked={locked} saving={saving}
@@ -236,7 +237,7 @@ function RankingsInner() {
           <>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Your rankings</h3>
-              {!locked && <button onClick={newEntry} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1 rounded-lg">＋ New ranking</button>}
+              {!locked && <button onClick={newEntry} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1 rounded-lg inline-flex items-center gap-1"><Icon name="plus" className="w-3.5 h-3.5" /> New ranking</button>}
             </div>
             {entries.length === 0 ? (
               <div className="text-center py-8">
@@ -271,7 +272,7 @@ function RankingsInner() {
                       {open && (
                         <div className="px-4 pb-3 border-t border-zinc-800/70 pt-3 space-y-3">
                           {!locked && (
-                            <button onClick={() => { setSelEntryId(e.id); setEditingId(e.id); }} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2 rounded-lg text-sm">✏️ Edit ranking</button>
+                            <button onClick={() => { setSelEntryId(e.id); setEditingId(e.id); }} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2 rounded-lg text-sm inline-flex items-center justify-center gap-1.5"><Icon name="pencil" className="w-3.5 h-3.5" /> Edit ranking</button>
                           )}
                           <div>
                             <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Entered in</div>
@@ -290,12 +291,12 @@ function RankingsInner() {
                               <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Enter in a contest</div>
                               <div className="flex gap-1.5 flex-wrap">
                                 {addable.map((l) => (
-                                  <button key={l.id || "global"} onClick={() => addSub(e.id, l.id || null)} className="text-[12px] px-3 py-1 rounded-full bg-red-600/20 text-red-300 border border-red-700/40 hover:bg-red-600/30">＋ {l.name}</button>
+                                  <button key={l.id || "global"} onClick={() => addSub(e.id, l.id || null)} className="text-[12px] px-3 py-1 rounded-full bg-red-600/20 text-red-300 border border-red-700/40 hover:bg-red-600/30 inline-flex items-center gap-1"><Icon name="plus" className="w-3 h-3" /> {l.name}</button>
                                 ))}
                               </div>
                             </div>
                           )}
-                          <button onClick={() => deleteEntryById(e.id)} className="text-[11px] text-zinc-500 hover:text-red-400">🗑 Delete this ranking</button>
+                          <button onClick={() => deleteEntryById(e.id)} className="text-[11px] text-zinc-500 hover:text-red-400 inline-flex items-center gap-1"><Icon name="trash" className="w-3 h-3" /> Delete this ranking</button>
                         </div>
                       )}
                     </div>
