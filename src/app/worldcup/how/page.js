@@ -2,11 +2,12 @@
 import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import WcBackdrop from "@/components/WcBackdrop";
+import { Icon } from "@/components/ui";
 
-function Card({ icon, title, children }) {
+function Card({ icon, tint = "text-red-400", title, children }) {
   return (
     <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-3">
-      <h2 className="font-bold mb-2 flex items-center gap-2"><span className="text-lg">{icon}</span>{title}</h2>
+      <h2 className="font-bold mb-2 flex items-center gap-2"><Icon name={icon} className={`w-5 h-5 ${tint}`} />{title}</h2>
       <div className="text-[13px] text-zinc-400 space-y-2 leading-relaxed">{children}</div>
     </div>
   );
@@ -33,11 +34,11 @@ export default function HowItWorksPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
-        <p className="text-[13px] text-zinc-400 mb-4">Free games for the 2026 World Cup. Lock your picks before the opening kickoff (Jun 11); points update automatically as matches play out.</p>
+        <p className="text-[13px] text-zinc-400 mb-4">Five free games for the 2026 World Cup — play any of them solo against the world, or in private leagues with friends. Most lock at the opening kickoff (Jun 11); points and records update automatically as matches play out.</p>
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Solo or with friends</h3>
 
-        <Card icon="🔢" title="World Cup Nations Ranking">
+        <Card icon="ranking" tint="text-red-400" title="World Cup Nations Ranking">
           <p>Rank all 48 nations from 1 to 48. Each team earns <b>performance points</b> as it plays, and you earn more for teams you ranked <b>higher</b> — so correctly backing a dark horse near the top is worth a lot.</p>
           <Scoring>
             <p>Each team&apos;s performance: <b>Win +3</b>, Draw +1, every <b>Goal +1</b>, Clean sheet +2, plus knockout bonuses (Reach R16 +4 · QF +8 · SF +12 · Final +16 · <b>Champion +25</b>).</p>
@@ -49,7 +50,7 @@ export default function HowItWorksPage() {
           <p className="text-zinc-500">Open to everyone (Global), or make a private league on the <b>Leagues</b> tab and name your entries.</p>
         </Card>
 
-        <Card icon="💰" title="World Cup Salary Cap">
+        <Card icon="wallet" tint="text-emerald-400" title="World Cup Salary Cap">
           <p>Build a 15-player squad under a <b>€100m budget</b> (2 GK, 5 DEF, 5 MID, 3 FWD), pick your <b>starting 11</b> on the pitch + a <b>captain</b> (double points), and order your bench. Edit freely until each round&apos;s kickoff; your team carries over between rounds (<b>transfers</b>).</p>
           <Scoring>
             <p>Per player, per match: <b>60+ min +2</b> (else +1) · <b>Goal</b> GK/DEF +6, MID +5, FWD +4 · Assist +3 · Shot on target +0.5 · Tackle +0.25 · Clean sheet (60+ min) GK/DEF +4, MID +1 · Save +1 per 3.</p>
@@ -59,22 +60,30 @@ export default function HowItWorksPage() {
           <p className="text-zinc-500">Play the open <b>Global</b> game or make a private <b>league</b> on the Leagues tab — name your teams and the commissioner sets how many each person can enter.</p>
         </Card>
 
-        <Card icon="⭐" title="World Cup Match Ratings">
+        <Card icon="target" tint="text-red-400" title="World Cup Match Picks">
+          <p>Call the result of <b>every</b> match — <b>home win, draw or away win</b>. Lock a pick before each kickoff; get it right and your record &amp; win % climb. One tap to switch your pick any time before the match starts.</p>
+          <Scoring>
+            <p>You&apos;re ranked by <b>total correct picks</b> (then win % as a tiebreaker) — no odds or units, just pure hit rate. A knockout decided on penalties counts as <b>whoever advances</b>.</p>
+          </Scoring>
+          <p className="text-zinc-500">Climb the open <b>Global</b> leaderboard, or make a picks <b>league</b> and see who in your group reads the tournament best.</p>
+        </Card>
+
+        <Card icon="star" tint="text-amber-400" title="World Cup Match Ratings">
           <p>Rate World Cup games right in the main <b>Games</b> feed, exactly like NFL, NBA and the rest — give the match a score <b>1–10</b>, add a review, and pick your <b>MVP</b> &amp; biggest letdown.</p>
-          <p>Soccer matches also add a <b>Rate the players</b> section: score <b>every player who featured</b> out of 10, with the crowd&apos;s top performer crowned 👑. It all lands in your diary alongside the other sports.</p>
+          <p>Soccer matches also add a <b>Rate the players</b> section: score <b>every player who featured</b> out of 10, with the crowd&apos;s top performer crowned. It all lands in your diary alongside the other sports.</p>
         </Card>
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2 mt-5">Fantasy leagues (draft with friends)</h3>
         <p className="text-[12px] text-zinc-500 mb-2">Create a private league, invite friends with a link, and draft via a <b>snake</b> (take turns) or live <b>auction</b> (nominate &amp; bid with a budget).</p>
 
-        <Card icon="⚽" title="Player draft">
+        <Card icon="user" tint="text-sky-400" title="Player draft">
           <p>Draft a squad of individual players. Player leagues also support <b>waivers</b> — claim a free agent + drop a player, with last place getting first dibs.</p>
           <Scoring>
             <p>Same per-player scoring as Salary Cap (goals by position, assists, minutes, shots, tackles, clean sheets, saves; minus conceded/cards/own goals). Commissioners can adjust the values in <b>Settings</b>.</p>
           </Scoring>
         </Card>
 
-        <Card icon="🏳️" title="Team draft">
+        <Card icon="globe" tint="text-sky-400" title="Team draft">
           <p>Draft national teams — the 48 split evenly among managers — and earn their performance points all tournament.</p>
           <Scoring>
             <p>Per team: <b>Win +3</b>, Draw +1, Goal +1, Clean sheet +2, plus knockout bonuses (R16 +4 · QF +8 · SF +12 · Final +16 · Champion +25). Commissioners can tweak these in <b>Settings</b>.</p>
