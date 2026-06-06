@@ -341,7 +341,7 @@ function RankEditor({ teams, ranked, pool, order, locked, saving, onAdd, onRemov
         {ranked.map((t, i) => (
           <div key={t.id} className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2">
             <span className="text-red-500 font-bold w-6 text-sm">{i + 1}</span>
-            {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" />}
+            {t.logo && <img src={t.logo} alt="" className="w-5 h-5 object-contain" loading="lazy" />}
             <span className="text-sm font-medium flex-1 truncate">{t.name}</span>
             {!locked && (
               <span className="flex gap-1">
@@ -368,7 +368,7 @@ function RankEditor({ teams, ranked, pool, order, locked, saving, onAdd, onRemov
           <div className="grid grid-cols-3 gap-1.5">
             {pool.map((t) => (
               <button key={t.id} onClick={() => onAdd(t.id)} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 hover:border-red-500 rounded-lg px-2 py-2 text-left active:scale-[0.97]">
-                {t.logo && <img src={t.logo} alt="" className="w-4 h-4 object-contain shrink-0" />}
+                {t.logo && <img src={t.logo} alt="" className="w-4 h-4 object-contain shrink-0" loading="lazy" />}
                 <span className="text-[12px] font-medium truncate">{t.name}</span>
               </button>
             ))}
