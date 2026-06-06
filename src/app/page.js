@@ -708,7 +708,7 @@ function HomeContent() {
     async function loadDiscover() {
       setDiscoverLoading(true);
       try {
-        const arRes = await sbFetch(`ratings?public=eq.true&rating=not.is.null&sport=eq.${sport}&select=user_id,game_id,rating,review,away_team,home_team,away_score,home_score,week,season,created_at,sport`);
+        const arRes = await sbFetch(`ratings?public=eq.true&rating=not.is.null&sport=eq.${sport}&select=user_id,game_id,rating,review,away_team,home_team,away_score,home_score,week,season,created_at,sport&order=created_at.desc&limit=1500`);
         const allRatings = await sbJson(arRes);
         if (cancelled) return;
 
@@ -812,7 +812,7 @@ function HomeContent() {
       setRosterProgress(rosterCache[sport] ? 100 : 0);
       try {
         // 1. Community picks from Supabase
-        const res = await sbFetch(`ratings?public=eq.true&sport=eq.${sport}&or=(mvp.not.is.null,letdown.not.is.null)&select=mvp,letdown,rating,game_id`);
+        const res = await sbFetch(`ratings?public=eq.true&sport=eq.${sport}&or=(mvp.not.is.null,letdown.not.is.null)&select=mvp,letdown,rating,game_id&order=created_at.desc&limit=2000`);
         const rows = await sbJson(res);
         if (cancelled) return;
         const picks = {};
