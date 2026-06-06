@@ -107,3 +107,50 @@ export async function makeRatingCard(opts) {
   const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
   return { blob, dataUrl: canvas.toDataURL("image/png") };
 }
+
+// Text-only "Dream Team" share card (no external images → never taints the canvas).
+// opts: { title, accent, slots: [{ pos, name }], handle }
+export async function makeLineupCard(opts) {
+  const W = 1080, H = 1080;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const fam = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  const accent = opts.accent || "#dc2626";
+
+  ctx.fillStyle = "#0a0a0c"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 16);
+
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  disc(ctx, W / 2 - 215, 96, 15, "#dc2626");
+  ctx.fillStyle = "#fff"; ctx.font = `800 48px ${fam}`;
+  ctx.fillText("THE NOSEBLEEDS", W / 2 + 14, 110);
+  ctx.fillStyle = accent; ctx.font = `800 38px ${fam}`;
+  ctx.fillText((opts.title || "MY DREAM TEAM").toUpperCase(), W / 2, 168);
+
+  const slots = opts.slots || [];
+  const top = 230;
+  const rowH = Math.min(78, Math.floor((H - top - 120) / Math.max(slots.length, 1)));
+  ctx.textAlign = "left";
+  slots.forEach((s, i) => {
+    const y = top + i * rowH;
+    // position chip
+    ctx.fillStyle = "#18181b"; ctx.fillRect(80, y, 980, rowH - 12);
+    ctx.fillStyle = accent; ctx.fillRect(80, y, 8, rowH - 12);
+    ctx.fillStyle = "#71717a"; ctx.font = `800 26px ${fam}`;
+    ctx.fillText((s.pos || "").toUpperCase(), 110, y + (rowH - 12) / 2 + 9);
+    ctx.fillStyle = "#fff";
+    ctx.font = `700 ${Math.min(40, rowH - 28)}px ${fam}`;
+    const name = s.name || "—";
+    let size = Math.min(40, rowH - 28);
+    do { ctx.font = `700 ${size}px ${fam}`; if (ctx.measureText(name).width <= 720 || size <= 20) break; size -= 2; } while (size > 20);
+    ctx.fillText(name, 230, y + (rowH - 12) / 2 + size / 3);
+  });
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#a1a1aa"; ctx.font = `600 30px ${fam}`;
+  ctx.fillText(opts.handle ? `@${opts.handle} · build yours at thenosebleeds.app` : "build yours at thenosebleeds.app", W / 2, H - 50);
+
+  const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+  return { blob, dataUrl: canvas.toDataURL("image/png") };
+}
