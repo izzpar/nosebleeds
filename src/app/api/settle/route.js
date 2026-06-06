@@ -52,9 +52,7 @@ export async function GET(request) {
   } catch (e) {
     return new Response(JSON.stringify({ error: "fetch pending failed", detail: String(e) }), { status: 500 });
   }
-  if (!Array.isArray(pending) || pending.length === 0) {
-    return Response.json({ ok: true, settled: 0, message: "nothing to settle" });
-  }
+  if (!Array.isArray(pending)) pending = [];
 
   // Group picks by game so we fetch each game's result only once
   const byGame = {};
@@ -156,5 +154,45 @@ export async function GET(request) {
     }
   }
 
-  return Response.json({ ok: true, settled, checked: pending.length });
+  // ---- World Cup match predictions (separate table; result = home/draw/away) ----
+  // One scoreboard sweep settles every pending WC pick whose match has finished.
+  let wcSettled = 0;
+  try {
+    const r = await sb("wc_predictions?status=eq.pending&select=id,match_id,pick");
+    const wcPending = await r.json();
+    if (Array.isArray(wcPending) && wcPending.length) {
+      const sr = await fetch("https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260611-20260719&limit=200");
+      const sd = await sr.json();
+      const resultByMatch = {};
+      for (const ev of sd.events || []) {
+        const comp = ev?.competitions?.[0];
+        if (!comp?.status?.type?.completed) continue;
+        const cs = comp.competitors || [];
+        const home = cs.find((c) => c.homeAway === "home") || cs[0];
+        const away = cs.find((c) => c.homeAway === "away") || cs[1];
+        if (!home || !away) continue;
+        const hs = parseInt(home.score, 10);
+        const as = parseInt(away.score, 10);
+        let res;
+        if (home.winner) res = "home";
+        else if (away.winner) res = "away";
+        else if (hs === as) res = "draw";
+        else res = hs > as ? "home" : "away";
+        resultByMatch[String(ev.id)] = res;
+      }
+      for (const p of wcPending) {
+        const res = resultByMatch[String(p.match_id)];
+        if (!res) continue;
+        try {
+          const patch = await sb(`wc_predictions?id=eq.${p.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: p.pick === res ? "won" : "lost", result: res, settled_at: new Date().toISOString() }),
+          });
+          if (patch.ok) wcSettled++;
+        } catch (e) { /* skip */ }
+      }
+    }
+  } catch (e) { /* WC settle is best-effort */ }
+
+  return Response.json({ ok: true, settled, checked: pending.length, wcSettled });
 }
