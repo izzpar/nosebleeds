@@ -8,6 +8,7 @@ import KickoffCountdown from "@/components/KickoffCountdown";
 import WcBackdrop from "@/components/WcBackdrop";
 import { WC_TEAMS_FALLBACK } from "@/lib/worldcup";
 import { ui, svgIcon, IconChip, Icon } from "@/components/ui";
+import TodayAtCup from "@/components/TodayAtCup";
 
 // Inline icon set (consistent stroke) — replaces emoji-as-icons.
 const IconRank = () => (<svg {...svgIcon}><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M3 20h18" /></svg>);
@@ -76,6 +77,9 @@ export default function WorldCupHub() {
             <button onClick={() => router.push("/worldcup/how")} className="text-[12px] text-white/85 underline underline-offset-2 mt-2.5 inline-block">How the games &amp; scoring work →</button>
           </div>
         </div>
+
+        {/* Today's fixtures / next match day */}
+        <TodayAtCup />
 
         {/* Games */}
         <div className="grid gap-3 mb-6">
