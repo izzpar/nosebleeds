@@ -94,7 +94,7 @@ export default function WorldCupHub() {
                     {g.title}
                     {entered && <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-1.5 py-0.5 inline-flex items-center gap-0.5"><Icon name="check" className="w-2.5 h-2.5" strokeWidth={3} /> in</span>}
                   </div>
-                  <div className="text-[12px] text-zinc-400 leading-snug">{entered ? g.on : g.off}</div>
+                  <div className="text-[12px] text-zinc-400 leading-snug">{g.off}</div>
                 </div>
                 <span className="text-zinc-600 text-lg">›</span>
               </button>
