@@ -720,7 +720,7 @@ function SalaryLeaderboard({ selLeagueId, leagues, onSelLeague, onCreateLeague }
       if (!cancelled) setRows(scored);
     };
     load().catch(() => { if (!cancelled) setRows((r) => r || []); });
-    const t = setInterval(() => load().catch(() => {}), 45000); // live refresh
+    const t = setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 90000); // live refresh (paused when tab hidden)
     return () => { cancelled = true; clearInterval(t); };
   }, [selLeagueId]);
 
