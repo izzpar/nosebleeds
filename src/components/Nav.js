@@ -1,6 +1,7 @@
 "use client";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter, usePathname } from "next/navigation";
+import { Icon } from "@/components/ui";
 
 export default function Nav({ tab, setTab }) {
   const { user } = useAuth();
@@ -10,13 +11,13 @@ export default function Nav({ tab, setTab }) {
 
   // Home-page tabs use setTab; route tabs navigate. `route` marks the latter.
   const tabs = [
-    { id: "games", icon: "🏈", label: "Games" },
-    { id: "discover", icon: "🔥", label: "Discover" },
-    { id: "predictions", icon: "🔮", label: "Predict", route: "/predictions" },
-    { id: "worldcup", icon: "🏆", label: "Cup", route: "/worldcup" },
-    { id: "friends", icon: "👥", label: "Friends" },
-    { id: "diary", icon: "📓", label: "Diary" },
-    { id: "profile", icon: "👤", label: user ? "Profile" : "Login" },
+    { id: "games", icon: "scores", label: "Games" },
+    { id: "discover", icon: "flame", label: "Discover" },
+    { id: "predictions", icon: "target", label: "Predict", route: "/predictions" },
+    { id: "worldcup", icon: "trophy", label: "Cup", route: "/worldcup" },
+    { id: "friends", icon: "users", label: "Friends" },
+    { id: "diary", icon: "book", label: "Diary" },
+    { id: "profile", icon: user ? "user" : "login", label: user ? "Profile" : "Login" },
   ];
 
   const handleTabClick = (t) => {
@@ -48,12 +49,12 @@ export default function Nav({ tab, setTab }) {
           <button
             key={t.id}
             onClick={() => handleTabClick(t)}
-            className={`flex-1 py-2.5 px-0.5 text-center transition-all ${
-              isActive(t) ? "text-red-500" : "text-zinc-600"
+            className={`flex-1 py-2.5 px-0.5 flex flex-col items-center transition-colors ${
+              isActive(t) ? "text-red-500" : "text-zinc-500 hover:text-zinc-300"
             }`}
           >
-            <div className="text-base">{t.icon}</div>
-            <div className="text-[8px] font-bold mt-0.5">{t.label}</div>
+            <Icon name={t.icon} className="w-[18px] h-[18px]" strokeWidth={isActive(t) ? 2.4 : 2} />
+            <div className="text-[8px] font-bold mt-1 tracking-wide">{t.label}</div>
           </button>
         ))}
       </div>
