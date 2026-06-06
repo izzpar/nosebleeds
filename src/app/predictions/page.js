@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+import { Icon } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
@@ -416,7 +417,7 @@ export default function PredictionsPage() {
       <div className="sticky top-0 z-50 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
-          <h1 className="text-sm font-bold text-white flex-1 text-center">🔮 Predictions</h1>
+          <h1 className="text-sm font-bold text-white flex-1 flex items-center justify-center gap-1.5"><Icon name="target" className="w-4 h-4 text-red-500" /> Predictions</h1>
           {/* Sport switcher */}
           <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
             {SPORTS.map((s) => (
@@ -433,13 +434,13 @@ export default function PredictionsPage() {
             onClick={() => changeViewMode("fun")}
             className={`px-4 py-1.5 rounded-full text-[11px] font-bold transition-all ${viewMode === "fun" ? "bg-red-600 text-white" : "text-zinc-500"}`}
           >
-            😎 Fun
+            Fun
           </button>
           <button
             onClick={() => changeViewMode("units")}
-            className={`px-4 py-1.5 rounded-full text-[11px] font-bold transition-all ${viewMode === "units" ? "bg-red-600 text-white" : "text-zinc-500"}`}
+            className={`px-4 py-1.5 rounded-full text-[11px] font-bold transition-all inline-flex items-center gap-1 ${viewMode === "units" ? "bg-red-600 text-white" : "text-zinc-500"}`}
           >
-            💰 Units
+            <Icon name="wallet" className="w-3 h-3" /> Units
           </button>
         </div>
 
@@ -471,21 +472,21 @@ export default function PredictionsPage() {
               <button
                 onClick={handleCheckResults}
                 disabled={checking}
-                className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
               >
-                {checking ? "Checking…" : "↻ Check results"}
+                <Icon name="refresh" className={`w-3 h-3 ${checking ? "animate-spin" : ""}`} /> {checking ? "Checking…" : "Check results"}
               </button>
             </div>
           )}
           <Link href="/leaderboard" className="mt-3 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-zinc-950/60 border border-zinc-800 text-xs font-bold text-zinc-300 hover:border-red-600/40 transition-colors">
-            🏆 View Leaderboards
+            <Icon name="trophy" className="w-3.5 h-3.5" /> View Leaderboards
           </Link>
         </div>
 
         {/* Beat the Streak entry — its own game mode (MLB hitters), always shown */}
         <Link href="/streak" className="block mb-4">
           <div className="rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-orange-900/50 via-zinc-900 to-zinc-900 border border-orange-600/30 hover:border-orange-600 transition-all">
-            <div className="text-3xl">🔥</div>
+            <Icon name="flame" className="w-7 h-7 text-orange-500 shrink-0" />
             <div className="flex-1">
               <div className="text-sm font-bold text-white">Beat the Streak <span className="text-[9px] font-bold text-orange-400/80">🏈⚾🏀🏒</span></div>
               <div className="text-[10px] text-zinc-400">Pick a team to win (or an MLB hitter to get a hit). One pick a day — how long can you keep it alive?</div>
@@ -508,7 +509,7 @@ export default function PredictionsPage() {
 
             {!loading && games.length === 0 && (
               <div className="text-center py-16">
-                <div className="text-5xl mb-3">🗓️</div>
+                <Icon name="calendar" className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
                 <div className="text-base font-bold text-white">No upcoming games</div>
                 <div className="text-sm text-zinc-500 mt-1">No scheduled {sportLabel(sport)} games to predict right now.</div>
               </div>
@@ -524,7 +525,7 @@ export default function PredictionsPage() {
                   <div className="p-3.5">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{fmtGameTime(g.date)}</span>
-                      {pick && <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-bold">✓ Your Pick</span>}
+                      {pick && <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-bold inline-flex items-center gap-0.5"><Icon name="check" className="w-2.5 h-2.5" strokeWidth={3} /> Your Pick</span>}
                     </div>
 
                     {/* Teams — tap to open the game page */}
@@ -612,7 +613,7 @@ export default function PredictionsPage() {
 
             {!picksLoading && myPicks.length === 0 && (
               <div className="text-center py-16">
-                <div className="text-5xl mb-3">🔮</div>
+                <Icon name="target" className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
                 <div className="text-base font-bold text-white">No picks yet</div>
                 <div className="text-sm text-zinc-500 mt-1">Head to Make Picks to predict some games.</div>
               </div>
@@ -641,16 +642,16 @@ export default function PredictionsPage() {
 
             {!picksLoading && settledPicks.length > 0 && (
               <>
-                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2 mt-4">📋 Settled ({settledPicks.length})</div>
+                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2 mt-4 flex items-center gap-1.5"><Icon name="list" className="w-3 h-3" /> Settled ({settledPicks.length})</div>
                 {settledPicks.map(p => {
-                  const c = p.status === "won" ? { bg: "bg-green-500/15", tx: "text-green-400", lbl: "WON", icon: "✓" }
-                    : p.status === "lost" ? { bg: "bg-red-500/15", tx: "text-red-400", lbl: "LOST", icon: "✗" }
-                    : { bg: "bg-zinc-800", tx: "text-zinc-400", lbl: p.status === "push" ? "PUSH" : "VOID", icon: "–" };
+                  const c = p.status === "won" ? { bg: "bg-green-500/15", tx: "text-green-400", lbl: "WON", icon: "check" }
+                    : p.status === "lost" ? { bg: "bg-red-500/15", tx: "text-red-400", lbl: "LOST", icon: "x" }
+                    : { bg: "bg-zinc-800", tx: "text-zinc-400", lbl: p.status === "push" ? "PUSH" : "VOID", icon: null };
                   const href = gameHref(p.game_id, p.sport);
                   const score = (p.result_away && p.result_home) ? `${p.result_away} — ${p.result_home}` : null;
                   return (
                     <Link key={p.id} href={href} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-colors">
-                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm font-extrabold shrink-0 ${c.bg} ${c.tx}`}>{c.icon}</span>
+                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm font-extrabold shrink-0 ${c.bg} ${c.tx}`}>{c.icon ? <Icon name={c.icon} className="w-4 h-4" strokeWidth={3} /> : "–"}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-bold text-white truncate">{p.pick_label}</div>
                         <div className="text-[10px] text-zinc-500">

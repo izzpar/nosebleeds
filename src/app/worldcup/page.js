@@ -7,7 +7,7 @@ import { sbFetch, sbJson } from "@/lib/sbrest";
 import KickoffCountdown from "@/components/KickoffCountdown";
 import WcBackdrop from "@/components/WcBackdrop";
 import { WC_TEAMS_FALLBACK } from "@/lib/worldcup";
-import { ui, svgIcon, IconChip } from "@/components/ui";
+import { ui, svgIcon, IconChip, Icon } from "@/components/ui";
 
 // Inline icon set (consistent stroke) — replaces emoji-as-icons.
 const IconRank = () => (<svg {...svgIcon}><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M3 20h18" /></svg>);
@@ -48,7 +48,9 @@ export default function WorldCupHub() {
       <WcBackdrop />
       <div className={ui.header}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center text-base shrink-0">🩸</div>
+          <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0">
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M12 2.2c3.8 4.9 6.5 8.2 6.5 11.6a6.5 6.5 0 0 1-13 0C5.5 10.4 8.2 7.1 12 2.2z" /></svg>
+          </div>
           <div>
             <h1 className="text-base font-extrabold leading-tight tracking-tight">The Nosebleeds</h1>
             <p className="text-[11px] text-zinc-500 leading-tight">Fantasy World Cup 2026</p>
@@ -84,7 +86,7 @@ export default function WorldCupHub() {
                 <div className="flex-1 min-w-0">
                   <div className="font-bold flex items-center gap-2">
                     {g.title}
-                    {entered && <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-1.5 py-0.5">✓ in</span>}
+                    {entered && <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-1.5 py-0.5 inline-flex items-center gap-0.5"><Icon name="check" className="w-2.5 h-2.5" strokeWidth={3} /> in</span>}
                   </div>
                   <div className="text-[12px] text-zinc-400 leading-snug">{entered ? g.on : g.off}</div>
                 </div>
