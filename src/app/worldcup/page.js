@@ -18,11 +18,11 @@ const IconUsers = () => (<svg {...svgIcon}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 
 const IconPredict = () => (<svg {...svgIcon}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></svg>);
 
 const GAMES = [
-  { key: "ranking", Icon: IconRank, tint: "red", title: "Nations Ranking", href: "/worldcup/rankings", on: "View your rank on the global board", off: "Rank all 48 nations · climb the global board" },
-  { key: "salary", Icon: IconSalary, tint: "emerald", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "€100m budget · build your XI · solo or in leagues" },
-  { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games&sport=wc", on: "Rate matches & players", off: "Rate every game 1–10, pick your Star Man" },
-  { key: "predictions", Icon: IconPredict, tint: "red", title: "Match Picks", href: "/worldcup/predictions", on: "Make today's picks", off: "Call every match — win, lose or draw" },
-  { key: "leagues", Icon: IconUsers, tint: "sky", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft with friends — snake or live auction" },
+  { key: "ranking", Icon: IconRank, tint: "red", title: "Nations Ranking", href: "/worldcup/rankings", on: "See where your ranking sits on the board", off: "Rank all 48 nations 1–48 and bank points as they perform. Prove your World Cup knowledge against your friends — and the world." },
+  { key: "salary", Icon: IconSalary, tint: "emerald", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "Build a 15-player squad under a €100m budget and pick your XI. Rack up points every match and climb the board — solo or in private leagues." },
+  { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games&sport=wc", on: "Rate matches & players", off: "Score every match 1–10 and crown your Star Man. See how your takes stack up against the crowd's." },
+  { key: "predictions", Icon: IconPredict, tint: "red", title: "Match Picks", href: "/worldcup/predictions", on: "Make today's picks", off: "Call every match — win, lose or draw — and build a streak. Race up the global board or start a league with your mates." },
+  { key: "leagues", Icon: IconUsers, tint: "sky", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft a squad of nations or players with friends — snake or live auction. Battle for bragging rights all tournament long." },
 ];
 
 // A recognizable set of flags for the hero strip (real imagery, not emoji).
