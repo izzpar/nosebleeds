@@ -3,7 +3,7 @@ import { Space_Grotesk } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
 import InstallPrompt from "@/components/InstallPrompt";
 import OfflineBanner from "@/components/OfflineBanner";
-import { Analytics } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/next";
 
 const font = Space_Grotesk({
   subsets: ["latin"],
