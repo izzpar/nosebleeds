@@ -7,7 +7,7 @@ export const alt = "You're invited to a Fantasy World Cup mini-league";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const GAME_NAME = { ranking: "Nations Ranking", salary: "Salary Cap" };
+const GAME_NAME = { ranking: "Nations Ranking", salary: "Salary Cap", picks: "Match Picks" };
 
 async function getGroup(code) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

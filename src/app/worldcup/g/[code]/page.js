@@ -5,8 +5,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { groupByCode, joinGroup } from "@/lib/groups";
 import WcBackdrop from "@/components/WcBackdrop";
 
-const GAME_PATH = { ranking: "/worldcup/rankings", salary: "/worldcup/salary" };
-const GAME_NAME = { ranking: "World Cup Nations Ranking", salary: "World Cup Salary Cap" };
+const GAME_PATH = { ranking: "/worldcup/rankings", salary: "/worldcup/salary", picks: "/worldcup/predictions" };
+const GAME_NAME = { ranking: "World Cup Nations Ranking", salary: "World Cup Salary Cap", picks: "World Cup Match Picks" };
 
 export default function JoinGroupPage() {
   const { code } = useParams();

@@ -1,13 +1,15 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Nav from "@/components/Nav";
 import WcBackdrop from "@/components/WcBackdrop";
 import { Icon } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
+import { fetchMyGroups, createGroup, groupMemberIds } from "@/lib/groups";
 import { WC_BASE, WC_START, WC_END } from "@/lib/worldcup";
+
+const GLOBAL = { id: null, name: "🌍 Global" };
 
 // Result of a finished match → 'home' | 'draw' | 'away' (PK winner counts).
 function matchResult(home, away) {
@@ -16,14 +18,9 @@ function matchResult(home, away) {
   if (home.score === away.score) return "draw";
   return home.score > away.score ? "home" : "away";
 }
-
-function dayLabel(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-}
-function timeLabel(iso) {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
+const dayLabel = (iso) => new Date(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+const timeLabel = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+const pickAbbr = (p) => (p.pick === "draw" ? "Draw" : p.pick === "home" ? p.home_abbr : p.away_abbr);
 
 export default function WcPredictionsPage() {
   const router = useRouter();
@@ -31,8 +28,15 @@ export default function WcPredictionsPage() {
   const [matches, setMatches] = useState(null);
   const [picks, setPicks] = useState({});      // match_id -> pick row
   const [subTab, setSubTab] = useState("fixtures");
+
+  // leagues
+  const [leagues, setLeagues] = useState([GLOBAL]);
+  const [selLeagueId, setSelLeagueId] = useState(null);
   const [board, setBoard] = useState(null);
-  const [saving, setSaving] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [lgName, setLgName] = useState("");
+  const [copied, setCopied] = useState(false);
+
   const [toast, setToast] = useState("");
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2400); };
 
@@ -66,6 +70,13 @@ export default function WcPredictionsPage() {
   }, [user]);
   useEffect(() => { loadPicks(); }, [loadPicks]);
 
+  // my leagues
+  const loadLeagues = useCallback(async () => {
+    if (!user) return;
+    try { setLeagues([GLOBAL, ...(await fetchMyGroups(user.id, "picks"))]); } catch (e) {}
+  }, [user]);
+  useEffect(() => { loadLeagues(); }, [loadLeagues]);
+
   // Settle my own finished-but-pending picks immediately (cron also does this).
   useEffect(() => {
     if (!user || !matches) return;
@@ -82,46 +93,70 @@ export default function WcPredictionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches, picks, user]);
 
+  // Optimistic pick — update the UI instantly, persist in the background.
   const makePick = async (mt, choice) => {
     if (!user) { router.push("/login"); return; }
     if (new Date(mt.date) <= new Date()) { flash("That match has kicked off"); return; }
-    setSaving(mt.id + choice);
     const existing = picks[mt.id];
-    const body = {
-      user_id: user.id, handle: profile?.handle, display_name: profile?.display_name || profile?.handle,
-      match_id: mt.id, match_date: mt.date, pick: choice,
-      home_abbr: mt.home.abbr, away_abbr: mt.away.abbr, home_name: mt.home.name, away_name: mt.away.name,
-      status: "pending",
-    };
+    setPicks((prev) => ({ ...prev, [mt.id]: { ...(existing || { match_id: mt.id, user_id: user.id, home_abbr: mt.home.abbr, away_abbr: mt.away.abbr, match_date: mt.date }), pick: choice, status: "pending" } }));
     try {
-      let res;
-      if (existing) res = await sbFetch(`wc_predictions?id=eq.${existing.id}`, { method: "PATCH", body: JSON.stringify({ pick: choice }) });
-      else res = await sbFetch("wc_predictions", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(body) });
-      if (res.ok) { await loadPicks(); } else flash("Couldn't save — run the predictions SQL");
-    } catch (e) { flash("Couldn't save"); }
-    setSaving(null);
+      if (existing?.id) {
+        const res = await sbFetch(`wc_predictions?id=eq.${existing.id}`, { method: "PATCH", body: JSON.stringify({ pick: choice }) });
+        if (!res.ok) throw new Error();
+      } else {
+        const body = {
+          user_id: user.id, handle: profile?.handle, display_name: profile?.display_name || profile?.handle,
+          match_id: mt.id, match_date: mt.date, pick: choice,
+          home_abbr: mt.home.abbr, away_abbr: mt.away.abbr, home_name: mt.home.name, away_name: mt.away.name, status: "pending",
+        };
+        const res = await sbFetch("wc_predictions", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(body) });
+        const row = (await sbJson(res))[0];
+        if (row) setPicks((prev) => ({ ...prev, [mt.id]: row }));
+        else if (!res.ok) throw new Error();
+      }
+    } catch (e) { flash("Couldn't save — run the predictions SQL"); loadPicks(); }
   };
 
-  // ---- leaderboard ----
+  // ---- leaderboard (global or league-scoped) ----
   const loadBoard = useCallback(async () => {
-    const rows = await sbJson(await sbFetch("wc_predictions?status=in.(won,lost)&select=user_id,handle,display_name,status"));
+    setBoard(null);
+    let memberIds = null;
+    if (selLeagueId) {
+      memberIds = await groupMemberIds(selLeagueId);
+      if (!memberIds.length) { setBoard([]); return; }
+    }
+    const flt = memberIds ? `&user_id=in.(${memberIds.join(",")})` : "";
+    const rows = await sbJson(await sbFetch(`wc_predictions?status=in.(won,lost)${flt}&select=user_id,handle,display_name,status`));
     const by = {};
     rows.forEach((r) => {
       const k = r.user_id;
-      by[k] = by[k] || { user_id: k, name: r.display_name || r.handle || "Player", handle: r.handle, won: 0, total: 0 };
+      by[k] = by[k] || { user_id: k, name: r.display_name || r.handle || "Player", won: 0, total: 0 };
       by[k].total++; if (r.status === "won") by[k].won++;
     });
     setBoard(Object.values(by).sort((a, b) => b.won - a.won || b.won / b.total - a.won / a.total));
-  }, []);
-  useEffect(() => { if (subTab === "leaderboard") loadBoard(); }, [subTab, loadBoard]);
+  }, [selLeagueId]);
+  useEffect(() => { if (subTab === "leagues") loadBoard(); }, [subTab, loadBoard]);
+
+  const createLeague = async () => {
+    if (!lgName.trim() || !user) return;
+    const g = await createGroup(lgName, "picks", user.id, profile);
+    if (g) { setLgName(""); setCreating(false); await loadLeagues(); setSelLeagueId(g.id); }
+    else flash("Couldn't create league");
+  };
+  const selLeague = leagues.find((l) => (l.id || null) === selLeagueId) || GLOBAL;
+  const copyInvite = () => {
+    if (!selLeague.invite_code) return;
+    try { navigator.clipboard.writeText(`${window.location.origin}/worldcup/g/${selLeague.invite_code}`); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
+  };
 
   // record
-  const settledMine = Object.values(picks).filter((p) => p.status === "won" || p.status === "lost");
+  const allPicks = Object.values(picks);
+  const settledMine = allPicks.filter((p) => p.status === "won" || p.status === "lost");
   const wins = settledMine.filter((p) => p.status === "won").length;
   const pct = settledMine.length ? Math.round((wins / settledMine.length) * 100) : 0;
-  const pendingMine = Object.values(picks).filter((p) => p.status === "pending").length;
+  const pendingMine = allPicks.filter((p) => p.status === "pending").length;
 
-  // group upcoming/live fixtures by day for the picker
+  // fixtures grouped by day
   const now = new Date();
   const fixtures = (matches || []).filter((m) => !m.completed);
   const finished = (matches || []).filter((m) => m.completed).reverse();
@@ -136,7 +171,7 @@ export default function WcPredictionsPage() {
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3">
         <div className="flex items-center justify-between text-[11px] text-zinc-500 mb-2">
           <span>{timeLabel(mt.date)}</span>
-          {locked ? <span className="text-amber-400/80">kicked off</span> : p && <span className="text-emerald-400">✓ picked</span>}
+          {locked ? <span className="text-amber-400/80">kicked off</span> : p && <span className="text-emerald-400 inline-flex items-center gap-0.5"><Icon name="check" className="w-2.5 h-2.5" strokeWidth={3} /> picked</span>}
         </div>
         <div className="flex items-center justify-center gap-2 mb-2.5 text-sm font-bold">
           <span className="flex items-center gap-1.5">{mt.home.logo && <img src={mt.home.logo} alt="" className="w-5 h-5 object-contain" />}{mt.home.abbr}</span>
@@ -147,8 +182,8 @@ export default function WcPredictionsPage() {
           {opts.map(([val, label]) => {
             const active = p?.pick === val;
             return (
-              <button key={val} disabled={locked || saving === mt.id + val} onClick={() => makePick(mt, val)}
-                className={`py-2 rounded-lg text-[12px] font-bold transition-all ${active ? "bg-red-600 text-white" : locked ? "bg-zinc-950 text-zinc-600 border border-zinc-800" : "bg-zinc-950 text-zinc-300 border border-zinc-700 hover:border-red-600"}`}>
+              <button key={val} disabled={locked} onClick={() => makePick(mt, val)}
+                className={`py-2 rounded-lg text-[12px] font-bold transition-all active:scale-[0.97] ${active ? "bg-red-600 text-white" : locked ? "bg-zinc-950 text-zinc-600 border border-zinc-800" : "bg-zinc-950 text-zinc-300 border border-zinc-700 hover:border-red-600"}`}>
                 {label}
               </button>
             );
@@ -171,7 +206,7 @@ export default function WcPredictionsPage() {
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-4 text-sm">
-          {[["fixtures", "Fixtures"], ["leaderboard", "Leaderboard"]].map(([id, label]) => (
+          {[["fixtures", "Fixtures"], ["mine", "My Picks"], ["leagues", "Leagues"]].map(([id, label]) => (
             <button key={id} onClick={() => setSubTab(id)} className={`pb-2 font-bold border-b-2 ${subTab === id ? "text-white border-red-500" : "text-zinc-600 border-transparent"}`}>{label}</button>
           ))}
         </div>
@@ -190,20 +225,68 @@ export default function WcPredictionsPage() {
           </div>
         </div>
 
-        {subTab === "leaderboard" ? (
-          !board ? <p className="text-zinc-600 text-sm py-8 text-center">Loading…</p>
-          : board.length === 0 ? <p className="text-zinc-600 text-sm py-8 text-center">No settled picks yet — check back once matches finish.</p>
-          : (
-            <div className="space-y-2">
-              {board.map((r, i) => (
-                <div key={r.user_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-zinc-600 font-bold w-5">{i + 1}</span>
-                    <span className="font-bold truncate">{r.name}{r.user_id === user?.id && <span className="text-[10px] text-emerald-400 font-normal"> · you</span>}</span>
-                  </div>
-                  <span className="text-[12px] text-zinc-400">{r.won}/{r.total} · <span className="text-red-500 font-bold">{Math.round((r.won / r.total) * 100)}%</span></span>
-                </div>
+        {/* ===== LEAGUES ===== */}
+        {subTab === "leagues" ? (
+          <>
+            <div className="flex gap-1.5 flex-wrap items-center mb-3">
+              {leagues.map((l) => (
+                <button key={l.id || "global"} onClick={() => setSelLeagueId(l.id || null)} className={`text-[12px] font-bold px-3 py-1 rounded-full ${selLeagueId === (l.id || null) ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{l.name}</button>
               ))}
+              <button onClick={() => setCreating((v) => !v)} className="text-[12px] font-bold px-3 py-1 rounded-full bg-zinc-800 text-zinc-400 inline-flex items-center gap-1"><Icon name="plus" className="w-3 h-3" /> League</button>
+            </div>
+            {creating && (
+              <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
+                <input value={lgName} onChange={(e) => setLgName(e.target.value)} placeholder="League name" maxLength={32} className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-zinc-600" />
+                <button onClick={createLeague} disabled={!lgName.trim()} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2 rounded-lg text-sm">Create &amp; invite friends</button>
+              </div>
+            )}
+            {selLeague.invite_code && (
+              <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-3">
+                {copied ? "✓ Invite link copied!" : <>🔗 Invite to <span className="text-zinc-200">{selLeague.name}</span> — tap to copy</>}
+              </button>
+            )}
+            {!board ? <p className="text-zinc-600 text-sm py-8 text-center">Loading…</p>
+              : board.length === 0 ? <p className="text-zinc-600 text-sm py-8 text-center">No settled picks here yet — they show once matches finish.</p>
+              : (
+                <div className="space-y-2">
+                  {board.map((r, i) => (
+                    <div key={r.user_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-zinc-600 font-bold w-5">{i + 1}</span>
+                        <span className="font-bold truncate">{r.name}{r.user_id === user?.id && <span className="text-[10px] text-emerald-400 font-normal"> · you</span>}</span>
+                      </div>
+                      <span className="text-[12px] text-zinc-400">{r.won}/{r.total} · <span className="text-red-500 font-bold">{Math.round((r.won / r.total) * 100)}%</span></span>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </>
+        ) : subTab === "mine" ? (
+          /* ===== MY PICKS ===== */
+          !user ? <p className="text-zinc-600 text-sm py-8 text-center">Sign in to track your picks.</p>
+          : allPicks.length === 0 ? (
+            <div className="text-center py-14">
+              <Icon name="target" className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+              <div className="font-bold">No picks yet</div>
+              <div className="text-sm text-zinc-500 mt-1">Head to Fixtures and call some results.</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {allPicks.sort((a, b) => new Date(b.match_date || 0) - new Date(a.match_date || 0)).map((p) => {
+                const c = p.status === "won" ? "check" : p.status === "lost" ? "x" : null;
+                const tx = p.status === "won" ? "text-green-400" : p.status === "lost" ? "text-red-400" : "text-zinc-500";
+                return (
+                  <div key={p.match_id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold truncate">{p.home_abbr} <span className="text-zinc-600 font-normal">v</span> {p.away_abbr}</div>
+                      <div className="text-[11px] text-zinc-500">{p.match_date ? dayLabel(p.match_date) : ""} · your pick: <span className="text-zinc-300 font-semibold">{pickAbbr(p)}</span></div>
+                    </div>
+                    <span className={`text-[11px] font-bold inline-flex items-center gap-1 ${tx}`}>
+                      {c && <Icon name={c} className="w-3 h-3" strokeWidth={3} />}{p.status === "pending" ? "pending" : p.status.toUpperCase()}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )
         ) : matches === null ? (
@@ -215,6 +298,7 @@ export default function WcPredictionsPage() {
             <div className="text-sm text-zinc-500 mt-1">The schedule loads here once the World Cup draw is live.</div>
           </div>
         ) : (
+          /* ===== FIXTURES ===== */
           <>
             {Object.keys(byDay).map((day) => (
               <div key={day} className="mb-4">
@@ -222,7 +306,6 @@ export default function WcPredictionsPage() {
                 <div className="space-y-2">{byDay[day].map((mt) => <PickRow key={mt.id} mt={mt} />)}</div>
               </div>
             ))}
-
             {finished.length > 0 && (
               <div className="mt-2">
                 <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 mb-2 flex items-center gap-1.5"><Icon name="list" className="w-3 h-3" /> Results</div>
@@ -240,7 +323,7 @@ export default function WcPredictionsPage() {
                         </div>
                         {p ? (
                           <span className={`text-[11px] font-bold inline-flex items-center gap-1 ${got ? "text-green-400" : "text-red-400"}`}>
-                            <Icon name={got ? "check" : "x"} className="w-3 h-3" strokeWidth={3} /> {p.pick === "draw" ? "Draw" : p.pick === "home" ? mt.home.abbr : mt.away.abbr}
+                            <Icon name={got ? "check" : "x"} className="w-3 h-3" strokeWidth={3} /> {pickAbbr(p)}
                           </span>
                         ) : <span className="text-[11px] text-zinc-600">no pick</span>}
                       </div>
