@@ -33,6 +33,6 @@ export async function GET() {
   const currentIndex = rounds.reduce((acc, r, i) => (r.locked ? i : acc), -1);
 
   return new Response(JSON.stringify({ ok: true, currentIndex, rounds }), {
-    headers: { "Content-Type": "application/json", "Cache-Control": "public, s-maxage=600, stale-while-revalidate=3600" },
+    headers: { "Content-Type": "application/json", "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=3600" },
   });
 }
