@@ -200,6 +200,27 @@ export default function SalaryLeaguePage() {
                 The tournament&apos;s underway — points appear within ~30 min of each match&apos;s final whistle. Hang tight.
               </div>
             )}
+            {reveal && user && rows.length > 1 && rows.some((r) => r.total) && (() => {
+              const mine = rows.filter((r) => r.user_id === user.id).sort((a, b) => b.total - a.total)[0];
+              if (!mine) return null;
+              const idx = rows.indexOf(mine);
+              const ahead = rows.slice(0, idx).reverse().find((r) => r.user_id !== user.id);
+              const behind = rows.slice(idx + 1).find((r) => r.user_id !== user.id);
+              const top = !ahead;
+              const gap = (a, b) => Math.round((a - b) * 100) / 100;
+              return (
+                <div className={`rounded-xl px-4 py-3 mb-3 border ${top ? "bg-emerald-500/10 border-emerald-600/30" : "bg-red-500/10 border-red-600/30"}`}>
+                  <div className="text-[13px] font-bold">
+                    {top ? `🥇 You lead ${group?.name || "this league"}!` : `You're #${idx + 1} of ${rows.length}`}
+                  </div>
+                  <div className="text-[12px] text-zinc-300 mt-0.5">
+                    {top
+                      ? (behind ? <>{gap(mine.total, behind.total)} pts ahead of <span className="font-semibold">{behind.name}</span> — keep it up.</> : "Out in front on your own.")
+                      : <>{gap(ahead.total, mine.total)} pts behind <span className="font-semibold">{ahead.name}</span>. Catch them.</>}
+                  </div>
+                </div>
+              );
+            })()}
             <div className="space-y-2">
               {rows.map((r, i) => {
                 const canView = reveal || r.user_id === user?.id;

@@ -172,6 +172,26 @@ export default function RankingLeaguePage() {
                 Scoring starts as results come in — points update within ~30 min of each match finishing.
               </div>
             )}
+            {rows.reveal && user && rows.list.length > 1 && rows.list.some((r) => r.total) && (() => {
+              const mine = rows.list.filter((r) => r.user_id === user.id).sort((a, b) => b.total - a.total)[0];
+              if (!mine) return null;
+              const idx = rows.list.indexOf(mine);
+              const ahead = rows.list.slice(0, idx).reverse().find((r) => r.user_id !== user.id);
+              const behind = rows.list.slice(idx + 1).find((r) => r.user_id !== user.id);
+              const top = !ahead;
+              return (
+                <div className={`rounded-xl px-4 py-3 mb-3 border ${top ? "bg-emerald-500/10 border-emerald-600/30" : "bg-red-500/10 border-red-600/30"}`}>
+                  <div className="text-[13px] font-bold">
+                    {top ? `🥇 You lead ${group?.name || "this league"}!` : `You're #${idx + 1} of ${rows.list.length}`}
+                  </div>
+                  <div className="text-[12px] text-zinc-300 mt-0.5">
+                    {top
+                      ? (behind ? <>{mine.total - behind.total} pt{mine.total - behind.total === 1 ? "" : "s"} ahead of <span className="font-semibold">{behind.name}</span> — keep it up.</> : "Out in front on your own.")
+                      : <>{ahead.total - mine.total} pt{ahead.total - mine.total === 1 ? "" : "s"} behind <span className="font-semibold">{ahead.name}</span>. Catch them.</>}
+                  </div>
+                </div>
+              );
+            })()}
             <div className="space-y-2">
               {rows.list.map((r, i) => {
                 const canView = rows.reveal || r.user_id === user?.id;
