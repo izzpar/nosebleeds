@@ -379,12 +379,13 @@ export default function LeagueRoom() {
   const copyCode = () => {
     try { navigator.clipboard.writeText(league.invite_code); flash("Code copied"); } catch (e) {}
   };
-  const copyLink = () => {
-    try {
-      const link = `${window.location.origin}/worldcup/join/${league.invite_code}`;
-      navigator.clipboard.writeText(link);
-      flash("Invite link copied — text it to friends!");
-    } catch (e) {}
+  const copyLink = async () => {
+    const link = `${window.location.origin}/worldcup/join/${league.invite_code}`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try { await navigator.share({ title: "The Nosebleeds", text: `Join ${league.name || "my league"} on The Nosebleeds`, url: link }); return; }
+      catch (e) { if (e?.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(link); flash("Invite link copied. Text it to friends!"); } catch (e) {}
   };
 
   // ---- render ----
