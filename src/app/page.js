@@ -1333,20 +1333,6 @@ function HomeContent() {
           </button>
         )}
 
-        {/* Dream Team side game — Games tab, all team sports */}
-        {tab === "games" && (hasTeams || sport === "wc") && (
-          <button onClick={() => router.push("/dream")} className="block w-full mb-3 text-left">
-            <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-gradient-to-r from-violet-950/50 to-zinc-900 border border-violet-900/40 hover:border-violet-700/60">
-              <div className="text-2xl">🌟</div>
-              <div className="flex-1">
-                <div className="text-sm font-bold text-white">Build your Dream Team</div>
-                <div className="text-[10px] text-zinc-400">Pick your all-time XI / starting lineup &amp; share it</div>
-              </div>
-              <span className="text-zinc-500">→</span>
-            </div>
-          </button>
-        )}
-
         {/* Recap banner: Games tab + NFL only (recaps are NFL-week-based) */}
         {latestRecap && tab === "games" && sport === "nfl" && (
           <Link href={`/recap/${latestRecap.season}/${latestRecap.week}`} className="block mb-3">
