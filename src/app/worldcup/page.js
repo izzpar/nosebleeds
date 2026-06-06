@@ -14,11 +14,13 @@ const IconRank = () => (<svg {...svgIcon}><path d="M4 20V10" /><path d="M10 20V4
 const IconSalary = () => (<svg {...svgIcon}><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><circle cx="16.5" cy="14.5" r="1.5" /></svg>);
 const IconStar = () => (<svg {...svgIcon}><path d="M12 3l2.7 5.5 6 .9-4.3 4.2 1 6L12 17l-5.4 2.6 1-6L3.3 9.4l6-.9z" /></svg>);
 const IconUsers = () => (<svg {...svgIcon}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
+const IconPredict = () => (<svg {...svgIcon}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></svg>);
 
 const GAMES = [
   { key: "ranking", Icon: IconRank, tint: "red", title: "Nations Ranking", href: "/worldcup/rankings", on: "View your rank on the global board", off: "Rank all 48 nations · climb the global board" },
   { key: "salary", Icon: IconSalary, tint: "emerald", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "€100m budget · build your XI · solo or in leagues" },
   { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games&sport=wc", on: "Rate matches & players", off: "Rate every game 1–10, pick your Star Man" },
+  { key: "predictions", Icon: IconPredict, tint: "red", title: "Match Picks", href: "/worldcup/predictions", on: "Make today's picks", off: "Call every match — win, lose or draw" },
   { key: "leagues", Icon: IconUsers, tint: "sky", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft with friends — snake or live auction" },
 ];
 
