@@ -114,7 +114,7 @@ export default function WcPredictionsPage() {
         if (row) setPicks((prev) => ({ ...prev, [mt.id]: row }));
         else if (!res.ok) throw new Error();
       }
-    } catch (e) { flash("Couldn't save — run the predictions SQL"); loadPicks(); }
+    } catch (e) { flash("Couldn't save. Run the predictions SQL."); loadPicks(); }
   };
 
   // ---- leaderboard (global or league-scoped) ----
@@ -239,7 +239,7 @@ export default function WcPredictionsPage() {
             )}
             {selLeague.invite_code && <InviteButton code={selLeague.invite_code} name={selLeague.name} className="mb-3" />}
             {!board ? <p className="text-zinc-600 text-sm py-8 text-center">Loading…</p>
-              : board.length === 0 ? <p className="text-zinc-600 text-sm py-8 text-center">No settled picks here yet — they show once matches finish.</p>
+              : board.length === 0 ? <p className="text-zinc-600 text-sm py-8 text-center">No settled picks here yet. They show once matches finish.</p>
               : (
                 <div className="space-y-2">
                   {board.map((r, i) => (

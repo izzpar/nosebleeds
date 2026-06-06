@@ -124,7 +124,7 @@ export default function DraftLeaguesPage() {
             {loading ? (
               <p className="text-zinc-600 text-sm py-6">Loading…</p>
             ) : leagues.length === 0 ? (
-              <p className="text-zinc-500 text-sm py-2 mb-2">No leagues yet — create one or join with a code below.</p>
+              <p className="text-zinc-500 text-sm py-2 mb-2">No leagues yet. Create one or join with a code below.</p>
             ) : (
               <div className="space-y-4 mb-6">
                 {LEAGUE_SECTIONS.map(([status, label]) => {

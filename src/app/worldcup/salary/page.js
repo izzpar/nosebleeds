@@ -239,7 +239,7 @@ function SalaryCapInner() {
       return;
     }
     if (starters.length >= 11) { flash("11 starters already"); return; }
-    if (posCount(starters, role) >= formStart(role)) { flash(`${formKey} has no open ${role} slot — switch formation`); return; }
+    if (posCount(starters, role) >= formStart(role)) { flash(`${formKey} has no open ${role} slot. Switch formation`); return; }
     setStarters((s) => [...s, id]);
   };
   const moveBench = (id, dir) => {
@@ -402,7 +402,7 @@ function SalaryCapInner() {
             {entries.length === 0 ? (
               <div className="text-center py-10">
                 <p className="text-zinc-500 text-sm mb-1">No team yet.</p>
-                <p className="text-zinc-600 text-[12px] mb-4">Build a 15-player squad under €{BUDGET}m and pick your XI — then enter it in your leagues.</p>
+                <p className="text-zinc-600 text-[12px] mb-4">Build a 15-player squad under €{BUDGET}m and pick your XI, then enter it in your leagues.</p>
                 <button onClick={newEntry} className="bg-red-600 text-white font-bold px-5 py-2.5 rounded-xl">Create your team →</button>
               </div>
             ) : editingId ? (
@@ -422,7 +422,7 @@ function SalaryCapInner() {
 
                 {editRound && (
                   <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-3 py-2 mb-3 text-[11px] text-zinc-400">
-                    <Icon name="refresh" className="w-3 h-3 inline-block align-[-1px] mr-1" />Editing your <span className="text-zinc-200">{editRound.label}</span> team — unlimited changes until it locks <span className="text-zinc-200">{lockLabel(editRound.lock)}</span>. Your team carries over to each new round.
+                    <Icon name="refresh" className="w-3 h-3 inline-block align-[-1px] mr-1" />Editing your <span className="text-zinc-200">{editRound.label}</span> team. Unlimited changes until it locks <span className="text-zinc-200">{lockLabel(editRound.lock)}</span>. Your team carries over to each new round.
                   </div>
                 )}
 
@@ -735,7 +735,7 @@ function SalaryLeaderboard({ selLeagueId, leagues, onSelLeague, onCreateLeague }
       {!rows ? (
         <p className="text-zinc-600 text-sm py-8">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-zinc-600 text-sm py-6">No teams here yet — build yours on the My Team tab!</p>
+        <p className="text-zinc-600 text-sm py-6">No teams here yet. Build yours on the My Team tab!</p>
       ) : (
         <div className="space-y-2">
           {rows.map((r, i) => (

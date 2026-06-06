@@ -18,11 +18,11 @@ const IconUsers = () => (<svg {...svgIcon}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 
 const IconPredict = () => (<svg {...svgIcon}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></svg>);
 
 const GAMES = [
-  { key: "ranking", Icon: IconRank, tint: "red", title: "Nations Ranking", href: "/worldcup/rankings", on: "See where your ranking sits on the board", off: "Rank all 48 nations 1–48 and bank points as they perform. Prove your World Cup knowledge against your friends — and the world." },
-  { key: "salary", Icon: IconSalary, tint: "emerald", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "Build a 15-player squad under a €100m budget and pick your XI. Rack up points every match and climb the board — solo or in private leagues." },
-  { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games&sport=wc", on: "Rate matches & players", off: "Score every match 1–10 and crown your Star Man. See how your takes stack up against the crowd's." },
-  { key: "predictions", Icon: IconPredict, tint: "red", title: "Match Picks", href: "/worldcup/predictions", on: "Make today's picks", off: "Call every match — win, lose or draw — and build a streak. Race up the global board or start a league with your mates." },
-  { key: "leagues", Icon: IconUsers, tint: "sky", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft a squad of nations or players with friends — snake or live auction. Battle for bragging rights all tournament long." },
+  { key: "ranking", Icon: IconRank, tint: "red", title: "Nations Ranking", href: "/worldcup/rankings", on: "See where your ranking sits on the board", off: "Rank all 48 nations 1 to 48 and bank points as they perform. Prove your World Cup knowledge against your friends and the whole world." },
+  { key: "salary", Icon: IconSalary, tint: "emerald", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "Build a 15-player squad under a €100m budget and pick your XI. Rack up points every match and climb the board, solo or in private leagues." },
+  { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games&sport=wc", on: "Rate matches & players", off: "Score every match 1 to 10 and crown your Man of the Match. See how your takes stack up against the crowd." },
+  { key: "predictions", Icon: IconPredict, tint: "red", title: "Match Picks", href: "/worldcup/predictions", on: "Make today's picks", off: "Call every match (win, lose or draw) and build a streak. Race up the global board or start a league with your mates." },
+  { key: "leagues", Icon: IconUsers, tint: "sky", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft a squad of nations or players with friends, snake or live auction. Battle for bragging rights all tournament long." },
 ];
 
 // A recognizable set of flags for the hero strip (real imagery, not emoji).
@@ -71,7 +71,7 @@ export default function WorldCupHub() {
           </div>
           <div className="px-6 pb-6 pt-3 text-center">
             <h2 className="text-[26px] font-extrabold text-white tracking-tight leading-[1.12]">Your group chat&apos;s home for the World Cup</h2>
-            <p className="text-[12.5px] text-red-100/85 mt-2.5 mb-4 max-w-md mx-auto leading-relaxed">Rank the nations, build a salary-cap squad, draft with friends &amp; rate every match — all free.</p>
+            <p className="text-[12.5px] text-red-100/85 mt-2.5 mb-4 max-w-md mx-auto leading-relaxed">Rank the nations, build a salary-cap squad, draft with friends and rate every match. All free.</p>
             <KickoffCountdown variant="hero" />
             <p className="text-[10px] text-red-200/60 mt-2">until kickoff · June 11</p>
             <button onClick={() => router.push("/worldcup/how")} className="text-[12px] text-white/85 underline underline-offset-2 mt-2.5 inline-block">How the games &amp; scoring work →</button>
