@@ -34,7 +34,7 @@ export default function HowItWorksPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
-        <p className="text-[13px] text-zinc-400 mb-4">Five free games for the 2026 World Cup — play any of them solo against the world, or in private leagues with friends. Most lock at the opening kickoff (Jun 11); points and records update automatically as matches play out.</p>
+        <p className="text-[13px] text-zinc-400 mb-4">Five free games for the 2026 World Cup. Play any of them solo against the world, or in private leagues with friends. Most lock at the opening kickoff (Jun 11), and points and records update automatically as matches play out.</p>
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500 mb-2">Solo or with friends</h3>
 
@@ -61,9 +61,9 @@ export default function HowItWorksPage() {
         </Card>
 
         <Card icon="target" tint="text-red-400" title="World Cup Match Picks">
-          <p>Call the result of <b>every</b> match — <b>home win, draw or away win</b>. Lock a pick before each kickoff; get it right and your record &amp; win % climb. One tap to switch your pick any time before the match starts.</p>
+          <p>Call the result of <b>every</b> match: <b>home win, draw or away win</b>. Lock a pick before each kickoff, and if you get it right your record &amp; win % climb. One tap to switch your pick any time before the match starts.</p>
           <Scoring>
-            <p>You&apos;re ranked by <b>total correct picks</b> (then win % as a tiebreaker) — no odds or units, just pure hit rate. A knockout decided on penalties counts as <b>whoever advances</b>.</p>
+            <p>You&apos;re ranked by <b>total correct picks</b> (then win % as a tiebreaker). No odds or units, just pure hit rate. A knockout decided on penalties counts as <b>whoever advances</b>.</p>
           </Scoring>
           <p className="text-zinc-500">Climb the open <b>Global</b> leaderboard, or make a picks <b>league</b> and see who in your group reads the tournament best.</p>
         </Card>
