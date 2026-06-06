@@ -431,7 +431,7 @@ function SalaryCapInner() {
 
                 {editRound && (
                   <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-3 py-2 mb-3 text-[11px] text-zinc-400">
-                    🔁 Editing your <span className="text-zinc-200">{editRound.label}</span> team — unlimited changes until it locks <span className="text-zinc-200">{lockLabel(editRound.lock)}</span>. Your team carries over to each new round.
+                    <Icon name="refresh" className="w-3 h-3 inline-block align-[-1px] mr-1" />Editing your <span className="text-zinc-200">{editRound.label}</span> team — unlimited changes until it locks <span className="text-zinc-200">{lockLabel(editRound.lock)}</span>. Your team carries over to each new round.
                   </div>
                 )}
 
@@ -452,17 +452,17 @@ function SalaryCapInner() {
                   </p>
                 )}
                 <div className="flex gap-2 mb-3">
-                  <button onClick={() => router.push("/worldcup/salary/global")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
-                    🏆 Leaderboard →
+                  <button onClick={() => router.push("/worldcup/salary/global")} className="flex-1 text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                    <Icon name="trophy" className="w-3.5 h-3.5" /> Leaderboard →
                   </button>
-                  <button onClick={() => setSubTab("leagues")} className="flex-1 text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
-                    👥 Your leagues →
+                  <button onClick={() => setSubTab("leagues")} className="flex-1 text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                    <Icon name="users" className="w-3.5 h-3.5" /> Your leagues →
                   </button>
                 </div>
 
                 {/* Scoring reminder */}
                 <details className="bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4 text-[12px]">
-                  <summary className="cursor-pointer text-zinc-400 font-semibold">ℹ️ How points work</summary>
+                  <summary className="cursor-pointer text-zinc-400 font-semibold flex items-center gap-1.5"><Icon name="info" className="w-3.5 h-3.5" /> How points work</summary>
                   <div className="text-zinc-400 mt-2 space-y-1 leading-relaxed">
                     <p>Per player, per match: <b>60+ min +2</b> (else +1) · <b>Goal</b> GK/DEF +6, MID +5, FWD +4 · Assist +3 · Shot on target +0.5 · Tackle +0.25 · Clean sheet (60+ min) GK/DEF +4, MID +1 · Save +1 per 3.</p>
                     <p>Minus: goals conceded (GK/DEF) −1 per 2 · yellow −1 · red −3 · own goal −2.</p>
@@ -553,17 +553,17 @@ function SalaryCapInner() {
                     <span className="text-[12px] font-bold">{byId[sel].name}</span>
                     {starters.includes(sel) ? (
                       <>
-                        <button onClick={() => setCaptain(sel)} className={`text-[11px] px-2 py-1 rounded ${captain === sel ? "bg-red-600 text-white" : "bg-zinc-800"}`}>⭐ Captain</button>
-                        <button onClick={() => toggleStarter(sel)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">⬇️ Bench</button>
+                        <button onClick={() => setCaptain(sel)} className={`text-[11px] px-2 py-1 rounded inline-flex items-center gap-1 ${captain === sel ? "bg-red-600 text-white" : "bg-zinc-800"}`}><Icon name="star" className="w-3 h-3" /> Captain</button>
+                        <button onClick={() => toggleStarter(sel)} className="text-[11px] px-2 py-1 rounded bg-zinc-800 inline-flex items-center gap-1"><Icon name="chevronDown" className="w-3 h-3" /> Bench</button>
                       </>
                     ) : (
                       <>
-                        <button onClick={() => toggleStarter(sel)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">⬆️ Start</button>
-                        <button onClick={() => moveBench(sel, -1)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">↑</button>
-                        <button onClick={() => moveBench(sel, 1)} className="text-[11px] px-2 py-1 rounded bg-zinc-800">↓</button>
+                        <button onClick={() => toggleStarter(sel)} className="text-[11px] px-2 py-1 rounded bg-zinc-800 inline-flex items-center gap-1"><Icon name="chevronUp" className="w-3 h-3" /> Start</button>
+                        <button onClick={() => moveBench(sel, -1)} className="px-2 py-1 rounded bg-zinc-800 inline-flex items-center"><Icon name="chevronUp" className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => moveBench(sel, 1)} className="px-2 py-1 rounded bg-zinc-800 inline-flex items-center"><Icon name="chevronDown" className="w-3.5 h-3.5" /></button>
                       </>
                     )}
-                    <button onClick={() => { removePlayer(sel); setSel(null); }} className="text-[11px] px-2 py-1 rounded bg-zinc-800 text-red-300">✕ Remove</button>
+                    <button onClick={() => { removePlayer(sel); setSel(null); }} className="text-[11px] px-2 py-1 rounded bg-zinc-800 text-red-300 inline-flex items-center gap-1"><Icon name="x" className="w-3 h-3" /> Remove</button>
                     <button onClick={() => setSel(null)} className="text-[11px] px-2 py-1 text-zinc-500 ml-auto">done</button>
                   </div>
                 )}
