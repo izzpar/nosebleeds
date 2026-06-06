@@ -21,8 +21,9 @@ function RankingsInner() {
   const [leagues, setLeagues] = useState([GLOBAL]);
   const [entries, setEntries] = useState([]);   // your ranking library
   const [selEntryId, setSelEntryId] = useState(null);
-  const [subs, setSubs] = useState([]);          // leagues the selected entry is entered in
-  const [addOpen, setAddOpen] = useState(false);
+  const [allSubs, setAllSubs] = useState({});    // entry_id -> [submissions] for this user
+  const [editingId, setEditingId] = useState(null); // which entry's editor is open (null = list)
+  const [expandedId, setExpandedId] = useState(null); // which list row is expanded
   const [order, setOrder] = useState([]);
   const [subTab, setSubTab] = useState("mine");  // 'mine' = My Rankings | 'leagues'
   const [saving, setSaving] = useState(false);
@@ -57,18 +58,19 @@ function RankingsInner() {
   }, [user]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
-  // Which leagues the selected entry is entered in.
-  const loadSubs = useCallback(async () => {
-    if (!user || !selEntryId) { setSubs([]); return; }
-    const rows = await sbJson(await sbFetch(`wc_ranking_submissions?entry_id=eq.${selEntryId}&user_id=eq.${user.id}&select=id,group_id`));
-    setSubs(rows);
-  }, [user, selEntryId]);
-  useEffect(() => { loadSubs(); }, [loadSubs]);
+  // All of this user's league submissions, grouped by entry (for the list view).
+  const loadAllSubs = useCallback(async () => {
+    if (!user) { setAllSubs({}); return; }
+    const rows = await sbJson(await sbFetch(`wc_ranking_submissions?user_id=eq.${user.id}&select=id,entry_id,group_id`));
+    const m = {}; rows.forEach((r) => { (m[r.entry_id] = m[r.entry_id] || []).push(r); });
+    setAllSubs(m);
+  }, [user]);
+  useEffect(() => { loadAllSubs(); }, [loadAllSubs]);
 
-  // Deep-link to a specific entry: /worldcup/rankings?entry=Y
+  // Deep-link to a specific entry: /worldcup/rankings?entry=Y (opens its editor)
   useEffect(() => {
     const en = searchParams.get("entry");
-    if (en) { setSelEntryId(en); setSubTab("mine"); }
+    if (en) { setSelEntryId(en); setEditingId(en); setSubTab("mine"); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -100,8 +102,8 @@ function RankingsInner() {
     // Auto-enter your FIRST ranking on the Global board; extra rankings you add to
     // leagues yourself.
     if (rows[0] && entries.length === 0) await sbInsert("wc_ranking_submissions", { entry_id: rows[0].id, group_id: null, user_id: user.id });
-    await loadEntries();
-    if (rows[0]) setSelEntryId(rows[0].id);
+    await loadEntries(); await loadAllSubs();
+    if (rows[0]) { setSelEntryId(rows[0].id); setEditingId(rows[0].id); } // jump into the editor
   };
 
   const save = async () => {
@@ -125,24 +127,21 @@ function RankingsInner() {
     setEntries((es) => es.map((e) => (e.id === selEntryId ? { ...e, label } : e)));
   };
 
-  // Enter / remove the selected ranking in a league, and delete it entirely.
-  const addToLeague = async (groupId) => {
-    if (!selEntryId) return;
-    setAddOpen(false);
-    const { res } = await sbInsert("wc_ranking_submissions", { entry_id: selEntryId, group_id: groupId, user_id: user.id });
-    if (res.ok || res.status === 409) { flash("Entered ✓"); await loadSubs(); }
-    else flash("Couldn't enter");
+  // Enter / remove a ranking in a league, and delete it entirely (by id).
+  const addSub = async (entryId, groupId) => {
+    const { res } = await sbInsert("wc_ranking_submissions", { entry_id: entryId, group_id: groupId, user_id: user.id });
+    if (res.ok || res.status === 409) { flash("Entered ✓"); await loadAllSubs(); } else flash("Couldn't enter");
   };
-  const removeFromLeague = async (subId) => {
+  const removeSub = async (subId) => {
     await sbFetch(`wc_ranking_submissions?id=eq.${subId}`, { method: "DELETE" });
-    await loadSubs();
+    await loadAllSubs();
   };
-  const deleteEntry = async () => {
-    if (!selEntryId) return;
-    if (!confirm("Delete this ranking? It'll be removed from every league it's in.")) return;
-    await sbFetch(`wc_ranking_entries?id=eq.${selEntryId}`, { method: "DELETE" }); // cascades submissions
-    setSelEntryId(null);
-    await loadEntries();
+  const deleteEntryById = async (id) => {
+    if (!confirm("Delete this ranking? It'll be removed from every contest it's in.")) return;
+    await sbFetch(`wc_ranking_entries?id=eq.${id}`, { method: "DELETE" }); // cascades submissions
+    if (editingId === id) setEditingId(null);
+    setExpandedId(null);
+    await loadEntries(); await loadAllSubs();
     flash("Ranking deleted");
   };
 
@@ -207,9 +206,34 @@ function RankingsInner() {
             )}
             <p className="text-[11px] text-zinc-600">Join a league from an invite link a friend sends you.</p>
           </>
-        ) : (
+        ) : editingId ? (
+          /* ---- Editor mode: build / rename one ranking ---- */
           <>
-            {/* Entry selector */}
+            <button onClick={() => { setEditingId(null); setExpandedId(null); }} className="text-[13px] text-zinc-400 hover:text-white mb-3">‹ Back to my rankings</button>
+            {!locked && (
+              <input
+                key={selEntryId}
+                defaultValue={selEntry?.label || ""}
+                onBlur={(e) => renameEntry(e.target.value)}
+                placeholder="Name this ranking (e.g. Dark Horses)"
+                maxLength={24}
+                className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-zinc-600"
+              />
+            )}
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline">ℹ️ How scoring works</button>
+              <button onClick={() => deleteEntryById(selEntryId)} className="text-[11px] text-zinc-500 hover:text-red-400">🗑 Delete this ranking</button>
+            </div>
+            <RankEditor
+              teams={teams} ranked={ranked} pool={pool} order={order} locked={locked} saving={saving}
+              onAdd={add} onRemove={removeT} onMove={move} onSuggest={suggestOrder} onSave={save}
+              onAddAll={() => setOrder((o) => [...o, ...pool.map((t) => String(t.id))])}
+              onRetryTeams={loadTeams}
+            />
+          </>
+        ) : (
+          /* ---- List mode: tap a ranking to manage where it's entered ---- */
+          <>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-500">Your rankings</h3>
               {!locked && <button onClick={newEntry} className="text-[12px] bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-3 py-1 rounded-lg">＋ New ranking</button>}
@@ -220,68 +244,64 @@ function RankingsInner() {
                 {!locked && <button onClick={newEntry} className="bg-red-600 text-white font-bold px-5 py-2.5 rounded-xl">Build your first ranking →</button>}
               </div>
             ) : (
-              <>
-                {entries.length > 1 && (
-                  <div className="flex gap-1.5 flex-wrap mb-3">
-                    {entries.map((e, i) => (
-                      <button key={e.id} onClick={() => setSelEntryId(e.id)} className={`text-[12px] px-3 py-1 rounded-full ${selEntryId === e.id ? "bg-red-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{e.label || `Ranking ${i + 1}`}</button>
-                    ))}
-                  </div>
-                )}
-
-                {selEntryId && !locked && (
-                  <input
-                    key={selEntryId}
-                    defaultValue={selEntry?.label || ""}
-                    onBlur={(e) => renameEntry(e.target.value)}
-                    placeholder="Name this ranking (e.g. Dark Horses)"
-                    maxLength={24}
-                    className="w-full bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-zinc-600"
-                  />
-                )}
-
-                {/* Entered in — pick which leagues this ranking competes in */}
-                {(() => {
+              <div className="space-y-2">
+                {entries.map((e, i) => {
+                  const rk = e.ranking || [];
+                  const complete = teams.length > 0 && rk.length === teams.length;
+                  const subs = allSubs[e.id] || [];
+                  const top = teamById(rk[0]);
+                  const open = expandedId === e.id;
                   const inIds = new Set(subs.map((s) => s.group_id || "global"));
                   const addable = leagues.filter((l) => !inIds.has(l.id || "global"));
                   return (
-                    <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-3">
-                      <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Entered in</div>
-                      <div className="flex gap-1.5 flex-wrap items-center">
-                        {subs.length === 0 && <span className="text-[12px] text-zinc-600">Not in any league yet.</span>}
-                        {subs.map((s) => (
-                          <span key={s.id} className="text-[12px] bg-zinc-800 rounded-full pl-3 pr-1.5 py-1 flex items-center gap-1.5">
-                            {leagueName(s.group_id)}
-                            <button onClick={() => removeFromLeague(s.id)} className="text-zinc-500 hover:text-red-400 w-4 h-4 leading-none" title="Remove from this league">✕</button>
-                          </span>
-                        ))}
-                        {addable.length > 0 && (
-                          <button onClick={() => setAddOpen((v) => !v)} className="text-[12px] font-bold px-3 py-1 rounded-full bg-red-600/20 text-red-300 border border-red-700/40">＋ Enter in a league</button>
-                        )}
-                      </div>
-                      {addOpen && (
-                        <div className="mt-2 flex gap-1.5 flex-wrap">
-                          {addable.map((l) => (
-                            <button key={l.id || "global"} onClick={() => addToLeague(l.id || null)} className="text-[12px] px-3 py-1 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200">{l.name}</button>
-                          ))}
+                    <div key={e.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl overflow-hidden">
+                      <button onClick={() => setExpandedId(open ? null : e.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-900">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold truncate">{e.label || `Ranking ${i + 1}`}</div>
+                          <div className="text-[11px] text-zinc-500">
+                            {complete ? "✓ Complete" : `${rk.length}/${teams.length || "?"} ranked`}
+                            {" · "}{subs.length === 0 ? "not entered" : `in ${subs.length} ${subs.length === 1 ? "contest" : "contests"}`}
+                          </div>
+                        </div>
+                        {top?.logo
+                          ? <img src={top.logo} alt="" title={`Your #1: ${top.name}`} className="w-6 h-6 object-contain shrink-0" />
+                          : <span className="w-6 h-6 shrink-0" />}
+                        <span className={`text-zinc-600 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+                      </button>
+                      {open && (
+                        <div className="px-4 pb-3 border-t border-zinc-800/70 pt-3 space-y-3">
+                          {!locked && (
+                            <button onClick={() => { setSelEntryId(e.id); setEditingId(e.id); }} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2 rounded-lg text-sm">✏️ Edit ranking</button>
+                          )}
+                          <div>
+                            <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Entered in</div>
+                            {subs.length === 0 && <p className="text-[12px] text-zinc-600 mb-1.5">Not in any contest yet.</p>}
+                            <div className="space-y-1.5">
+                              {subs.map((s) => (
+                                <div key={s.id} className="flex items-center justify-between bg-zinc-800/60 rounded-lg px-3 py-1.5">
+                                  <span className="text-[13px]">{leagueName(s.group_id)}</span>
+                                  <button onClick={() => removeSub(s.id)} className="text-[11px] text-zinc-500 hover:text-red-400 font-semibold">Remove from league</button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          {addable.length > 0 && (
+                            <div>
+                              <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-1.5">Enter in a contest</div>
+                              <div className="flex gap-1.5 flex-wrap">
+                                {addable.map((l) => (
+                                  <button key={l.id || "global"} onClick={() => addSub(e.id, l.id || null)} className="text-[12px] px-3 py-1 rounded-full bg-red-600/20 text-red-300 border border-red-700/40 hover:bg-red-600/30">＋ {l.name}</button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <button onClick={() => deleteEntryById(e.id)} className="text-[11px] text-zinc-500 hover:text-red-400">🗑 Delete this ranking</button>
                         </div>
                       )}
                     </div>
                   );
-                })()}
-
-                <div className="flex items-center justify-between mb-3">
-                  <button onClick={() => router.push("/worldcup/how")} className="text-[11px] text-zinc-400 underline">ℹ️ How scoring works</button>
-                  <button onClick={deleteEntry} className="text-[11px] text-zinc-500 hover:text-red-400">🗑 Delete ranking</button>
-                </div>
-
-                <RankEditor
-                  teams={teams} ranked={ranked} pool={pool} order={order} locked={locked} saving={saving}
-                  onAdd={add} onRemove={removeT} onMove={move} onSuggest={suggestOrder} onSave={save}
-                  onAddAll={() => setOrder((o) => [...o, ...pool.map((t) => String(t.id))])}
-                  onRetryTeams={loadTeams}
-                />
-              </>
+                })}
+              </div>
             )}
           </>
         )}
