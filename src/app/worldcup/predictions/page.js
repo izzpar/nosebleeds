@@ -173,11 +173,12 @@ export default function WcPredictionsPage() {
           <span>{timeLabel(mt.date)}</span>
           {locked ? <span className="text-amber-400/80">kicked off</span> : p && <span className="text-emerald-400 inline-flex items-center gap-0.5"><Icon name="check" className="w-2.5 h-2.5" strokeWidth={3} /> picked</span>}
         </div>
-        <div className="flex items-center justify-center gap-2 mb-2.5 text-sm font-bold">
+        <button onClick={() => router.push(`/game/${mt.id}?sport=wc`)} className="w-full flex items-center justify-center gap-2 mb-2.5 text-sm font-bold hover:opacity-80 transition-opacity">
           <span className="flex items-center gap-1.5">{mt.home.logo && <img src={mt.home.logo} alt="" className="w-5 h-5 object-contain" />}{mt.home.abbr}</span>
           <span className="text-zinc-600 text-xs">vs</span>
           <span className="flex items-center gap-1.5">{mt.away.abbr}{mt.away.logo && <img src={mt.away.logo} alt="" className="w-5 h-5 object-contain" />}</span>
-        </div>
+          <span className="text-[10px] text-zinc-600 font-semibold ml-1">rate ›</span>
+        </button>
         <div className="grid grid-cols-3 gap-1.5">
           {opts.map(([val, label]) => {
             const active = p?.pick === val;
@@ -315,7 +316,7 @@ export default function WcPredictionsPage() {
                     const p = picks[mt.id];
                     const got = p && (p.status === "won" || (p.status === "pending" && p.pick === res));
                     return (
-                      <div key={mt.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between">
+                      <button key={mt.id} onClick={() => router.push(`/game/${mt.id}?sport=wc`)} className="w-full text-left bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 flex items-center justify-between hover:border-zinc-700 transition-colors">
                         <div className="flex items-center gap-2 text-sm font-bold">
                           <span className={res === "home" ? "text-white" : "text-zinc-500"}>{mt.home.abbr} {mt.home.score}</span>
                           <span className="text-zinc-600">-</span>
@@ -326,7 +327,7 @@ export default function WcPredictionsPage() {
                             <Icon name={got ? "check" : "x"} className="w-3 h-3" strokeWidth={3} /> {pickAbbr(p)}
                           </span>
                         ) : <span className="text-[11px] text-zinc-600">no pick</span>}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
