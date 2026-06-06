@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
 import { fetchMyGroups, createGroup, groupMemberIds } from "@/lib/groups";
+import InviteButton from "@/components/InviteButton";
 import { WC_BASE, WC_START, WC_END } from "@/lib/worldcup";
 
 const GLOBAL = { id: null, name: "🌍 Global" };
@@ -35,7 +36,6 @@ export default function WcPredictionsPage() {
   const [board, setBoard] = useState(null);
   const [creating, setCreating] = useState(false);
   const [lgName, setLgName] = useState("");
-  const [copied, setCopied] = useState(false);
 
   const [toast, setToast] = useState("");
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2400); };
@@ -144,10 +144,6 @@ export default function WcPredictionsPage() {
     else flash("Couldn't create league");
   };
   const selLeague = leagues.find((l) => (l.id || null) === selLeagueId) || GLOBAL;
-  const copyInvite = () => {
-    if (!selLeague.invite_code) return;
-    try { navigator.clipboard.writeText(`${window.location.origin}/worldcup/g/${selLeague.invite_code}`); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
-  };
 
   // record
   const allPicks = Object.values(picks);
@@ -241,11 +237,7 @@ export default function WcPredictionsPage() {
                 <button onClick={createLeague} disabled={!lgName.trim()} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2 rounded-lg text-sm">Create &amp; invite friends</button>
               </div>
             )}
-            {selLeague.invite_code && (
-              <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-3">
-                {copied ? "✓ Invite link copied!" : <>🔗 Invite to <span className="text-zinc-200">{selLeague.name}</span> — tap to copy</>}
-              </button>
-            )}
+            {selLeague.invite_code && <InviteButton code={selLeague.invite_code} name={selLeague.name} className="mb-3" />}
             {!board ? <p className="text-zinc-600 text-sm py-8 text-center">Loading…</p>
               : board.length === 0 ? <p className="text-zinc-600 text-sm py-8 text-center">No settled picks here yet — they show once matches finish.</p>
               : (

@@ -8,6 +8,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { emotesFor, nameColor } from "@/lib/drops";
 import { makeRatingCard } from "@/lib/shareCard";
 import { repScore, repTier } from "@/lib/reputation";
+import { Icon } from "@/components/ui";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -695,7 +696,7 @@ function WcPlayerRatings({ gameId, lineup, home, away, user, profile, sbFetch, s
   return (
     <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-3">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-sm font-bold text-white">⭐ Rate the players</h3>
+        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><Icon name="star" className="w-4 h-4 text-amber-400" /> Rate the players</h3>
         {ratedCount > 0 && <span className="text-[10px] text-zinc-500">you rated {ratedCount}</span>}
       </div>
       <p className="text-[11px] text-zinc-500 mb-3">Score every player who featured, 1–10. 👑 = crowd&apos;s top-rated.</p>

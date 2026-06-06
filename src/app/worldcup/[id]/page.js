@@ -18,6 +18,7 @@ import AuctionRoom from "./AuctionRoom";
 import WaiverView from "./WaiverView";
 import Confetti from "@/components/Confetti";
 import WcBackdrop from "@/components/WcBackdrop";
+import { Icon } from "@/components/ui";
 import { DEFAULT_PLAYER_SCORING, pointsFromComponents, isPlayerScoring } from "@/lib/playerScoring";
 
 const POLL_MS = 2500;
@@ -398,11 +399,11 @@ export default function LeagueRoom() {
       <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
-          <span className="text-xl">🏆</span>
+          <Icon name="trophy" className="w-5 h-5 text-red-500 shrink-0" />
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-bold leading-tight truncate">{league.name}</h1>
             <div className="text-[11px] text-zinc-500 leading-tight flex items-center gap-2">
-              <button onClick={copyLink} className="text-red-400 font-semibold">🔗 Copy invite link</button>
+              <button onClick={copyLink} className="text-red-400 font-semibold inline-flex items-center gap-1"><Icon name="link" className="w-3 h-3" /> Copy invite link</button>
               <button onClick={copyCode}>code <span className="text-zinc-300 font-mono tracking-widest">{league.invite_code}</span></button>
             </div>
           </div>
@@ -704,7 +705,7 @@ function ConfirmPickBar({ name, sub, onConfirm, onCancel, busy }) {
           <div className="font-bold truncate">{name}{sub ? <span className="text-zinc-500 font-normal"> · {sub}</span> : null}</div>
         </div>
         <button onClick={onCancel} className="text-[12px] font-bold px-3 py-2 rounded-lg bg-zinc-800 text-zinc-300">Cancel</button>
-        <button onClick={onConfirm} disabled={busy} className="text-[13px] font-bold px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white">✓ Draft</button>
+        <button onClick={onConfirm} disabled={busy} className="text-[13px] font-bold px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white inline-flex items-center gap-1"><Icon name="check" className="w-3.5 h-3.5" strokeWidth={3} /> Draft</button>
       </div>
     </div>
   );

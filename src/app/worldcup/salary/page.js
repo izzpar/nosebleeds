@@ -9,6 +9,7 @@ import { RANKING_LOCK_ISO } from "@/lib/worldcup";
 import { fetchMyGroups, createGroup } from "@/lib/groups";
 import WcBackdrop from "@/components/WcBackdrop";
 import { Icon } from "@/components/ui";
+import InviteButton from "@/components/InviteButton";
 
 const BUDGET = 100;
 const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };       // 15 total
@@ -76,7 +77,6 @@ function SalaryCapInner() {
   const [creatingLeague, setCreatingLeague] = useState(false);
   const [lgName, setLgName] = useState("");
   const [lgMax, setLgMax] = useState(1);
-  const [copied, setCopied] = useState(false);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2600); };
   const selLeague = leagues.find((l) => (l.id || null) === selLeagueId) || GLOBAL;
@@ -303,11 +303,6 @@ function SalaryCapInner() {
     if (g) { setLgName(""); setCreatingLeague(false); await loadLeagues(); setSelLeagueId(g.id); setSubTab("team"); }
   };
 
-  const copyInvite = () => {
-    if (!selLeague.invite_code) return;
-    try { navigator.clipboard.writeText(`${window.location.origin}/worldcup/g/${selLeague.invite_code}`); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
-  };
-
   const save = async () => {
     if (!editRound) return;
     if (!user || saving || !canSave) { if (!canSave) flash("Complete a valid 15 squad, 11 starters + captain"); return; }
@@ -394,11 +389,7 @@ function SalaryCapInner() {
                 <button onClick={createLeague} disabled={!lgName.trim()} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold py-2 rounded-lg text-sm">Create &amp; invite</button>
               </div>
             )}
-            {selLeague.invite_code && (
-              <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
-                {copied ? "✓ Invite link copied!" : <>🔗 Invite to <span className="text-zinc-200">{selLeague.name}</span> — tap to copy</>}
-              </button>
-            )}
+            {selLeague.invite_code && <InviteButton code={selLeague.invite_code} name={selLeague.name} />}
           </>
         ) : poolLoading || editRound === undefined ? (
           <p className="text-zinc-600 text-sm py-8">Loading…</p>
