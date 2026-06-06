@@ -18,7 +18,7 @@ const IconUsers = () => (<svg {...svgIcon}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 
 const GAMES = [
   { key: "ranking", Icon: IconRank, tint: "red", title: "Nations Ranking", href: "/worldcup/rankings", on: "View your rank on the global board", off: "Rank all 48 nations · climb the global board" },
   { key: "salary", Icon: IconSalary, tint: "emerald", title: "Salary Cap", href: "/worldcup/salary", on: "Manage your squad & check the board", off: "€100m budget · build your XI · solo or in leagues" },
-  { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games", on: "Rate matches & players", off: "Rate every game 1–10, pick your Star Man" },
+  { key: "ratings", Icon: IconStar, tint: "amber", title: "Match Ratings", href: "/?tab=games&sport=wc", on: "Rate matches & players", off: "Rate every game 1–10, pick your Star Man" },
   { key: "leagues", Icon: IconUsers, tint: "sky", title: "Draft Leagues", href: "/worldcup/leagues", on: "Your snake & auction leagues", off: "Draft with friends — snake or live auction" },
 ];
 

@@ -341,10 +341,20 @@ function HomeContent() {
   };
   useEffect(() => {
     let s = "wc";
-    try {
-      const saved = localStorage.getItem("nb_sport");
-      if (VALID_SPORTS.includes(saved)) { s = saved; setSportInternal(saved); setProfileSport(saved); }
-    } catch (e) {}
+    // An explicit ?sport= in the URL (e.g. from the World Cup hub) wins over the
+    // last-used sport saved in localStorage.
+    let fromUrl = null;
+    try { fromUrl = new URLSearchParams(window.location.search).get("sport"); } catch (e) {}
+    if (VALID_SPORTS.includes(fromUrl)) {
+      s = fromUrl;
+      setSportInternal(fromUrl); setProfileSport(fromUrl);
+      try { localStorage.setItem("nb_sport", fromUrl); } catch (e) {}
+    } else {
+      try {
+        const saved = localStorage.getItem("nb_sport");
+        if (VALID_SPORTS.includes(saved)) { s = saved; setSportInternal(saved); setProfileSport(saved); }
+      } catch (e) {}
+    }
     if (s === "wc") setSelectedDate((d) => clampWcDate(d));
   }, []);
   const [search, setSearch] = useState("");

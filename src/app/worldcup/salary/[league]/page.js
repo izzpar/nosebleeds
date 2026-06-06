@@ -195,6 +195,11 @@ export default function SalaryLeaguePage() {
                 Everyone&apos;s squads stay hidden until the first game kicks off (Jun 11). {submittedCount}/{rows.length} have saved a team.
               </div>
             )}
+            {reveal && rows.length > 0 && rows.every((r) => !r.total) && (
+              <div className="bg-amber-500/10 border border-amber-600/30 rounded-xl px-4 py-3 mb-3 text-[12px] text-amber-200/90">
+                The tournament&apos;s underway — points appear within ~30 min of each match&apos;s final whistle. Hang tight.
+              </div>
+            )}
             <div className="space-y-2">
               {rows.map((r, i) => {
                 const canView = reveal || r.user_id === user?.id;
