@@ -52,6 +52,8 @@ const ICONS = {
   star: <path d="M12 3l2.7 5.5 6 .9-4.3 4.2 1 6L12 17l-5.4 2.6 1-6L3.3 9.4l6-.9z" />,
   chevronUp: <path d="m18 15-6-6-6 6" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  link: <><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5" /></>,
+  lock: <><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>,
 };
 
 export function Icon({ name, className = "w-5 h-5", strokeWidth = 2 }) {

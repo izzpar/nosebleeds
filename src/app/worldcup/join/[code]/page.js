@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import WcBackdrop from "@/components/WcBackdrop";
+import { Icon } from "@/components/ui";
 
 const FORMAT_LABEL = { team: "nations draft", player: "players draft" };
 
@@ -51,7 +52,7 @@ export default function JoinLeaguePage() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <WcBackdrop />
       <div className="max-w-sm w-full text-center">
-        <div className="text-4xl mb-3">🏆</div>
+        <Icon name="trophy" className="w-10 h-10 text-red-500 mx-auto mb-3" />
         {loading || (user && league === undefined) ? (
           <p className="text-zinc-500">Loading…</p>
         ) : !user ? (

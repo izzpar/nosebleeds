@@ -7,6 +7,7 @@ import WcBackdrop from "@/components/WcBackdrop";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson } from "@/lib/sbrest";
 import { rankingsLocked } from "@/lib/worldcup";
+import { Icon } from "@/components/ui";
 
 const POS_COLOR = { GK: "text-amber-400", DEF: "text-sky-400", MID: "text-emerald-400", FWD: "text-red-400" };
 
@@ -64,7 +65,7 @@ export default function SalaryEntryPage() {
 
         {!reveal && !mine ? (
           <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl px-4 py-10 text-center">
-            <div className="text-4xl mb-2">🔒</div>
+            <Icon name="lock" className="w-9 h-9 text-zinc-500 mx-auto mb-2" />
             <div className="font-bold">Hidden until kickoff</div>
             <p className="text-[12px] text-zinc-500 mt-1">You&apos;ll be able to see {name}&apos;s squad once the first game kicks off (Jun 11).</p>
           </div>

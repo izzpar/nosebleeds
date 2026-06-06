@@ -8,6 +8,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import { rankingsLocked } from "@/lib/worldcup";
 import { groupById } from "@/lib/groups";
+import { Icon } from "@/components/ui";
+import InviteButton from "@/components/InviteButton";
 
 const GLOBAL = { id: null, name: "🌍 Global", max_entries: 1, isGlobal: true };
 
@@ -48,7 +50,6 @@ export default function SalaryLeaguePage() {
   const [group, setGroup] = useState(isGlobal ? GLOBAL : null);
   const [rows, setRows] = useState(null);
   const [myLib, setMyLib] = useState([]);
-  const [copied, setCopied] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [toast, setToast] = useState("");
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2400); };
@@ -99,11 +100,6 @@ export default function SalaryLeaguePage() {
     return () => { cancelled = true; clearInterval(t); };
   }, [load]);
 
-  const copyInvite = () => {
-    if (!group?.invite_code) return;
-    try { navigator.clipboard.writeText(`${window.location.origin}/worldcup/g/${group.invite_code}`); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
-  };
-
   const myRows = (rows || []).filter((r) => r.user_id === user?.id);
   const myEntryIds = new Set(myRows.map((r) => r.id));
   const maxEntries = group?.max_entries || 1;
@@ -125,7 +121,7 @@ export default function SalaryLeaguePage() {
       <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup/salary")} className="text-zinc-500 text-xl leading-none">‹</button>
-          <span className="text-xl">💰</span>
+          <Icon name="wallet" className="w-5 h-5 text-red-500" />
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-bold leading-tight truncate">{group?.name || "League"}</h1>
             <p className="text-[11px] text-zinc-500 leading-tight">World Cup Salary Cap · {reveal ? "live" : "teams hidden until kickoff"}</p>
@@ -134,11 +130,7 @@ export default function SalaryLeaguePage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
-        {group?.invite_code && (
-          <button onClick={copyInvite} className="w-full text-left text-[12px] text-zinc-400 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 mb-4">
-            {copied ? "✓ Invite link copied!" : <>🔗 Invite to <span className="text-zinc-200">{group.name}</span> — tap to copy</>}
-          </button>
-        )}
+        {group?.invite_code && <InviteButton code={group.invite_code} name={group.name} className="mb-4" />}
 
         {/* Your teams in this league */}
         <div className="flex items-center justify-between mb-2">
@@ -172,7 +164,7 @@ export default function SalaryLeaguePage() {
                 <div className="flex items-center gap-2 shrink-0">
                   {reveal && <span className="font-bold text-red-500 tabular-nums">{r.total} pts</span>}
                   <button onClick={() => router.push(`/worldcup/salary?entry=${r.id}`)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white">Edit</button>
-                  {!reveal && <button onClick={() => removeEntry(r.subId)} className="text-[12px] text-zinc-500 hover:text-red-400 px-1" title="Remove from this league">✕</button>}
+                  {!reveal && <button onClick={() => removeEntry(r.subId)} className="text-zinc-500 hover:text-red-400 px-1" title="Remove from this league"><Icon name="x" className="w-4 h-4" /></button>}
                 </div>
               </div>
             ))}

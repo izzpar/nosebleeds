@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { groupByCode, joinGroup } from "@/lib/groups";
 import WcBackdrop from "@/components/WcBackdrop";
+import { Icon } from "@/components/ui";
 
 const GAME_PATH = { ranking: "/worldcup/rankings", salary: "/worldcup/salary", picks: "/worldcup/predictions" };
 const GAME_NAME = { ranking: "World Cup Nations Ranking", salary: "World Cup Salary Cap", picks: "World Cup Match Picks" };
@@ -38,7 +39,7 @@ export default function JoinGroupPage() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <WcBackdrop />
       <div className="max-w-sm w-full text-center">
-        <div className="text-4xl mb-3">🏆</div>
+        <Icon name="trophy" className="w-10 h-10 text-red-500 mx-auto mb-3" />
         {loading || (user && group === undefined) ? (
           <p className="text-zinc-500">Loading…</p>
         ) : !user ? (

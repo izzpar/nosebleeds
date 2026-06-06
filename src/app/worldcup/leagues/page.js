@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
 import { sbFetch, sbJson, sbInsert } from "@/lib/sbrest";
 import WcBackdrop from "@/components/WcBackdrop";
+import { Icon } from "@/components/ui";
 
 function makeCode() {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -99,7 +100,7 @@ export default function DraftLeaguesPage() {
       <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#09090b]/70 border-b border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
           <button onClick={() => router.push("/worldcup")} className="text-zinc-500 text-xl leading-none">‹</button>
-          <span className="text-xl">🏆</span>
+          <Icon name="trophy" className="w-5 h-5 text-red-500" />
           <div className="flex-1">
             <h1 className="text-base font-bold leading-tight">Draft Leagues</h1>
             <p className="text-[11px] text-zinc-500 leading-tight">Snake &amp; auction drafts with friends</p>
