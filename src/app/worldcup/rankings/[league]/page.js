@@ -167,6 +167,11 @@ export default function RankingLeaguePage() {
                 Everyone&apos;s rankings stay hidden until the first game kicks off (Jun 11). {submittedCount}/{rows.list.length} have locked in a full ranking.
               </div>
             )}
+            {rows.reveal && rows.list.length > 0 && rows.list.every((r) => !r.total) && (
+              <div className="bg-amber-500/10 border border-amber-600/30 rounded-xl px-4 py-3 mb-3 text-[12px] text-amber-200/90">
+                Scoring starts as results come in — points update within ~30 min of each match finishing.
+              </div>
+            )}
             <div className="space-y-2">
               {rows.list.map((r, i) => {
                 const canView = rows.reveal || r.user_id === user?.id;
