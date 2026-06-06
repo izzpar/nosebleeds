@@ -105,7 +105,7 @@ export default function WorldCupHub() {
         {!user && (
           <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl px-5 py-6 text-center">
             <p className="text-white font-bold mb-1">New here? Welcome 👋</p>
-            <p className="text-[13px] text-zinc-400 mb-4 max-w-sm mx-auto">Tap any game above to look around. Log in to save your picks, create private leagues, and invite your friends.</p>
+            <p className="text-[13px] text-zinc-400 mb-4 max-w-sm mx-auto">Tap any game above to look around. Log in to save your picks, make private leagues, and take on your friends. Beyond the Cup, The Nosebleeds is where you rate every NFL, NBA, MLB and NHL game all year.</p>
             <button onClick={() => router.push("/login")} className={`${ui.btnPrimary} px-6 py-2.5 shadow-lg shadow-red-900/30`}>Log in / sign up</button>
           </div>
         )}

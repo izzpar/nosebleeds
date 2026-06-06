@@ -1259,8 +1259,21 @@ function HomeContent() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-3">
-        {/* Fantasy World Cup promo — flagship games hub */}
-        {(tab === "games" || tab === "discover") && (
+        {/* Cold open — what this is, for logged-out visitors (year-round identity first) */}
+        {!user && (tab === "games" || tab === "discover") && (
+          <div className="rounded-2xl p-5 mb-3 bg-gradient-to-br from-red-800 via-red-900 to-zinc-950 border border-red-500/30 text-center">
+            <h2 className="text-xl font-extrabold tracking-tight text-white">Rate every game with your friends</h2>
+            <p className="text-[12.5px] text-red-100/85 mt-1.5 mb-3.5 max-w-md mx-auto leading-relaxed">
+              Score every match 1 to 10, settle the hot takes, and climb leaderboards together across the NFL, NBA, MLB, NHL and more. Right now it&apos;s also home to the free Fantasy World Cup 2026.
+            </p>
+            <div className="flex gap-2 justify-center">
+              <button onClick={() => router.push("/login")} className="bg-white text-red-700 font-extrabold px-5 py-2 rounded-xl text-sm">Join free</button>
+              <button onClick={() => router.push("/worldcup")} className="bg-red-600/30 border border-red-400/40 text-white font-bold px-5 py-2 rounded-xl text-sm">World Cup ›</button>
+            </div>
+          </div>
+        )}
+        {/* Fantasy World Cup promo — flagship games hub (logged-in; logged-out get the cold open above) */}
+        {user && (tab === "games" || tab === "discover") && (
           <button
             onClick={() => router.push("/worldcup")}
             className="w-full text-left rounded-2xl p-4 mb-3 bg-gradient-to-r from-red-700 via-red-800 to-zinc-900 border border-red-500/40 flex items-center gap-3 active:scale-[0.99] transition-transform"
@@ -1268,7 +1281,7 @@ function HomeContent() {
             <div className="text-3xl">🏆</div>
             <div className="flex-1">
               <div className="text-sm font-extrabold text-white">Fantasy World Cup 2026 is here</div>
-              <div className="text-[11px] text-red-100/80 mt-0.5">Draft nations or players, run a live auction, build a salary-cap XI, rank all 48 — and climb leaderboards with friends.</div>
+              <div className="text-[11px] text-red-100/80 mt-0.5">Draft nations or players, run a live auction, build a salary-cap XI, rank all 48, and climb leaderboards with friends.</div>
             </div>
             <div className="text-white text-xl">›</div>
           </button>
