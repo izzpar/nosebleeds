@@ -521,42 +521,52 @@ function SalaryCapInner() {
                   ))}
                 </div>
 
-                {/* Pitch — fixed formation slots; empty slots fill as you add players */}
-                <div className="rounded-2xl p-3 mb-2 bg-gradient-to-b from-emerald-700/30 via-emerald-800/20 to-emerald-950/30 border border-emerald-900/40">
-                  <div className="flex items-center justify-between text-[10px] text-emerald-200/70 font-bold mb-1 px-1">
-                    <span>STARTING XI ({starters.length}/11)</span>
-                    <span className="text-emerald-300">{formKey}</span>
-                    <span>tap a slot</span>
+                {/* Pitch — fixed formation slots on a real-looking pitch */}
+                <div className="relative overflow-hidden rounded-2xl p-3 pt-2.5 mb-2 border border-emerald-950"
+                  style={{ background: "repeating-linear-gradient(180deg, #15803d 0 34px, #16a34a 34px 68px)" }}>
+                  {/* pitch markings */}
+                  <div className="pointer-events-none absolute inset-0">
+                    <div className="absolute left-0 right-0 top-1/2 h-px bg-white/25" />
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full border border-white/25" />
+                    <div className="absolute left-1/2 -translate-x-1/2 top-0 w-32 h-12 border border-t-0 border-white/20" />
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-32 h-12 border border-b-0 border-white/20" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/30" />
                   </div>
-                  {["FWD", "MID", "DEF", "GK"].map((g) => {
-                    const inRow = starters.map((id) => byId[id]).filter((p) => p && p.role === g);
-                    const cells = Array.from({ length: formStart(g) }, (_, i) => inRow[i] || null);
-                    return (
-                      <div key={g} className="flex justify-center items-start gap-1.5 my-1.5 min-h-[3.4rem] flex-wrap">
-                        {cells.map((p, i) => {
-                          if (!p) {
+                  <div className="relative">
+                    <div className="flex items-center justify-between text-[10px] text-white/80 font-bold mb-1 px-1">
+                      <span>STARTING XI ({starters.length}/11)</span>
+                      <span className="bg-black/30 rounded px-1.5 py-0.5">{formKey}</span>
+                    </div>
+                    {["FWD", "MID", "DEF", "GK"].map((g) => {
+                      const inRow = starters.map((id) => byId[id]).filter((p) => p && p.role === g);
+                      const cells = Array.from({ length: formStart(g) }, (_, i) => inRow[i] || null);
+                      return (
+                        <div key={g} className="flex justify-center items-start gap-2 my-2 min-h-[3.6rem] flex-wrap">
+                          {cells.map((p, i) => {
+                            if (!p) {
+                              return (
+                                <button key={`${g}-${i}`} onClick={() => { setPos(g); flash(`Pick a ${g} below`); }} className="flex flex-col items-center w-[3.7rem]">
+                                  <div className="w-10 h-10 rounded-full border-2 border-dashed border-white/40 flex items-center justify-center text-white/60 text-base">＋</div>
+                                  <span className="text-[8px] text-white/60 mt-1 bg-black/25 rounded px-1">{g}</span>
+                                </button>
+                              );
+                            }
+                            const id = String(p.id); const isCap = captain === id;
                             return (
-                              <button key={`${g}-${i}`} onClick={() => { setPos(g); flash(`Pick a ${g} below`); }} className="flex flex-col items-center w-[3.6rem]">
-                                <div className="w-9 h-9 rounded-full border-2 border-dashed border-emerald-300/40 flex items-center justify-center text-emerald-200/50 text-base">＋</div>
-                                <span className="text-[8px] text-emerald-200/50 mt-0.5">{g}</span>
+                              <button key={id} onClick={() => setSel(sel === id ? null : id)} className={`flex flex-col items-center w-[3.7rem] transition-transform ${sel === id ? "scale-110" : ""}`}>
+                                <div className={`relative w-10 h-10 rounded-full overflow-hidden border-2 bg-zinc-900 shadow-md ${sel === id ? "border-white ring-2 ring-white/40" : isCap ? "border-amber-400" : "border-white/70"}`}>
+                                  {p.image && <img src={p.image} alt="" className="w-full h-full object-cover" />}
+                                  {isCap && <span className="absolute -bottom-1 -right-1 bg-amber-400 text-black text-[8px] font-extrabold rounded-full w-4 h-4 flex items-center justify-center border border-emerald-900">C</span>}
+                                </div>
+                                <span className="mt-1 text-[9px] font-semibold text-white bg-black/55 rounded px-1 max-w-full truncate leading-tight">{(p.name || "").split(" ").slice(-1)[0]}</span>
+                                <span className="text-[8px] text-white/85 font-bold">€{p.price}</span>
                               </button>
                             );
-                          }
-                          const id = String(p.id); const isCap = captain === id;
-                          return (
-                            <button key={id} onClick={() => setSel(sel === id ? null : id)} className={`flex flex-col items-center w-[3.6rem] transition-transform ${sel === id ? "scale-110" : ""}`}>
-                              <div className={`relative w-9 h-9 rounded-full overflow-hidden border-2 bg-zinc-800 ${sel === id ? "border-white" : isCap ? "border-red-500" : "border-zinc-600"}`}>
-                                {p.image && <img src={p.image} alt="" className="w-full h-full object-cover" />}
-                                {isCap && <span className="absolute -bottom-0.5 -right-0.5 bg-red-600 text-white text-[7px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">C</span>}
-                              </div>
-                              <span className="text-[9px] text-white truncate w-full text-center leading-tight mt-0.5">{(p.name || "").split(" ").slice(-1)[0]}</span>
-                              <span className="text-[8px] text-emerald-200/70">€{p.price}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Bench strip */}
