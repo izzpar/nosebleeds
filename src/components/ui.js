@@ -1,4 +1,4 @@
-// Central look-and-feel for the World Cup surfaces.
+// Central look-and-feel tokens.
 // Edit the tokens here to restyle the app fast — pages import these instead of
 // repeating Tailwind class strings everywhere. (Want a lighter theme later? Mostly
 // a matter of changing `page`, `card`, `input`, and the chip tints below.)
