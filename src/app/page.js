@@ -11,7 +11,6 @@ import { useAuth } from "@/components/AuthProvider";
 import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
-import WcBackdrop from "@/components/WcBackdrop";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -19,20 +18,13 @@ const SPORT_PATHS = {
   mlb: "baseball/mlb",
   nba: "basketball/nba",
   nhl: "hockey/nhl",
-  wc: "soccer/fifa.world",
 };
 const ESPN = `${ESPN_BASE}/${SPORT_PATHS.nfl}`; // legacy for any remaining refs
-// 2026 World Cup window — used to default the date so the feed isn't empty pre-tournament.
-const WC_OPENER = "2026-06-11";
-const WC_FINAL = "2026-07-19";
-// Keep a YYYY-MM-DD date inside the tournament window (string compare is safe for ISO dates).
-const clampWcDate = (d) => (d < WC_OPENER ? WC_OPENER : d > WC_FINAL ? WC_FINAL : d);
 
 // Sport switcher config (also drives diary/profile toggles). Order = display order.
-// `team: false` sports (tennis, World Cup) are not favorite-team based — no
-// favorite-team picker. World Cup still uses the shared /game/[id] page.
+// `team: false` sports (tennis) are not favorite-team based — no
+// favorite-team picker.
 const SPORTS = [
-  { id: "wc", emoji: "⚽🏆", label: "World Cup", team: false },
   { id: "nfl", emoji: "🏈", label: "NFL", team: true },
   { id: "mlb", emoji: "⚾", label: "MLB", team: true },
   { id: "nba", emoji: "🏀", label: "NBA", team: true },
@@ -320,7 +312,7 @@ function HomeContent() {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0); // bumped by pull-to-refresh to re-run the games load effect
-  const [sport, setSportInternal] = useState("wc"); // wc | nfl | mlb | nba | nhl | tennis
+  const [sport, setSportInternal] = useState("nfl"); // nfl | mlb | nba | nhl | tennis
   const [week, setWeek] = useState(18);
   const [year, setYear] = useState(2024);
   // Date-based sports (MLB/NBA/NHL) use a date string YYYY-MM-DD instead of week/year
@@ -336,13 +328,11 @@ function HomeContent() {
     setProfileSport(s);
     setMyTeams([]); // clear team filter - different teams per sport
     setGameStatus("all");
-    if (s === "wc") setSelectedDate((d) => clampWcDate(d)); // jump into the tournament window
     try { localStorage.setItem("nb_sport", s); } catch (e) {}
   };
   useEffect(() => {
-    let s = "wc";
-    // An explicit ?sport= in the URL (e.g. from the World Cup hub) wins over the
-    // last-used sport saved in localStorage.
+    let s = "nfl";
+    // An explicit ?sport= in the URL wins over the last-used sport saved in localStorage.
     let fromUrl = null;
     try { fromUrl = new URLSearchParams(window.location.search).get("sport"); } catch (e) {}
     if (VALID_SPORTS.includes(fromUrl)) {
@@ -355,7 +345,6 @@ function HomeContent() {
         if (VALID_SPORTS.includes(saved)) { s = saved; setSportInternal(saved); setProfileSport(saved); }
       } catch (e) {}
     }
-    if (s === "wc") setSelectedDate((d) => clampWcDate(d));
   }, []);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
@@ -509,8 +498,6 @@ function HomeContent() {
     if (tab === "profile" && !authLoading && user === null) {
       router.push("/login");
     }
-    // The profile stats are per-sport; "wc" only exists on the diary, so reset it here.
-    if (tab === "profile" && profileSport === "wc") setProfileSport("nfl");
   }, [tab, user, authLoading, profileSport]);
 
   // Load the user's predictions for the profile picks section
@@ -1228,9 +1215,8 @@ function HomeContent() {
 
   return (
     <div className="min-h-screen pb-24">
-      {sport === "wc" && <WcBackdrop />}
       {/* Header */}
-      <div className={`sticky top-0 z-50 backdrop-blur-xl border-b border-zinc-800 ${sport === "wc" ? "bg-[#09090b]/70" : "bg-[#09090b]/90"}`}>
+      <div className="sticky top-0 z-50 backdrop-blur-xl border-b border-zinc-800 bg-[#09090b]/90">
         <div className="max-w-2xl mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="text-xl font-extrabold text-white">
             <span className="text-red-600">🩸</span> The Nosebleeds
@@ -1264,27 +1250,12 @@ function HomeContent() {
           <div className="rounded-2xl p-5 mb-3 bg-gradient-to-br from-red-800 via-red-900 to-zinc-950 border border-red-500/30 text-center">
             <h2 className="text-xl font-extrabold tracking-tight text-white">Rate every game with your friends</h2>
             <p className="text-[12.5px] text-red-100/85 mt-1.5 mb-3.5 max-w-md mx-auto leading-relaxed">
-              Score every match 1 to 10, settle the hot takes, and climb leaderboards together across the NFL, NBA, MLB, NHL and more. Right now it&apos;s also home to the free Fantasy World Cup 2026.
+              Score every match 1 to 10, settle the hot takes, and climb leaderboards together across the NFL, NBA, MLB, NHL and more.
             </p>
             <div className="flex gap-2 justify-center">
               <button onClick={() => router.push("/login")} className="bg-white text-red-700 font-extrabold px-5 py-2 rounded-xl text-sm">Join free</button>
-              <button onClick={() => router.push("/worldcup")} className="bg-red-600/30 border border-red-400/40 text-white font-bold px-5 py-2 rounded-xl text-sm">World Cup ›</button>
             </div>
           </div>
-        )}
-        {/* Fantasy World Cup promo — flagship games hub (logged-in; logged-out get the cold open above) */}
-        {user && (tab === "games" || tab === "discover") && (
-          <button
-            onClick={() => router.push("/worldcup")}
-            className="w-full text-left rounded-2xl p-4 mb-3 bg-gradient-to-r from-red-700 via-red-800 to-zinc-900 border border-red-500/40 flex items-center gap-3 active:scale-[0.99] transition-transform"
-          >
-            <div className="text-3xl">🏆</div>
-            <div className="flex-1">
-              <div className="text-sm font-extrabold text-white">Fantasy World Cup 2026 is here</div>
-              <div className="text-[11px] text-red-100/80 mt-0.5">Draft nations or players, run a live auction, build a salary-cap XI, rank all 48, and climb leaderboards with friends.</div>
-            </div>
-            <div className="text-white text-xl">›</div>
-          </button>
         )}
         {/* Onboarding — nudge new users to pick favorite teams */}
         {tab === "games" && user && profile && !onboardDismissed && !FAV_SPORTS.some((s) => profile[favKey(s.id)]) && (
@@ -2074,9 +2045,6 @@ function HomeContent() {
                     ✏️ Edit Profile
                   </button>
                 </div>
-                <button onClick={() => { setProfileSport("wc"); setTab("diary"); }} className="w-full mt-2 py-2 rounded-xl bg-gradient-to-r from-red-950/60 to-zinc-950 border border-red-900/40 text-zinc-300 text-xs font-semibold hover:border-red-700/60 transition-all text-center">
-                  🏆 World Cup ratings{logs.filter((l) => l.sport === "wc" && l.rating > 0).length ? ` · ${logs.filter((l) => l.sport === "wc" && l.rating > 0).length}` : ""} →
-                </button>
                 <Link href="/about" className="block w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all text-center">ℹ️ How It Works</Link>
                 <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all">Sign Out</button>
               </div>
@@ -2928,24 +2896,10 @@ function HomeContent() {
 }
 
 
-// For now the World Cup is the front door: a bare visit to "/" lands on the
-// Cup to hook people. The games feed still lives here — the bottom-nav "Games"
-// tab and in-app links reach it via /?tab=games, which renders normally.
-function RootGate() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const hasTab = searchParams.has("tab");
-  useEffect(() => {
-    if (!hasTab) router.replace("/worldcup");
-  }, [hasTab, router]);
-  if (!hasTab) return <div className="min-h-screen bg-[#09090b]" />;
-  return <HomeContent />;
-}
-
 export default function Home() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#09090b]" />}>
-      <RootGate />
+      <HomeContent />
     </Suspense>
   );
 }

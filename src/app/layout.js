@@ -12,8 +12,8 @@ const font = Space_Grotesk({
 
 export const metadata = {
   metadataBase: new URL("https://thenosebleeds.app"),
-  title: "The Nosebleeds — Free Fantasy World Cup 2026 & Game Ratings",
-  description: "Free Fantasy World Cup 2026: rank all 48 nations, build a salary-cap squad, and draft players — make private leagues to take on your friends, or climb the global leaderboard against the world. Plus rate every match.",
+  title: "The Nosebleeds — Rate Every Game",
+  description: "Letterboxd for sports: rate and review every NFL, MLB, NBA, NHL, and tennis game, keep a diary, build lists, pick winners, and ride your streak against friends.",
   applicationName: "The Nosebleeds",
   appleWebApp: {
     capable: true,
@@ -21,16 +21,16 @@ export const metadata = {
     title: "Nosebleeds",
   },
   openGraph: {
-    title: "The Nosebleeds — Free Fantasy World Cup 2026 & Game Ratings",
-    description: "Rank the nations, build a salary-cap squad, and draft players. Make private leagues vs your friends or climb the global board against the world — free.",
+    title: "The Nosebleeds — Rate Every Game",
+    description: "Rate and review every game across NFL, MLB, NBA, NHL, and tennis. Keep a diary, build lists, and pick winners with friends — free.",
     url: "https://thenosebleeds.app",
     siteName: "The Nosebleeds",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "The Nosebleeds — Free Fantasy World Cup 2026 & Game Ratings",
-    description: "Free Fantasy World Cup 2026 with friends: rank the nations, build a salary-cap squad, draft players, and rate every match.",
+    title: "The Nosebleeds — Rate Every Game",
+    description: "Rate and review every game across NFL, MLB, NBA, NHL, and tennis — diary, lists, predictions, and streaks with friends.",
   },
   icons: {
     icon: [
