@@ -5,7 +5,6 @@ import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
 import TennisCard from "@/components/TennisCard";
 import PullToRefresh from "@/components/PullToRefresh";
-import ScoresTicker from "@/components/ScoresTicker";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
 import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
@@ -190,7 +189,7 @@ function RBars({ dist, onBarClick }) {
               onClick={() => clickable && onBarClick(i + 1)}
             >
               {/* Tooltip - sits OUTSIDE the clipped track */}
-              <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-zinc-800 border border-zinc-700 text-white text-[10px] font-bold px-2 py-1 rounded-md whitespace-nowrap z-30 shadow-lg">
+              <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-zinc-800 border border-zinc-700 text-white text-[11px] font-bold px-2 py-1 rounded-md whitespace-nowrap z-30 shadow-lg">
                 {c} {c === 1 ? "game" : "games"} ({pct}%){clickable && " · click"}
                 <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-zinc-700" />
               </div>
@@ -205,7 +204,7 @@ function RBars({ dist, onBarClick }) {
       <div className="flex gap-1">
         {dist.map((_, i) => (
           <div key={i} className="flex-1 text-center">
-            <span className="text-[10px] text-zinc-500 font-bold">{i + 1}</span>
+            <span className="text-[11px] text-zinc-500 font-bold">{i + 1}</span>
           </div>
         ))}
       </div>
@@ -214,7 +213,7 @@ function RBars({ dist, onBarClick }) {
 }
 
 function Bdg({ r, size = "md" }) {
-  const s = size === "sm" ? "w-7 h-7 text-[10px] rounded-lg" : "w-9 h-9 text-xs rounded-xl";
+  const s = size === "sm" ? "w-7 h-7 text-[11px] rounded-lg" : "w-9 h-9 text-xs rounded-xl";
   return (
     <div className={`${s} flex items-center justify-center text-white font-bold shrink-0`} style={{ backgroundColor: rc(r) }}>
       {r.toFixed(1)}
@@ -377,6 +376,7 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, []);
   const [search, setSearch] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
   const [sort, setSort] = useState("date");
   // Onboarding: prompt new users (no favorite teams) to set up their profile
   const [onboardDismissed, setOnboardDismissed] = useState(true);
@@ -495,13 +495,15 @@ function HomeContent() {
   // Keep the selected week centered in its scroll row — from ~Week 11 on it
   // would otherwise sit off-screen on phones. Scrolls the row only, never the page.
   const weekRowRef = useRef(null);
+  const dayRowRef = useRef(null);
   useEffect(() => {
-    const row = weekRowRef.current;
-    const btn = row?.querySelector('[data-active-week="true"]');
-    if (!row || !btn) return;
-    const left = btn.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - (row.clientWidth - btn.clientWidth) / 2;
-    row.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
-  }, [week, year, sport, tab]);
+    for (const row of [weekRowRef.current, dayRowRef.current]) {
+      const btn = row?.querySelector('[data-active="true"]');
+      if (!row || !btn) continue;
+      const left = btn.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - (row.clientWidth - btn.clientWidth) / 2;
+      row.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+    }
+  }, [week, year, sport, tab, selectedDate]);
   const nflSeasons = [liveSeason, liveSeason - 1]; // current + last season only
   // Last season opens on its final week; the current season on the live week.
   const pickSeason = (y) => { setYear(y); setWeek(y === liveSeason ? liveWeek : 18); };
@@ -1263,35 +1265,33 @@ function HomeContent() {
             {user && (
               <button onClick={openNotifs} className="relative w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm hover:border-zinc-600 transition-colors shrink-0">
                 🔔
-                {notifUnread > 0 && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">{notifUnread > 9 ? "9+" : notifUnread}</span>}
+                {notifUnread > 0 && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">{notifUnread > 9 ? "9+" : notifUnread}</span>}
               </button>
-            )}
-            {/* Sport switcher - hidden on Diary/Profile which have their own profileSport toggle */}
-            {tab !== "diary" && tab !== "profile" && (
-              <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-                {SPORTS.map((s) => (
-                  <button key={s.id} onClick={() => setSport(s.id)}
-                    className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>
-                    {s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span>
-                  </button>
-                ))}
-              </div>
             )}
           </div>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-3">
+        {/* Sport tabs — labelled at every width. Hidden on Diary/Profile, which have their own toggle. */}
+        {tab !== "diary" && tab !== "profile" && (
+          <div className="flex gap-1 p-1 mb-3 rounded-2xl bg-zinc-900 border border-zinc-800" role="tablist" aria-label="Sport">
+            {SPORTS.map((s) => (
+              <button key={s.id} role="tab" aria-selected={sport === s.id} onClick={() => setSport(s.id)}
+                className={`flex-1 min-w-0 h-10 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1 transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>
+                <span aria-hidden="true">{s.emoji}</span><span className="truncate">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {/* Cold open — what this is, for logged-out visitors (year-round identity first) */}
         {!user && (tab === "games" || tab === "discover") && (
-          <div className="rounded-2xl p-5 mb-3 bg-gradient-to-br from-red-800 via-red-900 to-zinc-950 border border-red-500/30 text-center">
-            <h2 className="text-xl font-extrabold tracking-tight text-white">Rate every game with your friends</h2>
-            <p className="text-[12.5px] text-red-100/85 mt-1.5 mb-3.5 max-w-md mx-auto leading-relaxed">
-              Score every match 1 to 10, settle the hot takes, and climb leaderboards together across the NFL, NBA, MLB, NHL and more.
-            </p>
-            <div className="flex gap-2 justify-center">
-              <button onClick={() => router.push("/login")} className="bg-white text-red-700 font-extrabold px-5 py-2 rounded-xl text-sm">Join free</button>
+          <div className="rounded-2xl px-4 py-3 mb-3 bg-gradient-to-r from-red-800 via-red-900 to-zinc-950 border border-red-500/30 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-[15px] font-extrabold tracking-tight text-white leading-snug text-balance">Rate every game with your friends</h2>
+              <p className="hidden sm:block text-xs text-red-100/80 mt-0.5">Score games 1–10, settle hot takes, climb the leaderboards.</p>
             </div>
+            <button onClick={() => router.push("/login")} className="shrink-0 bg-white text-red-700 font-extrabold px-4 h-10 rounded-xl text-sm">Join free</button>
           </div>
         )}
         {/* Onboarding — nudge new users to pick favorite teams */}
@@ -1326,7 +1326,7 @@ function HomeContent() {
                     <span className="w-9 h-9 flex items-center justify-center rounded-lg text-white font-extrabold text-sm shrink-0" style={{ backgroundColor: rc(l.rating) }}>{l.rating}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold text-white truncate">{l.awayTeam} {l.awayScore} — {l.homeTeam} {l.homeScore}</div>
-                      <div className="text-[10px] text-zinc-500">{sportEmoji(l.sport)} {yrsAgo} {yrsAgo === 1 ? "year" : "years"} ago today</div>
+                      <div className="text-[11px] text-zinc-500">{sportEmoji(l.sport)} {yrsAgo} {yrsAgo === 1 ? "year" : "years"} ago today</div>
                     </div>
                     <span className="text-zinc-600 text-xs shrink-0">→</span>
                   </Link>
@@ -1343,25 +1343,22 @@ function HomeContent() {
               setRefreshKey((k) => k + 1);
               await new Promise((r) => setTimeout(r, 900));
             }} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Search teams..."
-              className="w-full px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 mb-3" />
-
             {sport === "nfl" && (
-              <>
-                <div className="flex gap-2 mb-2">
-                  {nflSeasons.map((y) => (
-                    <button key={y} onClick={() => pickSeason(y)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${year === y ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-500"}`}>{y}</button>
-                  ))}
-                </div>
-
-                <div ref={weekRowRef} className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
+              <div className="flex items-center gap-2 mb-3">
+                <label className="relative shrink-0">
+                  <select value={year} onChange={(e) => pickSeason(Number(e.target.value))} aria-label="Season"
+                    className="h-9 pl-3 pr-7 rounded-full bg-red-600 text-white text-xs font-bold appearance-none outline-none cursor-pointer">
+                    {nflSeasons.map((y) => <option key={y} value={y} className="bg-zinc-900">{y}</option>)}
+                  </select>
+                  <span aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-white/80">▼</span>
+                </label>
+                <div ref={weekRowRef} className="flex gap-1.5 overflow-x-auto min-w-0">
                   {weeks.map((w) => (
-                    <button key={w} onClick={() => setWeek(w)} data-active-week={week === w}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${week === w ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>{w}</button>
+                    <button key={w} onClick={() => setWeek(w)} data-active={week === w} aria-label={`Week ${w}`}
+                      className={`min-w-9 h-9 px-2.5 rounded-full text-xs font-bold shrink-0 transition-all ${week === w ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>{w}</button>
                   ))}
                 </div>
-              </>
+              </div>
             )}
 
             {isDateSport(sport) && (() => {
@@ -1376,77 +1373,80 @@ function HomeContent() {
                 const isToday = ds === `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
                 days.push({ ds, isToday, label: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) });
               }
-              const shiftDay = (delta) => {
-                const d = new Date(selectedDate + "T12:00:00");
-                d.setDate(d.getDate() + delta);
-                setSelectedDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
-              };
               const today = new Date();
               const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
               return (
-                <div className="mb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <button onClick={() => shiftDay(-1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">← Prev</button>
-                    <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
-                      className="flex-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 text-center" />
-                    <button onClick={() => shiftDay(1)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-400 hover:text-white shrink-0">Next →</button>
-                    {selectedDate !== todayStr && (
-                      <button onClick={() => setSelectedDate(todayStr)} className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-600 text-white shrink-0">Today</button>
-                    )}
-                  </div>
-                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                <div className="flex items-center gap-2 mb-3">
+                  <label className="relative shrink-0 w-9 h-9 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm cursor-pointer" title="Pick a date">
+                    <span aria-hidden="true">📅</span>
+                    <input type="date" value={selectedDate} aria-label="Pick a date"
+                      onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                      onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                  </label>
+                  <div ref={dayRowRef} className="flex gap-1.5 overflow-x-auto min-w-0">
                     {days.map(d => (
-                      <button key={d.ds} onClick={() => setSelectedDate(d.ds)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${selectedDate === d.ds ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>
+                      <button key={d.ds} onClick={() => setSelectedDate(d.ds)} data-active={selectedDate === d.ds}
+                        className={`h-9 px-3 rounded-full text-xs font-bold shrink-0 transition-all ${selectedDate === d.ds ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>
                         {d.isToday ? "Today" : d.label}
                       </button>
                     ))}
                   </div>
+                  {!days.some((d) => d.isToday) && (
+                    <button onClick={() => setSelectedDate(todayStr)} className="shrink-0 h-9 px-3 rounded-full text-xs font-bold bg-red-600 text-white">Today</button>
+                  )}
                 </div>
               );
             })()}
 
-            <div className="flex justify-between items-center mb-3">
-              <div className="flex gap-2">
-                {[{ id: "date", l: "Date" }, { id: "score", l: "Score" }, { id: "close", l: "Closest" }].map((s) => (
-                  <button key={s.id} onClick={() => setSort(s.id)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${sort === s.id ? "bg-red-600/10 text-red-400" : "text-zinc-500"}`}>{s.l}</button>
-                ))}
-              </div>
+            {/* One filter row: search, status (only when there's variety), My Teams, sort */}
+            <div className="flex items-center gap-1.5 mb-3 overflow-x-auto">
+              <button onClick={() => { if (showSearch) setSearch(""); setShowSearch(!showSearch); }} aria-label={showSearch ? "Close search" : "Search teams"} aria-pressed={showSearch}
+                className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm border transition-all ${showSearch || search ? "bg-red-600/10 border-red-600/40 text-red-400" : "bg-zinc-900 border-zinc-800 text-zinc-400"}`}>
+                {showSearch ? "✕" : "🔍"}
+              </button>
+              {(statusCounts.upcoming > 0 || statusCounts.live > 0) && statusCounts.all > 0 && [
+                { v: "all", l: "All", count: statusCounts.all, color: "" },
+                ...(statusCounts.live > 0 ? [{ v: "live", l: "🔴 Live", count: statusCounts.live, color: "red" }] : []),
+                ...(statusCounts.upcoming > 0 ? [{ v: "upcoming", l: "Upcoming", count: statusCounts.upcoming, color: "" }] : []),
+                ...(statusCounts.finished > 0 ? [{ v: "finished", l: "Final", count: statusCounts.finished, color: "" }] : []),
+              ].map(f => (
+                <button key={f.v} onClick={() => setGameStatus(f.v)} aria-pressed={gameStatus === f.v}
+                  className={`shrink-0 h-9 px-3 text-xs font-bold rounded-full whitespace-nowrap transition-all ${gameStatus === f.v ? (f.color === "red" ? "bg-red-600 text-white animate-pulse" : "bg-red-600 text-white") : "bg-zinc-900 text-zinc-400 border border-zinc-800"}`}>
+                  {f.l} <span className="opacity-60">{f.count}</span>
+                </button>
+              ))}
               {hasTeams && (
-                <button onClick={() => setShowTeams(!showTeams)}
-                  className={`px-3 py-1 rounded-full text-[10px] font-bold border ${myTeams.length ? "bg-red-600/10 text-red-400 border-red-600/30" : "text-zinc-500 border-zinc-800"}`}>
-                  {myTeams.length ? `My Teams (${myTeams.length})` : "My Teams"}
+                <button onClick={() => setShowTeams(!showTeams)} aria-pressed={showTeams}
+                  className={`shrink-0 h-9 px-3 rounded-full text-xs font-bold border whitespace-nowrap ${myTeams.length ? "bg-red-600/10 text-red-400 border-red-600/30" : "bg-zinc-900 text-zinc-400 border-zinc-800"}`}>
+                  ★ {myTeams.length ? `My teams (${myTeams.length})` : "My teams"}
                 </button>
               )}
+              <label className="relative shrink-0 ml-auto">
+                <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort games"
+                  className="h-9 pl-3 pr-7 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-bold appearance-none outline-none cursor-pointer">
+                  <option value="date">By time</option>
+                  <option value="score">Most points</option>
+                  <option value="close">Closest</option>
+                </select>
+                <span aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-zinc-500">▼</span>
+              </label>
             </div>
-
-            {/* Live/Finished/Upcoming filter - only show when there's variety */}
-            {(statusCounts.upcoming > 0 || statusCounts.live > 0) && statusCounts.all > 0 && (
-              <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
-                {[
-                  { v: "all", l: "All", count: statusCounts.all, color: "" },
-                  ...(statusCounts.live > 0 ? [{ v: "live", l: "🔴 Live", count: statusCounts.live, color: "red" }] : []),
-                  ...(statusCounts.upcoming > 0 ? [{ v: "upcoming", l: "⏰ Upcoming", count: statusCounts.upcoming, color: "" }] : []),
-                  ...(statusCounts.finished > 0 ? [{ v: "finished", l: "✓ Finished", count: statusCounts.finished, color: "" }] : []),
-                ].map(f => (
-                  <button key={f.v} onClick={() => setGameStatus(f.v)} className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-all ${gameStatus === f.v ? (f.color === "red" ? "bg-red-600 text-white animate-pulse" : "bg-red-600 text-white") : "bg-zinc-900 text-zinc-500 border border-zinc-800"}`}>
-                    {f.l} <span className="opacity-60">({f.count})</span>
-                  </button>
-                ))}
-              </div>
+            {(showSearch || search) && (
+              <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search teams…" aria-label="Search teams"
+                className="w-full h-10 px-4 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm outline-none focus:border-red-600 mb-3" />
             )}
 
             {showTeams && hasTeams && (
               <div className="rounded-xl p-3 bg-zinc-900 border border-zinc-800 mb-3">
                 <div className="flex justify-between mb-2">
                   <span className="text-xs font-semibold text-white">Follow Teams</span>
-                  {myTeams.length > 0 && <button onClick={() => setMyTeams([])} className="text-[10px] text-red-400">Clear</button>}
+                  {myTeams.length > 0 && <button onClick={() => setMyTeams([])} className="text-[11px] text-red-400">Clear</button>}
                 </div>
                 <div className="flex gap-1 flex-wrap">
                   {(TEAMS_BY_SPORT[sport] || ALL_TEAMS).map((t) => (
                     <button key={t} onClick={() => setMyTeams((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t])}
-                      className={`px-2 py-1 rounded-full text-[10px] font-semibold border ${myTeams.includes(t) ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-950 text-zinc-500 border-zinc-800"}`}>{t}</button>
+                      className={`h-8 px-2.5 rounded-full text-[11px] font-semibold border ${myTeams.includes(t) ? "bg-red-600/10 text-red-400 border-red-600" : "bg-zinc-950 text-zinc-400 border-zinc-800"}`}>{t}</button>
                   ))}
                 </div>
               </div>
@@ -1467,12 +1467,34 @@ function HomeContent() {
               </div>
             )}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
-            {!loading && sport !== "tennis" && <ScoresTicker games={filtered} />}
-            {filtered.map((g) => g.sport === "tennis"
-              ? <TennisCard key={g.id} match={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />
-              : <GameCard key={g.id} game={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)}
-                  myRating={user ? (gl(g.id)?.rating > 0 ? gl(g.id).rating : null) : null}
-                  onQuickRate={user ? quickRate : null} />)}
+            {(() => {
+              const byKickoff = sport === "nfl" && sort === "date";
+              const card = (g) => g.sport === "tennis"
+                ? <TennisCard key={g.id} match={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />
+                : <GameCard key={g.id} game={g} grouped={byKickoff} logged={!!(gl(g.id) && gl(g.id).rating > 0)}
+                    myRating={user ? (gl(g.id)?.rating > 0 ? gl(g.id).rating : null) : null}
+                    onQuickRate={user ? quickRate : null} />;
+              if (!byKickoff) return filtered.map(card);
+              // NFL by time: one heading per kickoff slot (TNF, Sunday early/late, SNF, MNF...)
+              const groups = [];
+              [...filtered].sort((x, y) => (x.startISO || "").localeCompare(y.startISO || "")).forEach((g) => {
+                const dt = new Date(g.startISO);
+                const ok = !isNaN(dt.getTime());
+                const key = ok ? `${dt.toDateString()} ${dt.getHours()}:${dt.getMinutes()}` : "tbd";
+                const last = groups[groups.length - 1];
+                if (last && last.key === key) last.games.push(g);
+                else groups.push({ key, games: [g], label: ok ? `${dt.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })} · ${dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : "Time TBD" });
+              });
+              return groups.map((grp) => (
+                <section key={grp.key} aria-label={grp.label}>
+                  <h3 className="flex items-baseline justify-between gap-2 px-1 mb-2 mt-1 text-xs font-bold text-zinc-300">
+                    <span>{grp.label}</span>
+                    <span className="text-[11px] font-semibold text-zinc-500 shrink-0">{grp.games.length} {grp.games.length === 1 ? "game" : "games"}</span>
+                  </h3>
+                  {grp.games.map(card)}
+                </section>
+              ));
+            })()}
           </div>
         )}
 
@@ -1528,7 +1550,7 @@ function HomeContent() {
                       <span className="text-lg font-extrabold w-6 text-center text-red-500">#{i + 1}</span>
                       <div className="flex-1">
                         <div className="text-sm font-bold text-white">{g.sample.away_team} {g.sample.away_score} — {g.sample.home_team} {g.sample.home_score}</div>
-                        <div className="text-[10px] text-zinc-500">Wk {g.sample.week || "?"} · {g.count} {g.count === 1 ? "rater" : "raters"}</div>
+                        <div className="text-[11px] text-zinc-500">Wk {g.sample.week || "?"} · {g.count} {g.count === 1 ? "rater" : "raters"}</div>
                       </div>
                       <div className="w-11 h-11 flex items-center justify-center font-bold rounded-xl text-base text-white" style={{ backgroundColor: parseFloat(g.avg) >= 9 ? "#22c55e" : parseFloat(g.avg) >= 7.5 ? "#84cc16" : parseFloat(g.avg) >= 6 ? "#eab308" : parseFloat(g.avg) >= 4 ? "#f97316" : parseFloat(g.avg) >= 2 ? "#ef4444" : "#991b1b" }}>{g.avg}</div>
                     </div>
@@ -1547,7 +1569,7 @@ function HomeContent() {
                       <span className="text-base font-extrabold w-5 text-center" style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#a1a1aa" : i === 2 ? "#b45309" : "#52525b" }}>{i + 1}</span>
                       <div className="flex-1">
                         <div className="text-sm font-bold text-white">{g.sample.away_team} {g.sample.away_score} — {g.sample.home_team} {g.sample.home_score}</div>
-                        <div className="text-[10px] text-zinc-500">Wk {g.sample.week || "?"} · {g.count} {g.count === 1 ? "rater" : "raters"}</div>
+                        <div className="text-[11px] text-zinc-500">Wk {g.sample.week || "?"} · {g.count} {g.count === 1 ? "rater" : "raters"}</div>
                       </div>
                       <div className="w-11 h-11 flex items-center justify-center font-bold rounded-xl text-base text-white" style={{ backgroundColor: parseFloat(g.avg) >= 9 ? "#22c55e" : parseFloat(g.avg) >= 7.5 ? "#84cc16" : parseFloat(g.avg) >= 6 ? "#eab308" : parseFloat(g.avg) >= 4 ? "#f97316" : parseFloat(g.avg) >= 2 ? "#ef4444" : "#991b1b" }}>{g.avg}</div>
                     </div>
@@ -1567,11 +1589,11 @@ function HomeContent() {
                       <span className="text-base font-extrabold w-5 text-center" style={{ color: i === 0 ? "#a855f7" : "#52525b" }}>{i + 1}</span>
                       <div className="flex-1">
                         <div className="text-sm font-bold text-white">{g.sample.away_team} {g.sample.away_score} — {g.sample.home_team} {g.sample.home_score}</div>
-                        <div className="text-[10px] text-zinc-500">{g.count} {g.count === 1 ? "rater" : "raters"} · avg {g.avg} · ±{g.spread.toFixed(1)} spread</div>
+                        <div className="text-[11px] text-zinc-500">{g.count} {g.count === 1 ? "rater" : "raters"} · avg {g.avg} · ±{g.spread.toFixed(1)} spread</div>
                       </div>
                       <div className="w-11 h-11 flex flex-col items-center justify-center font-bold rounded-xl text-purple-300 bg-purple-500/15 border border-purple-500/30 shrink-0">
                         <span className="text-sm leading-none">±{g.spread.toFixed(1)}</span>
-                        <span className="text-[8px] text-purple-400/70 leading-none mt-0.5">SPLIT</span>
+                        <span className="text-[10px] text-purple-400/70 leading-none mt-0.5">SPLIT</span>
                       </div>
                     </div>
                   </Link>
@@ -1596,7 +1618,7 @@ function HomeContent() {
                       )}
                       <div className="flex-1">
                         <div className="text-sm font-bold text-white">{r.profile?.display_name || (r.profile?.handle ? `@${r.profile.handle}` : "Anonymous")}</div>
-                        <div className="text-[10px] text-zinc-500">{r.count} {r.count === 1 ? "rating" : "ratings"} · avg {r.avg}{r.reviews > 0 && ` · ${r.reviews} reviews`}</div>
+                        <div className="text-[11px] text-zinc-500">{r.count} {r.count === 1 ? "rating" : "ratings"} · avg {r.avg}{r.reviews > 0 && ` · ${r.reviews} reviews`}</div>
                       </div>
                     </Link>
                     {user && r.user_id !== user.id && (
@@ -1619,7 +1641,7 @@ function HomeContent() {
                       <span className="text-2xl">{l.icon || "📋"}</span>
                       <div className="flex-1">
                         <div className="text-sm font-bold text-white">{l.name}</div>
-                        <div className="text-[10px] text-zinc-500">by {l.profile?.display_name || (l.profile?.handle ? `@${l.profile.handle}` : "anon")} · {l.gameCount} {l.gameCount === 1 ? "game" : "games"}</div>
+                        <div className="text-[11px] text-zinc-500">by {l.profile?.display_name || (l.profile?.handle ? `@${l.profile.handle}` : "anon")} · {l.gameCount} {l.gameCount === 1 ? "game" : "games"}</div>
                       </div>
                     </div>
                   </Link>
@@ -1662,7 +1684,7 @@ function HomeContent() {
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-bold text-white truncate">{p.name}</div>
-                  <div className="text-[10px] text-zinc-500 flex items-center gap-2">
+                  <div className="text-[11px] text-zinc-500 flex items-center gap-2">
                     {(p.team || p.position) && <span>{p.team}{p.team && p.position && " · "}{p.position}</span>}
                     {p.hasPicks && <span className="text-green-400">🌟 {p.mvp}</span>}
                     {p.hasPicks && <span className="text-red-400">😤 {p.letdown}</span>}
@@ -1671,7 +1693,7 @@ function HomeContent() {
                 {p.hasPicks ? (
                   <div className="text-right shrink-0">
                     <div className="text-sm font-extrabold" style={{ color: p.mvpRate >= 50 ? "#22c55e" : "#ef4444" }}>{p.mvpRate}%</div>
-                    <div className="text-[8px] text-zinc-600 font-bold tracking-wider">MVP RATE</div>
+                    <div className="text-[10px] text-zinc-600 font-bold tracking-wider">MVP RATE</div>
                   </div>
                 ) : (
                   <span className="text-zinc-700 text-xs shrink-0">→</span>
@@ -1684,7 +1706,7 @@ function HomeContent() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xl font-extrabold text-white">{sportEmoji(sport)} Players</h2>
-                {!playersLoading && <span className="text-[10px] text-zinc-600 font-semibold">{playersList.length} players</span>}
+                {!playersLoading && <span className="text-[11px] text-zinc-600 font-semibold">{playersList.length} players</span>}
               </div>
               <p className="text-xs text-zinc-500 mb-3">Search any player in the league, or browse the most-picked below.</p>
 
@@ -1706,7 +1728,7 @@ function HomeContent() {
                       <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                         <div className="h-full bg-red-600 transition-all" style={{ width: `${rosterProgress}%` }} />
                       </div>
-                      <div className="text-[10px] text-zinc-600 mt-1">{rosterProgress}%</div>
+                      <div className="text-[11px] text-zinc-600 mt-1">{rosterProgress}%</div>
                     </div>
                   )}
                 </div>
@@ -1715,7 +1737,7 @@ function HomeContent() {
               {/* Search results */}
               {!playersLoading && q && (
                 <>
-                  <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">
+                  <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">
                     {searchResults.length} {searchResults.length === 1 ? "result" : "results"}
                   </div>
                   {searchResults.length === 0 && (
@@ -1730,9 +1752,9 @@ function HomeContent() {
                 <>
                   {pickedPlayers.length > 0 ? (
                     <>
-                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">🔥 Most Picked by Community</div>
+                      <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">🔥 Most Picked by Community</div>
                       {pickedPlayers.map((p, i) => renderRow(p, i, true))}
-                      <div className="text-[10px] text-zinc-600 text-center mt-3">Search above to find any other player in the league</div>
+                      <div className="text-[11px] text-zinc-600 text-center mt-3">Search above to find any other player in the league</div>
                     </>
                   ) : (
                     <div className="text-center py-12">
@@ -1777,7 +1799,7 @@ function HomeContent() {
                             {(r.profile?.display_name || r.profile?.handle || "?")[0]?.toUpperCase()}
                           </div>
                         )}
-                        <div className="text-[10px] font-semibold text-zinc-400 mt-1 truncate w-12">{r.profile?.display_name || r.profile?.handle || "?"}</div>
+                        <div className="text-[11px] font-semibold text-zinc-400 mt-1 truncate w-12">{r.profile?.display_name || r.profile?.handle || "?"}</div>
                       </Link>
                     ))}
                   </div>
@@ -1809,7 +1831,7 @@ function HomeContent() {
                         </div>
                         <div className="text-sm font-bold text-white mt-0.5">{r.away_team} {r.away_score} — {r.home_team} {r.home_score}</div>
                         {r.review && <div className="text-xs text-zinc-400 italic mt-1">&quot;{r.review}&quot;</div>}
-                        <div className="text-[10px] text-zinc-600 mt-1">Wk {r.week || "?"} · {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                        <div className="text-[11px] text-zinc-600 mt-1">Wk {r.week || "?"} · {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
                       </div>
                       <div className="w-11 h-11 flex items-center justify-center font-bold rounded-xl text-base text-white shrink-0" style={{ backgroundColor: parseFloat(r.rating) >= 9 ? "#22c55e" : parseFloat(r.rating) >= 7.5 ? "#84cc16" : parseFloat(r.rating) >= 6 ? "#eab308" : parseFloat(r.rating) >= 4 ? "#f97316" : parseFloat(r.rating) >= 2 ? "#ef4444" : "#991b1b" }}>{parseFloat(r.rating).toFixed(1)}</div>
                     </div>
@@ -1832,7 +1854,7 @@ function HomeContent() {
                           )}
                           <div className="flex-1">
                             <div className="text-sm font-bold text-white">{s.profile?.display_name || `@${s.profile?.handle}`}</div>
-                            <div className="text-[10px] text-zinc-500">{s.count} {s.count === 1 ? "rating" : "ratings"}</div>
+                            <div className="text-[11px] text-zinc-500">{s.count} {s.count === 1 ? "rating" : "ratings"}</div>
                           </div>
                         </Link>
                         <button onClick={() => toggleFollow(s.user_id)} className={`text-xs px-3 py-1.5 rounded-full font-bold ${following.includes(s.user_id) ? "bg-zinc-700 text-zinc-300" : "bg-red-600 text-white"}`}>
@@ -1854,7 +1876,7 @@ function HomeContent() {
               <h2 className="text-xl font-extrabold text-white">Your Diary</h2>
               <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
                 {SPORTS.map((s) => (
-                  <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
+                  <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2 py-1 rounded-full text-[11px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
                 ))}
               </div>
             </div>
@@ -1900,7 +1922,7 @@ function HomeContent() {
                 <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-bold text-white">📅 Activity</h3>
-                    <span className="text-[10px] text-zinc-500">{activeDays} active {activeDays === 1 ? "day" : "days"} · 26 wks</span>
+                    <span className="text-[11px] text-zinc-500">{activeDays} active {activeDays === 1 ? "day" : "days"} · 26 wks</span>
                   </div>
                   <div className="overflow-x-auto pb-1">
                     <div className="flex gap-[3px] min-w-max">
@@ -1915,7 +1937,7 @@ function HomeContent() {
                       ))}
                     </div>
                   </div>
-                  <div className="flex items-center justify-end gap-1.5 mt-2 text-[9px] text-zinc-600">
+                  <div className="flex items-center justify-end gap-1.5 mt-2 text-[10px] text-zinc-600">
                     <span>Low</span>
                     {[2, 4, 6, 8, 10].map((r) => <span key={r} className="w-[10px] h-[10px] rounded-[2px]" style={{ backgroundColor: rc(r) }} />)}
                     <span>High</span>
@@ -1934,18 +1956,18 @@ function HomeContent() {
                     {g ? (
                       <>
                         <div className="text-sm font-bold text-white">{g.away.abbr} {g.away.score} — {g.home.abbr} {g.home.score}</div>
-                        <div className="text-[10px] text-zinc-600">{isDateSport(l.sport) ? g.shortDate : `Wk ${g.week} · ${g.shortDate}`}</div>
+                        <div className="text-[11px] text-zinc-600">{isDateSport(l.sport) ? g.shortDate : `Wk ${g.week} · ${g.shortDate}`}</div>
                       </>
                     ) : (
                       <>
                         <div className="text-sm font-bold text-white">{l.awayTeam && l.homeTeam ? `${l.awayTeam} ${l.awayScore} — ${l.homeTeam} ${l.homeScore}` : "Game rated"}</div>
-                        <div className="text-[10px] text-zinc-600">{isDateSport(l.sport) ? (l.season || "") : `Wk ${l.week || "?"} · ${l.season || ""}`}</div>
+                        <div className="text-[11px] text-zinc-600">{isDateSport(l.sport) ? (l.season || "") : `Wk ${l.week || "?"} · ${l.season || ""}`}</div>
                       </>
                     )}
                     <div className="flex gap-2 mt-1 flex-wrap">
-                      {l.mvp && <span className="text-[10px] text-green-400">🌟 {l.mvp}</span>}
-                      {l.watchHow && <span className="text-[10px] text-zinc-500">{l.watchHow}</span>}
-                      {l.worthIt && <span className="text-[10px]" style={{ color: l.worthIt === "yes" ? "#22c55e" : l.worthIt === "no" ? "#ef4444" : "#eab308" }}>{l.worthIt === "yes" ? "👍" : l.worthIt === "no" ? "👎" : "😐"}</span>}
+                      {l.mvp && <span className="text-[11px] text-green-400">🌟 {l.mvp}</span>}
+                      {l.watchHow && <span className="text-[11px] text-zinc-500">{l.watchHow}</span>}
+                      {l.worthIt && <span className="text-[11px]" style={{ color: l.worthIt === "yes" ? "#22c55e" : l.worthIt === "no" ? "#ef4444" : "#eab308" }}>{l.worthIt === "yes" ? "👍" : l.worthIt === "no" ? "👎" : "😐"}</span>}
                     </div>
                     {l.review && <div className="text-[11px] text-zinc-400 italic mt-1">&quot;{l.review}&quot;</div>}
                   </div>
@@ -2007,12 +2029,12 @@ function HomeContent() {
                   </div>
                 )}
                 {profile?.created_at && (
-                  <div className="text-[10px] text-zinc-600 text-center mb-3">Joined {new Date(profile.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
+                  <div className="text-[11px] text-zinc-600 text-center mb-3">Joined {new Date(profile.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
                 )}
                 {/* Profile sport switcher */}
                 <div className="flex gap-0.5 p-0.5 mb-3 rounded-full bg-zinc-950 border border-zinc-800 mx-auto w-fit">
                   {SPORTS.map((s) => (
-                    <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
+                    <button key={s.id} onClick={() => setProfileSport(s.id)} className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${profileSport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}<span className="hidden sm:inline ml-1">{s.label}</span></button>
                   ))}
                 </div>
                 {/* Stats row */}
@@ -2024,7 +2046,7 @@ function HomeContent() {
                   ].map((s) => (
                     <button key={s.l} onClick={s.action} className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 transition-colors cursor-pointer text-center">
                       <div className="text-2xl font-extrabold text-white">{s.v}</div>
-                      <div className="text-[10px] text-zinc-500 font-bold tracking-widest">{s.l}</div>
+                      <div className="text-[11px] text-zinc-500 font-bold tracking-widest">{s.l}</div>
                     </button>
                   ))}
                 </div>
@@ -2063,21 +2085,21 @@ function HomeContent() {
                 <div className="rounded-2xl p-4 bg-zinc-900 border border-zinc-800 mb-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-base font-bold text-white">🔮 Your Picks</h3>
-                    <Link href="/predictions/breakdown" className="text-[10px] font-bold text-red-400 hover:text-red-300">Full history ›</Link>
+                    <Link href="/predictions/breakdown" className="text-[11px] font-bold text-red-400 hover:text-red-300">Full history ›</Link>
                   </div>
                   {/* Record row */}
                   <div className="grid grid-cols-3 gap-2 mb-3">
                     <div className="rounded-xl bg-zinc-950 p-3 text-center">
                       <div className="text-xl font-extrabold text-white">{w}-{l}{pu > 0 && `-${pu}`}</div>
-                      <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Record</div>
+                      <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">Record</div>
                     </div>
                     <div className="rounded-xl bg-zinc-950 p-3 text-center">
                       <div className="text-xl font-extrabold" style={{ color: wpct >= 50 ? "#22c55e" : "#ef4444" }}>{wpct}%</div>
-                      <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Win Rate</div>
+                      <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">Win Rate</div>
                     </div>
                     <Link href="/predictions/breakdown" className="rounded-xl bg-zinc-950 p-3 text-center hover:bg-zinc-800 transition-colors">
                       <div className="text-xl font-extrabold" style={{ color: units > 0 ? "#22c55e" : units < 0 ? "#ef4444" : "#a1a1aa" }}>{uStr}u</div>
-                      <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Units</div>
+                      <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">Units</div>
                     </Link>
                   </div>
                   {/* Recent picks */}
@@ -2087,15 +2109,15 @@ function HomeContent() {
                       return (
                         <Link key={p.id} href={gameHref(p.game_id, p.sport)}
                           className="flex items-center gap-2.5 p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 transition-colors">
-                          <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-extrabold shrink-0 ${s.bg} ${s.tx}`}>{s.lbl}</span>
+                          <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[11px] font-extrabold shrink-0 ${s.bg} ${s.tx}`}>{s.lbl}</span>
                           <span className="text-xs font-semibold text-white flex-1 truncate">{p.pick_label}</span>
-                          <span className="text-[9px] text-zinc-600">{sportEmoji(p.sport)}</span>
+                          <span className="text-[10px] text-zinc-600">{sportEmoji(p.sport)}</span>
                         </Link>
                       );
                     })}
                   </div>
                   {pending.length > 0 && (
-                    <div className="text-[10px] text-zinc-500 text-center mt-2">{pending.length} pick{pending.length === 1 ? "" : "s"} pending</div>
+                    <div className="text-[11px] text-zinc-500 text-center mt-2">{pending.length} pick{pending.length === 1 ? "" : "s"} pending</div>
                   )}
                 </div>
               );
@@ -2109,7 +2131,7 @@ function HomeContent() {
               </div>
               <div className="flex items-end justify-between mb-1">
                 <div className="text-3xl font-extrabold text-white">{myRep.toLocaleString()}<span className="text-sm font-bold text-zinc-500 ml-1">Cred</span></div>
-                {myNextTier && <div className="text-[10px] text-zinc-500 text-right">{(myNextTier.min - myRep).toLocaleString()} to {myNextTier.emoji} {myNextTier.name}</div>}
+                {myNextTier && <div className="text-[11px] text-zinc-500 text-right">{(myNextTier.min - myRep).toLocaleString()} to {myNextTier.emoji} {myNextTier.name}</div>}
               </div>
               {/* Progress to next tier */}
               <div className="h-2 rounded-full bg-zinc-950 overflow-hidden mb-3">
@@ -2126,11 +2148,11 @@ function HomeContent() {
                 ].map((s) => (
                   <div key={s.l} className="rounded-lg bg-zinc-950 p-2">
                     <div className="text-base font-extrabold text-white">{s.v}</div>
-                    <div className="text-[8px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
+                    <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
                   </div>
                 ))}
               </div>
-              <div className="text-[10px] text-zinc-600 mt-2">Earn Cred from rating games, writing reviews, and the likes your comments get.</div>
+              <div className="text-[11px] text-zinc-600 mt-2">Earn Cred from rating games, writing reviews, and the likes your comments get.</div>
             </div>
 
             {/* 🩸 Drops — currency + emote store */}
@@ -2139,7 +2161,7 @@ function HomeContent() {
                 <h3 className="text-base font-bold text-white">🩸 Drops</h3>
                 <div className="text-right">
                   <div className="text-2xl font-extrabold text-white leading-none">{dropsBalance.toLocaleString()}</div>
-                  <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Balance</div>
+                  <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">Balance</div>
                 </div>
               </div>
               {/* Earning breakdown */}
@@ -2151,12 +2173,12 @@ function HomeContent() {
                 ].map((s) => (
                   <div key={s.l} className="rounded-xl bg-zinc-950 p-2.5 text-center">
                     <div className="text-lg font-extrabold text-white">{s.v}</div>
-                    <div className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
-                    <div className="text-[9px] text-red-400/80 font-semibold">{s.sub}</div>
+                    <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
+                    <div className="text-[10px] text-red-400/80 font-semibold">{s.sub}</div>
                   </div>
                 ))}
               </div>
-              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Emote Store</div>
+              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Emote Store</div>
               <div className="space-y-2">
                 {EMOTE_PACKS.map((pack) => {
                   const owned = dropsUnlocked.includes(pack.id);
@@ -2179,10 +2201,10 @@ function HomeContent() {
                   );
                 })}
               </div>
-              <div className="text-[10px] text-zinc-600 mt-2">Unlocked emotes become extra reactions on game comments.</div>
+              <div className="text-[11px] text-zinc-600 mt-2">Unlocked emotes become extra reactions on game comments.</div>
 
               {/* Name flair */}
-              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Name Flair</div>
+              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Name Flair</div>
               <div className="flex flex-wrap gap-2">
                 {NAME_FLAIR.map((f) => {
                   const owned = dropsUnlocked.includes(f.id);
@@ -2197,15 +2219,15 @@ function HomeContent() {
                     >
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: f.color }} />
                       {f.name}
-                      <span className="text-[10px] text-zinc-500">{owned ? "✓" : `🩸${f.cost}`}</span>
+                      <span className="text-[11px] text-zinc-500">{owned ? "✓" : `🩸${f.cost}`}</span>
                     </button>
                   );
                 })}
               </div>
-              <div className="text-[10px] text-zinc-600 mt-2">Your priciest unlocked flair colors your name everywhere.</div>
+              <div className="text-[11px] text-zinc-600 mt-2">Your priciest unlocked flair colors your name everywhere.</div>
 
               {/* Accent themes */}
-              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Accent Theme</div>
+              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Accent Theme</div>
               <div className="flex flex-wrap gap-2">
                 {THEMES.map((t) => {
                   const owned = dropsUnlocked.includes(t.id);
@@ -2220,14 +2242,14 @@ function HomeContent() {
                     >
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
                       {t.name}
-                      <span className="text-[10px] text-zinc-500">{owned ? "✓" : `🩸${t.cost}`}</span>
+                      <span className="text-[11px] text-zinc-500">{owned ? "✓" : `🩸${t.cost}`}</span>
                     </button>
                   );
                 })}
               </div>
-              <div className="text-[10px] text-zinc-600 mt-2">Recolors the app&apos;s accent. Priciest unlocked theme wins.</div>
+              <div className="text-[11px] text-zinc-600 mt-2">Recolors the app&apos;s accent. Priciest unlocked theme wins.</div>
               {!dropsStoreReady && (
-                <div className="text-[10px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
+                <div className="text-[11px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
               )}
             </div>
 
@@ -2249,7 +2271,7 @@ function HomeContent() {
                       <Link key={id} href={`/game/${id}`} className="block">
                         <div className="p-2.5 rounded-lg bg-zinc-950 border-l-2 border-red-600 hover:bg-zinc-900 transition-colors">
                           <div className="text-xs font-bold text-white">{awayAbbr} {awayScore}—{homeAbbr} {homeScore}</div>
-                          <div className="text-[10px] text-zinc-600">Wk {week}</div>
+                          <div className="text-[11px] text-zinc-600">Wk {week}</div>
                           {l?.rating > 0 && <div className="text-base font-extrabold mt-1" style={{ color: rc(l.rating) }}>{l.rating}</div>}
                         </div>
                       </Link>
@@ -2286,7 +2308,7 @@ function HomeContent() {
                             <div className="flex items-center justify-between p-2 rounded-lg hover:bg-zinc-800 transition-colors">
                               <div>
                                 <div className="text-xs font-bold text-white">{gm.away_team} {gm.away_score} — {gm.home_team} {gm.home_score}</div>
-                                <div className="text-[10px] text-zinc-600">Wk {gm.week || "?"} · {gm.season}</div>
+                                <div className="text-[11px] text-zinc-600">Wk {gm.week || "?"} · {gm.season}</div>
                               </div>
                               <button onClick={async (e) => {
                                 e.preventDefault();
@@ -2295,7 +2317,7 @@ function HomeContent() {
                                   await sbFetch(`list_games?id=eq.${gm.id}`, { method: "DELETE" });
                                   setListGames(prev => ({ ...prev, [l.id]: (prev[l.id] || []).filter(x => x.id !== gm.id) }));
                                 } catch (err) { console.error(err); }
-                              }} className="text-[10px] text-zinc-600 hover:text-red-400">remove</button>
+                              }} className="text-[11px] text-zinc-600 hover:text-red-400">remove</button>
                             </div>
                           </Link>
                         ))}
@@ -2318,7 +2340,7 @@ function HomeContent() {
                         <span className="text-lg">{b.i}</span>
                         <div>
                           <div className="text-[11px] font-bold text-white">{b.n}</div>
-                          <div className="text-[10px] text-zinc-500">{b.d}</div>
+                          <div className="text-[11px] text-zinc-500">{b.d}</div>
                         </div>
                       </div>
                     </div>
@@ -2344,7 +2366,7 @@ function HomeContent() {
                   <div className="absolute -top-5 -right-5 text-8xl opacity-5">{sportEmoji(profileSport)}</div>
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <div className="text-[10px] font-bold opacity-80 tracking-widest uppercase">{sportEmoji(profileSport)} {sportLabel(profileSport)} Wrapped</div>
+                      <div className="text-[11px] font-bold opacity-80 tracking-widest uppercase">{sportEmoji(profileSport)} {sportLabel(profileSport)} Wrapped</div>
                       <div className="text-lg font-extrabold mt-0.5">Your {label} {wrappedSeason === "all" ? "Recap" : "Season"}</div>
                     </div>
                   </div>
@@ -2366,7 +2388,7 @@ function HomeContent() {
                     ].map((s, i) => (
                       <div key={i} className="bg-white/10 rounded-lg p-2">
                         <div className="text-xl font-extrabold">{s.v}</div>
-                        <div className="text-[10px] opacity-80">{s.l}</div>
+                        <div className="text-[11px] opacity-80">{s.l}</div>
                       </div>
                     ))}
                   </div>
@@ -2375,16 +2397,16 @@ function HomeContent() {
                     <div className="mt-2 space-y-1.5">
                       {best && (
                         <Link href={gameHref(best.gameId, best.sport, best.gameDate)} className="flex items-center gap-2 bg-white/10 rounded-lg p-2 hover:bg-white/15 transition-colors">
-                          <span className="text-[9px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Top game</span>
+                          <span className="text-[10px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Top game</span>
                           <span className="text-xs font-bold flex-1 truncate">{best.awayTeam} {best.awayScore}–{best.homeTeam} {best.homeScore}</span>
                           <span className="text-sm font-extrabold shrink-0">{best.rating}</span>
                         </Link>
                       )}
                       {topMvp && (
                         <Link href={`/player/${encodeURIComponent(topMvp[0])}`} className="flex items-center gap-2 bg-white/10 rounded-lg p-2 hover:bg-white/15 transition-colors">
-                          <span className="text-[9px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Your MVP</span>
+                          <span className="text-[10px] font-bold opacity-70 uppercase tracking-wider w-16 shrink-0">Your MVP</span>
                           <span className="text-xs font-bold flex-1 truncate">🌟 {topMvp[0]}</span>
-                          <span className="text-[10px] opacity-80 shrink-0">×{topMvp[1]}</span>
+                          <span className="text-[11px] opacity-80 shrink-0">×{topMvp[1]}</span>
                         </Link>
                       )}
                     </div>
@@ -2459,7 +2481,7 @@ function HomeContent() {
                         {mehCount > 0 && <div style={{ width: `${(mehCount / withWorth.length) * 100}%`, backgroundColor: "#eab308" }} />}
                         {noCount > 0 && <div style={{ width: `${(noCount / withWorth.length) * 100}%`, backgroundColor: "#ef4444" }} />}
                       </div>
-                      <div className="flex justify-between mt-1 text-[10px] text-zinc-500">
+                      <div className="flex justify-between mt-1 text-[11px] text-zinc-500">
                         <span>👍 {yesCount}</span>
                         <span>😐 {mehCount}</span>
                         <span>👎 {noCount}</span>
@@ -2471,7 +2493,7 @@ function HomeContent() {
                   {topTeams.length > 1 && (
                     <div className="grid grid-cols-2 gap-2 mb-4">
                       <div className="p-3 rounded-xl bg-zinc-950">
-                        <div className="text-[10px] font-bold text-green-400 tracking-widest uppercase mb-2">Most Fun</div>
+                        <div className="text-[11px] font-bold text-green-400 tracking-widest uppercase mb-2">Most Fun</div>
                         {bestTeams.map(t => (
                           <div key={t.team} className="flex justify-between items-center mb-1">
                             <span className="text-sm font-bold text-white">{t.team}</span>
@@ -2480,7 +2502,7 @@ function HomeContent() {
                         ))}
                       </div>
                       <div className="p-3 rounded-xl bg-zinc-950">
-                        <div className="text-[10px] font-bold text-red-400 tracking-widest uppercase mb-2">Most Painful</div>
+                        <div className="text-[11px] font-bold text-red-400 tracking-widest uppercase mb-2">Most Painful</div>
                         {worstTeams.map(t => (
                           <div key={t.team} className="flex justify-between items-center mb-1">
                             <span className="text-sm font-bold text-white">{t.team}</span>
@@ -2494,7 +2516,7 @@ function HomeContent() {
                   {/* Where you watch */}
                   {topWatch.length > 0 && (
                     <div className="mb-4 p-3 rounded-xl bg-zinc-950">
-                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">How You Watch</div>
+                      <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">How You Watch</div>
                       {topWatch.map(([w, count]) => (
                         <div key={w} className="flex justify-between items-center mb-1">
                           <span className="text-sm text-white">{w}</span>
@@ -2507,7 +2529,7 @@ function HomeContent() {
                   {/* By season */}
                   {seasonRows.length > 1 && (
                     <div className="mb-4 p-3 rounded-xl bg-zinc-950">
-                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">By Season</div>
+                      <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">By Season</div>
                       {seasonRows.map(r => (
                         <div key={r.season} className="flex justify-between items-center mb-1">
                           <span className="text-sm text-white">{r.season} <span className="text-zinc-600 text-xs">({r.count})</span></span>
@@ -2520,7 +2542,7 @@ function HomeContent() {
                   {/* Your top rated */}
                   {topRated.length > 0 && (
                     <div className="p-3 rounded-xl bg-zinc-950">
-                      <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">⭐ Your Top Rated</div>
+                      <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">⭐ Your Top Rated</div>
                       {topRated.map((l, i) => (
                         <Link key={l.gameId} href={`/game/${l.gameId}`} className="flex items-center gap-2 py-1.5 hover:bg-zinc-900 rounded-lg px-1.5 -mx-1.5 transition-colors">
                           <span className="text-xs font-extrabold w-4" style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#a1a1aa" : i === 2 ? "#b45309" : "#52525b" }}>{i + 1}</span>
@@ -2559,7 +2581,7 @@ function HomeContent() {
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 z-10 bg-zinc-950 px-5 pt-4 pb-3 border-b border-zinc-800 flex items-center justify-between">
               <div>
-                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Games You Rated</div>
+                <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">Games You Rated</div>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-lg font-bold text-white">{barDrilldown.games.length} {barDrilldown.games.length === 1 ? "game" : "games"} at</span>
                   <span className="text-xl font-extrabold px-2 py-0.5 rounded-lg text-white" style={{ backgroundColor: rc(barDrilldown.rating) }}>{barDrilldown.rating}</span>
@@ -2573,7 +2595,7 @@ function HomeContent() {
                   <div className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-all">
                     <div className="flex-1">
                       <div className="text-sm font-bold text-white">{l.awayTeam} {l.awayScore}—{l.homeTeam} {l.homeScore}</div>
-                      <div className="text-[10px] text-zinc-500">Wk {l.week || "?"} · {l.season || "?"}</div>
+                      <div className="text-[11px] text-zinc-500">Wk {l.week || "?"} · {l.season || "?"}</div>
                       {l.review && <div className="text-xs text-zinc-400 italic mt-1 line-clamp-2">&quot;{l.review}&quot;</div>}
                     </div>
                     <div className="w-11 h-11 flex items-center justify-center text-white font-extrabold rounded-xl text-base shrink-0" style={{ backgroundColor: rc(l.rating) }}>{l.rating}</div>
@@ -2677,7 +2699,7 @@ function HomeContent() {
                     </button>
                   )}
                 </div>
-                <div className="text-[10px] text-zinc-600 mt-1">JPG, PNG, or WEBP · max 5MB</div>
+                <div className="text-[11px] text-zinc-600 mt-1">JPG, PNG, or WEBP · max 5MB</div>
               </div>
             </div>
 
@@ -2722,7 +2744,7 @@ function HomeContent() {
                 </div>
               );
             })}
-            <div className="text-[10px] text-zinc-600 mb-4 -mt-2">Used for fandom filters on each sport&apos;s games.</div>
+            <div className="text-[11px] text-zinc-600 mb-4 -mt-2">Used for fandom filters on each sport&apos;s games.</div>
 
             <div className="flex gap-2">
               <button onClick={() => setShowEditProfile(false)} className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-semibold text-sm">Cancel</button>
@@ -2822,7 +2844,7 @@ function HomeContent() {
                 </button>
               )}
               {notifPerm === "denied" && (
-                <div className="mb-3 text-[10px] text-zinc-600 text-center">Browser alerts are blocked — enable them in your browser&apos;s site settings.</div>
+                <div className="mb-3 text-[11px] text-zinc-600 text-center">Browser alerts are blocked — enable them in your browser&apos;s site settings.</div>
               )}
               {notifs.length === 0 ? (
                 <div className="text-center py-10">
@@ -2845,7 +2867,7 @@ function HomeContent() {
                         {avatar}
                         <div className="flex-1 min-w-0">
                           <div className="text-xs text-white"><span className="font-bold">{name}</span><span className="text-zinc-500"> followed you</span></div>
-                          <div className="text-[10px] text-zinc-600">{when}</div>
+                          <div className="text-[11px] text-zinc-600">{when}</div>
                         </div>
                         <span className="text-lg shrink-0">👤</span>
                       </div>
@@ -2858,7 +2880,7 @@ function HomeContent() {
                       {avatar}
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-white"><span className="font-bold">{name}</span><span className="text-zinc-500"> reacted to your comment</span></div>
-                        <div className="text-[10px] text-zinc-600">{when}</div>
+                        <div className="text-[11px] text-zinc-600">{when}</div>
                       </div>
                       <span className="text-xl shrink-0">{n.data.emoji}</span>
                     </div>
@@ -2872,7 +2894,7 @@ function HomeContent() {
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-white"><span className="font-bold">{name}</span> <span className="text-zinc-500">rated</span></div>
                         <div className="text-sm font-bold text-white truncate">{r.away_team} {r.away_score} — {r.home_team} {r.home_score}</div>
-                        <div className="text-[10px] text-zinc-600">{when}</div>
+                        <div className="text-[11px] text-zinc-600">{when}</div>
                       </div>
                       <div className="w-9 h-9 flex items-center justify-center text-white font-extrabold rounded-lg text-sm shrink-0" style={{ backgroundColor: rc(parseFloat(r.rating)) }}>{parseFloat(r.rating).toFixed(1)}</div>
                     </div>

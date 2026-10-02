@@ -2,18 +2,27 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
-// "starts in 2h 15m" countdown for upcoming games. Returns "" once started.
+// "in 2h 15m" countdown, only in the last 12 hours before kickoff (further
+// out, the kickoff time itself is more useful). Returns "" otherwise.
 function fmtCountdown(iso) {
   if (!iso) return "";
   const diff = new Date(iso).getTime() - Date.now();
-  if (diff <= 0) return "";
+  if (diff <= 0 || diff > 12 * 3600000) return "";
   const mins = Math.floor(diff / 60000);
-  const d = Math.floor(mins / 1440);
-  const h = Math.floor((mins % 1440) / 60);
+  const h = Math.floor(mins / 60);
   const m = mins % 60;
-  if (d > 0) return `starts in ${d}d ${h}h`;
-  if (h > 0) return `starts in ${h}h ${m}m`;
-  return `starts in ${m}m`;
+  return h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
+}
+
+// Kickoff in the viewer's own time zone.
+function kickoff(iso) {
+  const dt = new Date(iso || "");
+  if (isNaN(dt.getTime())) return null;
+  return {
+    time: dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+    day: dt.toLocaleDateString("en-US", { weekday: "short" }),
+    date: dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+  };
 }
 
 function autoMoods(g) {
@@ -69,7 +78,9 @@ function rc(r) {
   return "#15803d";
 }
 
-export default function GameCard({ game: g, logged, myRating, onQuickRate }) {
+// `grouped`: the list shows a day + kickoff heading above this card, so the
+// card itself doesn't repeat them.
+export default function GameCard({ game: g, logged, myRating, onQuickRate, grouped = false }) {
   const moods = autoMoods(g);
   const live = isLive(g);
   const dateBased = g.sport && g.sport !== "nfl"; // mlb/nba/nhl are shown by date, not week
@@ -108,22 +119,28 @@ export default function GameCard({ game: g, logged, myRating, onQuickRate }) {
         <div className="p-3.5">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              {g.ot && <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 font-bold shrink-0">{g.sport === "mlb" ? "EXTRAS" : "OT"}</span>}
-              <span className="text-[10px] font-bold text-zinc-500 tracking-wide uppercase truncate">
-                {dateBased
-                  ? `${g.shortDate}${g.net ? " · " + g.net : ""}`
-                  : `Wk ${g.week} · ${g.net} · ${g.shortDate}`}
+              {g.ot && <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 font-bold shrink-0">{g.sport === "mlb" ? "EXTRAS" : "OT"}</span>}
+              <span className="text-[11px] font-bold text-zinc-500 tracking-wide uppercase truncate">
+                {(() => {
+                  // Date sports are listed one day at a time, and grouped NFL lists carry
+                  // the day + time in the heading -- so only say what the list doesn't.
+                  const k = kickoff(g.startISO);
+                  const when = !k ? "" : g.isPre
+                    ? (grouped ? "" : dateBased ? k.time : `${k.day} ${k.time}`)
+                    : (grouped || dateBased ? "" : k.date);
+                  return [g.isFinal ? "Final" : "", when, g.net].filter(Boolean).join(" · ");
+                })()}
               </span>
             </div>
             <div className="flex gap-1 shrink-0">
               {live && (
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">
                   🔴 {g.statusDetail || "LIVE"}
                 </span>
               )}
-              {g.isPre && countdown && <span className="text-[9px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-bold">⏳ {countdown}</span>}
-              {g.diff <= closeWithin && g.isFinal && <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-600/10 text-red-400 font-bold">CLOSE</span>}
-              {logged && <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-bold">✓</span>}
+              {g.isPre && countdown && <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-bold">⏳ {countdown}</span>}
+              {g.diff <= closeWithin && g.isFinal && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-600/10 text-red-400 font-bold">CLOSE</span>}
+              {logged && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-bold" aria-label="You rated this">✓</span>}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -135,7 +152,7 @@ export default function GameCard({ game: g, logged, myRating, onQuickRate }) {
                     {team.logo ? (
                       <img src={team.logo} alt={team.abbr} className="w-7 h-7 object-contain" />
                     ) : (
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[9px] font-bold" style={{ backgroundColor: team.color }}>{team.abbr}</div>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: team.color }}>{team.abbr}</div>
                     )}
                     <span className={`flex-1 text-sm truncate ${isWinner ? "font-bold text-white" : g.isPre ? "text-white" : live ? "text-white" : "text-zinc-500"}`}>{team.name}</span>
                     <span className={`text-xl font-extrabold tabular-nums ${isWinner || live ? "text-white" : "text-zinc-700"}`}>{g.isPre ? "" : team.score}</span>
@@ -154,7 +171,7 @@ export default function GameCard({ game: g, logged, myRating, onQuickRate }) {
                 aria-label="Quick rate"
               >
                 {myRating != null ? <span className="text-base leading-none">{myRating}</span> : <span className="text-lg leading-none">＋</span>}
-                <span className="text-[7px] font-bold tracking-wider opacity-80 mt-0.5">{myRating != null ? "RATED" : "RATE"}</span>
+                <span className="text-[9px] font-bold tracking-wider opacity-80 mt-0.5">{myRating != null ? "RATED" : "RATE"}</span>
               </button>
             )}
           </div>
@@ -185,7 +202,7 @@ export default function GameCard({ game: g, logged, myRating, onQuickRate }) {
           {moods.length > 0 && (
             <div className="flex gap-1.5 mt-2 flex-wrap">
               {moods.slice(0, 3).map((m) => (
-                <span key={m} className="text-[9px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 font-semibold">{m}</span>
+                <span key={m} className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-semibold">{m}</span>
               ))}
             </div>
           )}

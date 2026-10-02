@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
+import HighlightsCard from "@/components/HighlightsCard";
 import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
@@ -217,8 +218,8 @@ export default function TennisMatchPage({ params }) {
     <div className="flex items-center gap-3">
       {p.flag ? <img src={p.flag} alt={p.country} className="w-8 h-5 object-cover rounded-sm shrink-0" /> : <div className="w-8 h-5 rounded-sm bg-zinc-800 shrink-0" />}
       <div className="flex-1 min-w-0">
-        <div className={`${big ? "text-base" : "text-sm"} font-bold truncate ${p.winner || m.isPre || m.isLive ? "text-white" : "text-zinc-400"}`}>{p.name}{p.winner && <span className="ml-1.5 text-[10px] text-green-400">✓</span>}</div>
-        <div className="text-[10px] text-zinc-500">{p.country}</div>
+        <div className={`${big ? "text-base" : "text-sm"} font-bold truncate ${p.winner || m.isPre || m.isLive ? "text-white" : "text-zinc-400"}`}>{p.name}{p.winner && <span className="ml-1.5 text-[11px] text-green-400">✓</span>}</div>
+        <div className="text-[11px] text-zinc-500">{p.country}</div>
       </div>
       {!m.isPre && (
         <div className="flex gap-1.5 shrink-0">
@@ -245,20 +246,20 @@ export default function TennisMatchPage({ params }) {
         <div className="rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 mb-4">
           <div className="h-1 bg-gradient-to-r from-yellow-500 via-lime-400 to-green-500" />
           <div className="p-5">
-            <div className="text-center text-[10px] font-semibold text-zinc-500 tracking-widest uppercase mb-3">
+            <div className="text-center text-[11px] font-semibold text-zinc-500 tracking-widest uppercase mb-3">
               {m.tournament}{m.round ? ` · ${m.round}` : ""}{m.group ? ` · ${m.group}` : ""}
             </div>
             <div className="space-y-3">
               <PlayerRow p={m.p1} big />
               <div className="flex items-center justify-center">
-                {m.isLive ? <span className="text-[10px] font-bold text-white px-2 py-1 rounded-full bg-red-600 animate-pulse">🔴 {m.statusDetail || "LIVE"}</span>
-                  : m.isPre ? <span className="text-[10px] font-bold text-zinc-500">{m.date}</span>
-                  : <span className="text-[10px] font-bold text-zinc-600">FINAL</span>}
+                {m.isLive ? <span className="text-[11px] font-bold text-white px-2 py-1 rounded-full bg-red-600 animate-pulse">🔴 {m.statusDetail || "LIVE"}</span>
+                  : m.isPre ? <span className="text-[11px] font-bold text-zinc-500">{m.date}</span>
+                  : <span className="text-[11px] font-bold text-zinc-600">FINAL</span>}
               </div>
               <PlayerRow p={m.p2} big />
             </div>
             {m.note && <div className="text-[11px] text-zinc-500 text-center mt-4 pt-3 border-t border-zinc-800">{m.note}</div>}
-            {m.net && <div className="text-[10px] text-zinc-600 text-center mt-2">📺 {m.net}</div>}
+            {m.net && <div className="text-[11px] text-zinc-600 text-center mt-2">📺 {m.net}</div>}
           </div>
         </div>
 
@@ -266,8 +267,8 @@ export default function TennisMatchPage({ params }) {
         {rootingReady && (
           <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4">
             <div className="flex items-center justify-between mb-2.5">
-              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {m.isFinal ? "Who fans backed" : "Who are you rooting for?"}</div>
-              <div className="text-[10px] text-zinc-600">{totalRoot} {totalRoot === 1 ? "fan" : "fans"}</div>
+              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {m.isFinal ? "Who fans backed" : "Who are you rooting for?"}</div>
+              <div className="text-[11px] text-zinc-600">{totalRoot} {totalRoot === 1 ? "fan" : "fans"}</div>
             </div>
             <div className="flex h-2.5 rounded-full overflow-hidden bg-zinc-950 mb-2">
               {totalRoot > 0 ? (<><div style={{ width: `${r1pct}%`, backgroundColor: "#84cc16" }} /><div style={{ width: `${100 - r1pct}%`, backgroundColor: "#3b82f6" }} /></>) : <div className="w-full bg-zinc-800/40" />}
@@ -279,13 +280,13 @@ export default function TennisMatchPage({ params }) {
                 return (
                   <button key={p.name} onClick={() => !m.isFinal && pickRooting(p.name)} disabled={m.isFinal}
                     className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 transition-all ${mine ? "border-red-600 bg-red-600/10" : "border-zinc-800 bg-zinc-950"} ${m.isFinal ? "cursor-default" : "hover:border-zinc-600"}`}>
-                    <span className="text-xs font-bold text-white truncate">{p.short}{mine && <span className="ml-1 text-[10px] text-red-400">✓</span>}</span>
+                    <span className="text-xs font-bold text-white truncate">{p.short}{mine && <span className="ml-1 text-[11px] text-red-400">✓</span>}</span>
                     <span className="text-xs font-extrabold shrink-0" style={{ color: c }}>{totalRoot > 0 ? `${pct}%` : "—"}</span>
                   </button>
                 );
               })}
             </div>
-            {!user && <div className="text-[10px] text-zinc-600 text-center mt-2">Sign in to pick your side</div>}
+            {!user && <div className="text-[11px] text-zinc-600 text-center mt-2">Sign in to pick your side</div>}
           </div>
         )}
 
@@ -293,15 +294,15 @@ export default function TennisMatchPage({ params }) {
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="rounded-2xl bg-gradient-to-br from-red-950/40 to-zinc-900 border border-zinc-800 p-3 flex items-center justify-between">
             <div>
-              <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Community</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">{communityCount} {communityCount === 1 ? "rater" : "raters"}</div>
+              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">Community</div>
+              <div className="text-[11px] text-zinc-500 mt-0.5">{communityCount} {communityCount === 1 ? "rater" : "raters"}</div>
             </div>
             <div className="w-14 h-14 flex items-center justify-center text-white font-extrabold rounded-xl text-lg shrink-0" style={{ backgroundColor: communityAvg != null ? rc(parseFloat(communityAvg)) : "rgba(63,63,70,0.4)", color: communityAvg != null ? "#fff" : "#52525b" }}>{communityAvg != null ? communityAvg : "—"}</div>
           </div>
           <div className="rounded-2xl bg-zinc-900 border-2 border-zinc-800 p-3 flex items-center justify-between">
             <div>
-              <div className="text-[10px] font-bold text-red-400 tracking-widest uppercase">Your Rating</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">{logged ? "Saved" : m.isPre ? "After the match" : "Rate below"}</div>
+              <div className="text-[11px] font-bold text-red-400 tracking-widest uppercase">Your Rating</div>
+              <div className="text-[11px] text-zinc-500 mt-0.5">{logged ? "Saved" : m.isPre ? "After the match" : "Rate below"}</div>
             </div>
             <div className="w-14 h-14 flex items-center justify-center font-extrabold rounded-xl text-lg shrink-0" style={{ backgroundColor: logged ? rc(rating) : "rgba(63,63,70,0.4)", color: logged ? "#fff" : "#52525b" }}>{logged ? rating : "—"}</div>
           </div>
@@ -336,13 +337,7 @@ export default function TennisMatchPage({ params }) {
 
         {/* Highlights */}
         {m.isFinal && (
-          <a href={highlightsHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 hover:-translate-y-0.5 transition-transform">
-            <div className="w-12 h-9 rounded-lg bg-red-600 flex items-center justify-center text-xl shrink-0">▶</div>
-            <div>
-              <div className="text-sm font-bold text-white">Watch Highlights</div>
-              <div className="text-xs text-zinc-500">{m.p1.short} v {m.p2.short} · {m.tournament}</div>
-            </div>
-          </a>
+          <HighlightsCard href={highlightsHref} title="Watch Highlights" subtitle={`${m.p1.short} v ${m.p2.short} · ${m.tournament}`} />
         )}
       </div>
 
