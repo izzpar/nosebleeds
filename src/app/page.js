@@ -322,6 +322,7 @@ function HomeContent() {
   // from last season returns to the current week.
   const [liveSeason, setLiveSeason] = useState(year);
   const [liveWeek, setLiveWeek] = useState(1);
+  const [nflDoneWeek, setNflDoneWeek] = useState(0); // last fully played week of liveSeason (0 = none yet)
   // Date-based sports (MLB/NBA/NHL) use a date string YYYY-MM-DD instead of week/year
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
@@ -368,6 +369,8 @@ function HomeContent() {
           : d?.season?.type === 1 ? 1 // preseason → upcoming week 1
           : 18; // post/offseason → final regular-season week
         setWeek(lw); setLiveWeek(lw);
+        const allFinal = (d?.events || []).length > 0 && d.events.every((e) => e?.status?.type?.completed);
+        setNflDoneWeek(d?.season?.type === 2 ? (allFinal ? lw : lw - 1) : d?.season?.type === 1 ? 0 : 18);
       } catch (e) { /* keep the guessed defaults */ }
       if (!cancelled) setNflSynced(true);
     })();
@@ -909,27 +912,21 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [tab, sport]);
 
-  // Compute the latest (season, week) with any ratings - for the recap banner
+  // NFL recap shortcut: the latest fully played week of the live season that
+  // people rated. Recaps are built from ratings, so a week nobody rated would
+  // be empty; older seasons stay reachable through the /recap archive.
   useEffect(() => {
+    if (!nflSynced || nflDoneWeek < 1) { setLatestRecap(null); return; }
     let cancelled = false;
-    async function loadLatest() {
+    (async () => {
       try {
-        // Only NFL ratings — recaps are NFL-week-based; MLB recaps are a separate (future) feature
-        const res = await sbFetch(`ratings?public=eq.true&rating=not.is.null&sport=eq.nfl&order=created_at.desc&limit=50&select=season,week`);
-        const data = await sbJson(res);
-        if (cancelled || data.length === 0) return;
-        // NFL weeks are 1-18; guard against any bad data
-        const valid = data.filter(r => r.season > 0 && r.week >= 1 && r.week <= 18);
-        if (valid.length === 0) return;
-        const maxSeason = Math.max(...valid.map(r => r.season));
-        const inSeason = valid.filter(r => r.season === maxSeason);
-        const maxWeek = Math.max(...inSeason.map(r => r.week));
-        setLatestRecap({ season: maxSeason, week: maxWeek });
+        const res = await sbFetch(`ratings?public=eq.true&rating=not.is.null&sport=eq.nfl&season=eq.${liveSeason}&week=gte.1&week=lte.${nflDoneWeek}&order=week.desc&limit=1&select=season,week`);
+        const [row] = await sbJson(res);
+        if (!cancelled) setLatestRecap(row ? { season: row.season, week: row.week } : null);
       } catch (e) {}
-    }
-    loadLatest();
+    })();
     return () => { cancelled = true; };
-  }, []);
+  }, [nflSynced, liveSeason, nflDoneWeek]);
 
   // Load my "following" list whenever user changes
   useEffect(() => {
@@ -1339,72 +1336,6 @@ function HomeContent() {
           </div>
         )}
 
-        {/* Live Now banner — Games tab, all sports */}
-        {tab === "games" && (
-          <Link href="/live" className="block w-full mb-3">
-            <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
-              <div className="text-2xl">🔴</div>
-              <div className="flex-1">
-                <div className="text-sm font-bold text-white">Live Now</div>
-                <div className="text-[10px] text-zinc-400">Every in-progress game across all sports, one page</div>
-              </div>
-              <span className="text-zinc-500">→</span>
-            </div>
-          </Link>
-        )}
-
-        {/* Players banner — Games tab (team sports only; tennis has no roster) */}
-        {tab === "games" && hasTeams && (
-          <button onClick={() => setTab("players")} className="block w-full mb-3 text-left">
-            <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
-              <div className="text-2xl">🧢</div>
-              <div className="flex-1">
-                <div className="text-sm font-bold text-white">Browse Players</div>
-                <div className="text-[10px] text-zinc-400">Search any player, see ratings, MVP picks & stats</div>
-              </div>
-              <span className="text-zinc-500">→</span>
-            </div>
-          </button>
-        )}
-
-
-        {/* Recap banner: Games tab + NFL only (recaps are NFL-week-based) */}
-        {latestRecap && tab === "games" && sport === "nfl" && (
-          <Link href={`/recap/${latestRecap.season}/${latestRecap.week}`} className="block mb-3">
-            <div className={`rounded-2xl p-3 flex items-center gap-3 transition-all ${new Date().getDay() === 2 ? "bg-gradient-to-r from-red-900/60 via-red-800/30 to-zinc-900 border-2 border-red-600/40 hover:border-red-600" : "bg-zinc-900 border border-zinc-800 hover:border-red-600/40"}`}>
-              <div className="text-2xl">📰</div>
-              <div className="flex-1">
-                <div className="text-sm font-bold text-white">
-                  {new Date().getDay() === 2 ? "Tuesday Recap is live!" : "Latest Recap"}
-                </div>
-                <div className="text-[10px] text-zinc-500">Week {latestRecap.week} · {latestRecap.season} — best games, top MVPs, biggest letdowns</div>
-              </div>
-              <span className="text-zinc-500">→</span>
-            </div>
-          </Link>
-        )}
-
-        {/* Daily Recap banner — team date-sports link to yesterday's recap (no tennis recap) */}
-        {tab === "games" && isDateSport(sport) && hasTeams && (() => {
-          const d = new Date();
-          d.setDate(d.getDate() - 1);
-          const yday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-          const ydayLabel = d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
-          return (
-            <Link href={`/recap/${sport}/${yday}`} className="block mb-3">
-              <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
-                <div className="text-2xl">{sportEmoji(sport)}</div>
-                <div className="flex-1">
-                  <div className="text-sm font-bold text-white">Yesterday&apos;s Recap</div>
-                  <div className="text-[10px] text-zinc-500">{ydayLabel} — best games, top MVPs, biggest letdowns</div>
-                </div>
-                <span className="text-zinc-500">→</span>
-              </div>
-            </Link>
-          );
-        })()}
-
-
         {/* ===== GAMES TAB ===== */}
         {tab === "games" && (
           <div>
@@ -1551,16 +1482,39 @@ function HomeContent() {
             <h2 className="text-xl font-extrabold text-white mb-1">Discover</h2>
             <p className="text-sm text-zinc-500 mb-4">What the community is rating</p>
 
-            <Link href="/trending" className="block mb-4">
-              <div className="rounded-2xl p-3 flex items-center gap-3 transition-all bg-zinc-900 border border-zinc-800 hover:border-red-600/40">
-                <div className="text-2xl">📈</div>
-                <div className="flex-1">
-                  <div className="text-sm font-bold text-white">Trending</div>
-                  <div className="text-[10px] text-zinc-400">Most-rated games across every sport — 24h / 48h / week</div>
+            {(() => {
+              const d = new Date();
+              d.setDate(d.getDate() - 1);
+              const yday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+              const tuesday = new Date().getDay() === 2;
+              const tiles = [
+                { key: "trending", href: "/trending", icon: "📈", label: "Trending", sub: "Most-rated games" },
+                { key: "live", href: "/live", icon: "🔴", label: "Live now", sub: "Games in progress" },
+                hasTeams && { key: "players", onClick: () => setTab("players"), icon: "🧢", label: "Players", sub: "Ratings & MVP picks" },
+                sport === "nfl" && latestRecap && { key: "recap", href: `/recap/${latestRecap.season}/${latestRecap.week}`, icon: "📰", label: `Week ${latestRecap.week} recap`, sub: tuesday ? "Just dropped" : "Best games & MVPs", hot: tuesday },
+                sport !== "nfl" && hasTeams && { key: "recap", href: `/recap/${sport}/${yday}`, icon: "📰", label: "Yesterday", sub: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) + " recap" },
+              ].filter(Boolean);
+              return (
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {tiles.map((t, i) => {
+                    const cls = `w-full h-full rounded-2xl p-3 flex items-center gap-2.5 text-left transition-all border ${t.hot ? "bg-gradient-to-br from-red-900/50 to-zinc-900 border-red-600/50 hover:border-red-600" : "bg-zinc-900 border-zinc-800 hover:border-red-600/40"}`;
+                    const body = (
+                      <>
+                        <span className="text-xl shrink-0">{t.icon}</span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-bold text-white truncate">{t.label}</span>
+                          <span className="block text-[11px] text-zinc-400 truncate">{t.sub}</span>
+                        </span>
+                      </>
+                    );
+                    const span = tiles.length % 2 === 1 && i === tiles.length - 1 ? "col-span-2" : "";
+                    return t.href
+                      ? <Link key={t.key} href={t.href} className={span}><span className={cls}>{body}</span></Link>
+                      : <button key={t.key} onClick={t.onClick} className={span}><span className={cls}>{body}</span></button>;
+                  })}
                 </div>
-                <span className="text-zinc-500">→</span>
-              </div>
-            </Link>
+              );
+            })()}
 
             {discoverLoading && <div className="text-center py-8 text-zinc-500 text-sm">Loading community...</div>}
 
