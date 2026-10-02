@@ -450,7 +450,7 @@ async function fetchGameForSport(id, sport) {
       venueCity: d.gameInfo?.venue?.address?.city || "",
       venueState: d.gameInfo?.venue?.address?.state || "",
       attendance: d.gameInfo?.attendance,
-      week: d.header?.week || 0, season: d.header?.season?.year || 2024,
+      week: d.header?.week || 0, season: d.header?.season?.year || new Date().getFullYear(),
       net: c.broadcasts?.[0]?.names?.[0] || "",
       home: {
         name: ho.team?.displayName || "", abbr: ho.team?.abbreviation || "",
