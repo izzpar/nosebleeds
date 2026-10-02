@@ -80,7 +80,8 @@ function rc(r) {
 
 // `grouped`: the list shows a day + kickoff heading above this card, so the
 // card itself doesn't repeat them.
-export default function GameCard({ game: g, logged, myRating, onQuickRate, grouped = false }) {
+// `friends`: ratings from people you follow, [{ name, rating }], best first.
+export default function GameCard({ game: g, logged, myRating, onQuickRate, grouped = false, friends }) {
   const moods = autoMoods(g);
   const live = isLive(g);
   const dateBased = g.sport && g.sport !== "nfl"; // mlb/nba/nhl are shown by date, not week
@@ -196,6 +197,15 @@ export default function GameCard({ game: g, logged, myRating, onQuickRate, group
                 </button>
               </div>
               <Link href={href} className="block text-center text-[10px] text-zinc-500 hover:text-red-400 mt-2">Add a review & details →</Link>
+            </div>
+          )}
+
+          {friends?.length > 0 && (
+            <div className="mt-2 text-xs text-zinc-400 truncate" aria-label="Ratings from people you follow">
+              👥 {friends.slice(0, 3).map((f, i) => (
+                <span key={i}>{i > 0 && " · "}{f.name} <span className="font-bold" style={{ color: rc(f.rating) }}>{f.rating}</span></span>
+              ))}
+              {friends.length > 3 && <span className="text-zinc-500"> +{friends.length - 3}</span>}
             </div>
           )}
 

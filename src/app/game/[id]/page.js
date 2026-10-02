@@ -2,10 +2,11 @@
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import HighlightsCard from "@/components/HighlightsCard";
+import PlayerGrades from "@/components/PlayerGrades";
+import PlayByPlay from "@/components/PlayByPlay";
 import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
-import { emotesFor, nameColor } from "@/lib/drops";
 import { makeRatingCard } from "@/lib/shareCard";
 import { repScore, repTier } from "@/lib/reputation";
 import { Icon } from "@/components/ui";
@@ -527,7 +528,7 @@ function CommentItem({ comment, replies, user, replyingTo, setReplyingTo, replyT
         </Link>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400" style={nameColor(c.profile?.unlocked) ? { color: nameColor(c.profile.unlocked) } : undefined}>
+            <Link href={c.profile?.handle ? `/u/${c.profile.handle}` : "#"} className="text-sm font-bold text-white hover:text-red-400">
               {c.profile?.display_name || (c.profile?.handle ? `@${c.profile.handle}` : "Anonymous")}
             </Link>
             {c.rating != null && (
@@ -706,6 +707,7 @@ export default function GamePage({ params }) {
   const [mvp, setMvp] = useState("");
   const [letdown, setLetdown] = useState("");
   const [mvpSearch, setMvpSearch] = useState("");
+  const [pickTeam, setPickTeam] = useState({ mvp: "all", letdown: "all" }); // player picker team tab
   const [letdownSearch, setLetdownSearch] = useState("");
   const [watchHow, setWatchHow] = useState("");
   const [worthIt, setWorthIt] = useState("");
@@ -972,7 +974,7 @@ export default function GamePage({ params }) {
         if (cancelled) return;
         if (cData && cData.length > 0) {
           const userIds = [...new Set(cData.map(c => c.user_id))];
-          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url,unlocked${favSelect}`);
+          const pRes = await sbFetch(`profiles?user_id=in.(${userIds.join(",")})&select=user_id,handle,display_name,avatar_url${favSelect}`);
           const profiles = await sbJson(pRes);
           const pmap = {};
           (profiles || []).forEach(p => { pmap[p.user_id] = p; });
@@ -1108,8 +1110,7 @@ export default function GamePage({ params }) {
   );
 
   const g = game, a = g.away, h = g.home;
-  // Default reactions + any emote packs this user has unlocked with Drops
-  const reactionPalette = [...new Set([...REACTION_EMOJIS, ...emotesFor(profile?.unlocked)])];
+  const reactionPalette = REACTION_EMOJIS;
 
   // Fandom filter: filter community ratings by selected lens
   const filterByFandom = (items) => {
@@ -1276,7 +1277,7 @@ export default function GamePage({ params }) {
         });
         if (res.ok) {
           const created = (await sbJson(res))[0];
-          const myProf = profile ? { user_id: user.id, handle: profile.handle, display_name: profile.display_name, avatar_url: profile.avatar_url, unlocked: profile.unlocked } : null;
+          const myProf = profile ? { user_id: user.id, handle: profile.handle, display_name: profile.display_name, avatar_url: profile.avatar_url } : null;
           if (created) setComments((prev) => [...prev, { ...created, profile: myProf, reactions: [] }]);
         }
       }
@@ -1626,11 +1627,12 @@ export default function GamePage({ params }) {
         {/* Phase tabs */}
         <div className="flex gap-1 mb-4 bg-zinc-900 p-1 rounded-full">
           {[
-            { id: "pre", l: "📋 Pre-Game" },
-            { id: "live", l: g.isPre ? "🔮 Pre-Game Chat" : g.isFinal ? "💬 Discussion" : "💬 Live Chat", showCount: filteredComments.length > 0 },
-            ...(g.isPre ? [] : [{ id: "post", l: "📊 Post-Game" }])
+            // Short labels: four tabs share one row on phones once a game has started
+            { id: "pre", l: g.isPre ? "📋 Pre-Game" : "📋 Preview" },
+            { id: "live", l: g.isPre ? "🔮 Pre-Game Chat" : "💬 Chat", showCount: filteredComments.length > 0 },
+            ...(g.isPre ? [] : [{ id: "plays", l: "⚡ Plays" }, { id: "post", l: g.isLive ? "📊 Stats" : "📊 Recap" }])
           ].map((p) => (
-            <button key={p.id} onClick={() => setPhase(p.id)} className={`flex-1 py-2 rounded-full text-xs font-semibold transition-all ${phase === p.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>
+            <button key={p.id} onClick={() => setPhase(p.id)} aria-pressed={phase === p.id} className={`flex-1 min-w-0 h-9 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${phase === p.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>
               {p.l}{p.showCount && <span className="ml-1 text-[11px] opacity-80">({filteredComments.length})</span>}
             </button>
           ))}
@@ -1988,9 +1990,19 @@ export default function GamePage({ params }) {
           </div>
         )}
 
+        {/* PLAY-BY-PLAY */}
+        {phase === "plays" && !g.isPre && (
+          <PlayByPlay gameId={id} sport={sport} live={!!g.isLive} away={a} home={h}
+            user={user} sbFetch={sbFetch} sbJson={sbJson} requireAuth={requireAuth} />
+        )}
+
         {/* POST-GAME */}
         {phase === "post" && (
           <div>
+            {g.isFinal && (
+              <PlayerGrades gameId={id} sport={sport} leaders={g.players} away={a} home={h}
+                user={user} sbFetch={sbFetch} sbJson={sbJson} requireAuth={requireAuth} />
+            )}
             {/* Box Score */}
             {(() => {
               // Sport-specific team-stat comparison keys
@@ -2389,14 +2401,18 @@ export default function GamePage({ params }) {
                     ? { sel: "bg-green-500/15 text-green-400 border-green-500/50", dot: "#22c55e" }
                     : { sel: "bg-red-500/15 text-red-400 border-red-500/50", dot: "#ef4444" };
 
-                  // Filter by search, then group by team (away first, home second)
+                  // Team tab narrows the list; a search always looks at both teams.
+                  // Grouped away first, home second.
                   const q = search.trim().toLowerCase();
+                  const tab = pickTeam[kind];
                   const filtered = q
                     ? candidates.filter(c => c.name.toLowerCase().includes(q))
-                    : candidates;
+                    : candidates.filter(c => tab === "all" || c.team === tab);
                   const byTeam = {};
                   filtered.forEach(c => { (byTeam[c.team] = byTeam[c.team] || []).push(c); });
                   const teamOrder = [a.abbr, h.abbr].filter(t => byTeam[t]);
+                  const teamOf = { [a.abbr]: a, [h.abbr]: h };
+                  const countOf = (abbr) => candidates.filter(c => c.team === abbr).length;
 
                   return (
                     <div>
@@ -2418,16 +2434,32 @@ export default function GamePage({ params }) {
                         placeholder="Search players…"
                         className="w-full px-3 py-2 mb-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white text-xs outline-none focus:border-zinc-600 placeholder:text-zinc-600"
                       />
+                      {/* Team tabs — jump straight to either side */}
+                      {!q && (
+                        <div className="flex gap-1 mb-2" role="tablist" aria-label="Team">
+                          {[{ id: "all", label: "Both" }, { id: a.abbr, label: a.abbr, logo: a.logo }, { id: h.abbr, label: h.abbr, logo: h.logo }].map((t) => (
+                            <button key={t.id} role="tab" aria-selected={tab === t.id}
+                              onClick={() => setPickTeam((p) => ({ ...p, [kind]: t.id }))}
+                              className={`flex-1 h-9 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${tab === t.id ? "bg-zinc-800 border-zinc-600 text-white" : "bg-zinc-950 border-zinc-900 text-zinc-500 hover:text-white"}`}>
+                              {t.logo && <img src={t.logo} alt="" className="w-4 h-4 object-contain" />}
+                              {t.label}
+                              {t.id !== "all" && <span className="opacity-60 font-semibold">{countOf(t.id)}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {/* Grouped list */}
-                      <div className="max-h-52 overflow-y-auto rounded-lg bg-zinc-950 border border-zinc-900">
+                      <div className="max-h-64 overflow-y-auto rounded-lg bg-zinc-950 border border-zinc-900">
                         {teamOrder.length === 0 && (
                           <div className="text-xs text-zinc-600 p-3 text-center">No players match "{search}"</div>
                         )}
                         {teamOrder.map((teamAbbr) => (
                           <div key={teamAbbr}>
-                            <div className="sticky top-0 px-3 py-1 bg-zinc-900 text-[11px] font-extrabold tracking-widest uppercase"
-                              style={{ color: byTeam[teamAbbr][0]?.teamColor || "#888" }}>
-                              {teamAbbr}
+                            <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-zinc-900 border-y border-zinc-800 border-l-4"
+                              style={{ borderLeftColor: byTeam[teamAbbr][0]?.teamColor || "#888" }}>
+                              {teamOf[teamAbbr]?.logo && <img src={teamOf[teamAbbr].logo} alt="" className="w-5 h-5 object-contain" />}
+                              <span className="text-xs font-extrabold text-white truncate">{teamOf[teamAbbr]?.name || teamAbbr}</span>
+                              <span className="ml-auto text-[11px] text-zinc-500 shrink-0">{byTeam[teamAbbr].length} players</span>
                             </div>
                             {byTeam[teamAbbr].map((c, i) => {
                               const isSel = selected === c.name;
