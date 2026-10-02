@@ -7,9 +7,9 @@ import TennisCard from "@/components/TennisCard";
 import PullToRefresh from "@/components/PullToRefresh";
 import { fetchTennisMatches } from "@/lib/tennis";
 import { useAuth } from "@/components/AuthProvider";
-import { DROPS, EMOTE_PACKS, NAME_FLAIR, THEMES, dropsEarned, dropsSpent, nameColor } from "@/lib/drops";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
+import GameAlerts from "@/components/GameAlerts";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -112,7 +112,7 @@ async function loadFullRoster(sport, onProgress) {
 
 
 // Each badge's `ck` receives a context: { logs (rated), reviews, sports (Set),
-// streak, rep, drops, mvpPicks }.
+// streak, rep, mvpPicks }.
 const BADGES = [
   { id: "first", n: "First Log", i: "📝", d: "Log your first game", ck: (c) => c.logs.length >= 1 },
   { id: "five", n: "Starting 5", i: "⭐", d: "Log 5 games", ck: (c) => c.logs.length >= 5 },
@@ -132,7 +132,6 @@ const BADGES = [
   { id: "streak7", n: "Unmissable", i: "📆", d: "7-day rating streak", ck: (c) => c.streak >= 7 },
   { id: "vet", n: "Respected", i: "🎯", d: "Reach Veteran reputation", ck: (c) => c.rep >= 200 },
   { id: "allstar", n: "All-Star", i: "🥇", d: "Reach All-Star reputation", ck: (c) => c.rep >= 500 },
-  { id: "roller", n: "High Roller", i: "🩸", d: "Earn 250 Drops", ck: (c) => c.drops >= 250 },
 ];
 
 const TOP_RATERS = [
@@ -402,10 +401,9 @@ function HomeContent() {
   const [logs, setLogs] = useState([]);
   const [pinned, setPinned] = useState([]);
   const [myPredictions, setMyPredictions] = useState([]);
-  const [likesReceived, setLikesReceived] = useState(0); // reactions on this user's comments (Drops + Rep)
+  const [likesReceived, setLikesReceived] = useState(0); // reactions on this user's comments (Rep)
   const [commentsPosted, setCommentsPosted] = useState(0);
   const [followerCount, setFollowerCount] = useState(0);
-  const [buyingDrops, setBuyingDrops] = useState(null);  // pack id currently being purchased
   const [lists, setLists] = useState([]);
   const [listGames, setListGames] = useState({});
   const [selectedListId, setSelectedListId] = useState(null);
@@ -437,6 +435,7 @@ function HomeContent() {
   const [playerSearch, setPlayerSearch] = useState("");
   const [rosterProgress, setRosterProgress] = useState(0);
   const [following, setFollowing] = useState([]);
+  const [friendRatings, setFriendRatings] = useState({}); // gameId -> [{ name, rating }] from people you follow
   const [friendsFeed, setFriendsFeed] = useState([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState([]);
@@ -559,7 +558,7 @@ function HomeContent() {
     return () => { cancelled = true; };
   }, [tab, user]);
 
-  // Reputation/Drops inputs: comments posted, reactions received, followers
+  // Reputation inputs: comments posted, reactions received, followers
   useEffect(() => {
     if (tab !== "profile" || !user) return;
     let cancelled = false;
@@ -686,6 +685,8 @@ function HomeContent() {
         if (data) {
           const mapped = data.map(r => ({
             gameId: r.game_id,
+            anticipation: parseFloat(r.anticipation) || 0,
+            rootingFor: r.rooting_for || "",
             sport: r.sport || "nfl",
             awayTeam: r.away_team || "",
             homeTeam: r.home_team || "",
@@ -1154,6 +1155,30 @@ function HomeContent() {
   const sportRatedLogs = sportLogs.filter(l => l.rating > 0);
 
   const gl = (id) => logs.find((l) => l.gameId === id);
+
+  // Ratings from people you follow, for the games in view (shown on each card).
+  const scopeIds = games.filter(inCurrentScope).map((g) => g.id).slice(0, 60).join(",");
+  useEffect(() => {
+    if (!user || following.length === 0 || !scopeIds) { setFriendRatings({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const ids = following.slice(0, 100).join(",");
+        const rows = await sbJson(await sbFetch(`ratings?user_id=in.(${ids})&game_id=in.(${scopeIds})&public=eq.true&rating=not.is.null&select=user_id,game_id,rating`));
+        if (cancelled) return;
+        if (rows.length === 0) { setFriendRatings({}); return; }
+        const who = [...new Set(rows.map((r) => r.user_id))].join(",");
+        const profs = await sbJson(await sbFetch(`profiles?user_id=in.(${who})&select=user_id,display_name,handle`));
+        if (cancelled) return;
+        const nameOf = Object.fromEntries(profs.map((p) => [p.user_id, (p.display_name || p.handle || "Friend").split(" ")[0]]));
+        const byGame = {};
+        rows.forEach((r) => { (byGame[r.game_id] = byGame[r.game_id] || []).push({ name: nameOf[r.user_id] || "Friend", rating: parseFloat(r.rating) }); });
+        Object.values(byGame).forEach((list) => list.sort((x, y) => y.rating - x.rating));
+        setFriendRatings(byGame);
+      } catch (e) { /* cards just show without friends */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user, following, scopeIds]);
   // For diary: show all rated games even if not in current games list
   const diaryEntries = [...logs].sort((a, b) => (b.week || 0) - (a.week || 0));
 
@@ -1192,13 +1217,7 @@ function HomeContent() {
     } catch (e) { console.error("Quick rate:", e); }
   };
 
-  // 🩸 Drops currency — earned from activity, spent on unlocked emote packs.
-  // `unlocked` only exists once the migration has run; absence = store dormant.
-  const dropsUnlocked = profile?.unlocked || [];
-  const dropsStoreReady = !!profile && "unlocked" in profile;
   const reviewCount = logs.filter((l) => l.review).length;
-  const dropsEarnedTotal = dropsEarned({ ratings: ratedLogs.length, reviews: reviewCount, likes: likesReceived });
-  const dropsBalance = dropsEarnedTotal - dropsSpent(dropsUnlocked);
 
   // Reputation (derived standing). Tier shown on profile + as comment flair.
   const myRep = repScore({ ratings: ratedLogs.length, reviews: reviewCount, comments: commentsPosted, likes: likesReceived, followers: followerCount });
@@ -1224,7 +1243,6 @@ function HomeContent() {
     sports: new Set(ratedLogs.map((l) => l.sport || "nfl")),
     streak: ratingStreak,
     rep: myRep,
-    drops: dropsEarnedTotal,
     mvpPicks: ratedLogs.filter((l) => l.mvp).length,
   };
   const earned = BADGES.filter((b) => b.ck(badgeCtx));
@@ -1237,20 +1255,6 @@ function HomeContent() {
       .filter((l) => l.createdAt && l.createdAt.slice(5, 10) === mmdd && new Date(l.createdAt).getFullYear() < now.getFullYear())
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   })();
-
-  const buyPack = async (pack) => {
-    if (!user) { router.push("/login"); return; }
-    if (!dropsStoreReady || dropsUnlocked.includes(pack.id) || dropsBalance < pack.cost) return;
-    setBuyingDrops(pack.id);
-    try {
-      const res = await sbFetch(`profiles?user_id=eq.${user.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ unlocked: [...dropsUnlocked, pack.id] }),
-      });
-      if (res.ok) await refreshProfile();
-    } catch (e) { console.error("buyPack:", e); }
-    setBuyingDrops(null);
-  };
 
   return (
     <div className="min-h-screen pb-24">
@@ -1301,7 +1305,7 @@ function HomeContent() {
               <div className="text-2xl">👋</div>
               <div className="flex-1">
                 <div className="text-sm font-bold text-white">Welcome to The Nosebleeds!</div>
-                <div className="text-[11px] text-zinc-400 mt-0.5">Pick your favorite teams to personalize your feed and unlock fandom filters.</div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">Pick your teams and their games will show up first, plus fandom filters on every game.</div>
                 <div className="flex gap-2 mt-2.5">
                   <button onClick={() => { setTab("profile"); setShowEditProfile(true); }} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold">Set up profile →</button>
                   <button onClick={dismissOnboard} className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold">Maybe later</button>
@@ -1467,17 +1471,48 @@ function HomeContent() {
               </div>
             )}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
+            <GameAlerts user={user} variant="card" />
+            {/* Nudge: games you hyped or rooted in have finished — rate them while they're fresh */}
+            {user && !loading && (() => {
+              const toRate = games.filter(inCurrentScope).filter((g) => g.isFinal && (() => { const l = gl(g.id); return l && !(l.rating > 0) && (l.anticipation > 0 || l.rootingFor); })());
+              if (toRate.length === 0) return null;
+              return (
+                <div className="rounded-2xl p-3 mb-3 bg-gradient-to-r from-red-900/40 to-zinc-900 border border-red-600/30">
+                  <div className="text-sm font-bold text-white mb-2">⭐ {toRate.length === 1 ? "A game you were into just finished" : `${toRate.length} games you were into have finished`} — rate {toRate.length === 1 ? "it" : "them"}</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {toRate.slice(0, 6).map((g) => (
+                      <Link key={g.id} href={gameHref(g.id, g.sport, g.gameDate)} className="h-9 px-3 rounded-full bg-zinc-950 border border-zinc-800 hover:border-red-600/50 text-xs font-bold text-white flex items-center gap-1.5">
+                        {g.away?.abbr} {g.away?.score}–{g.home?.score} {g.home?.abbr} <span className="text-red-400">Rate →</span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {(() => {
               const byKickoff = sport === "nfl" && sort === "date";
-              const card = (g) => g.sport === "tennis"
+              const card = (g, grouped = byKickoff) => g.sport === "tennis"
                 ? <TennisCard key={g.id} match={g} logged={!!(gl(g.id) && gl(g.id).rating > 0)} />
-                : <GameCard key={g.id} game={g} grouped={byKickoff} logged={!!(gl(g.id) && gl(g.id).rating > 0)}
+                : <GameCard key={g.id} game={g} grouped={grouped} logged={!!(gl(g.id) && gl(g.id).rating > 0)}
                     myRating={user ? (gl(g.id)?.rating > 0 ? gl(g.id).rating : null) : null}
+                    friends={friendRatings[g.id]}
                     onQuickRate={user ? quickRate : null} />;
-              if (!byKickoff) return filtered.map(card);
+              // Your favorite team's games go first (in "by time" order)
+              const fav = user && profile && hasTeams ? profile[favKey(sport)] : "";
+              const mine = fav && sort === "date" ? filtered.filter((g) => g.away?.abbr === fav || g.home?.abbr === fav) : [];
+              const rest = mine.length ? filtered.filter((g) => !mine.includes(g)) : filtered;
+              const yourTeam = mine.length > 0 && (
+                <section key="your-team" aria-label="Your team">
+                  <h3 className="flex items-baseline justify-between gap-2 px-1 mb-2 mt-1 text-xs font-bold text-red-300">
+                    <span>★ Your team · {teamName(sport, fav)}</span>
+                  </h3>
+                  {mine.map((g) => card(g, false))}
+                </section>
+              );
+              if (!byKickoff) return [yourTeam, ...rest.map((g) => card(g))];
               // NFL by time: one heading per kickoff slot (TNF, Sunday early/late, SNF, MNF...)
               const groups = [];
-              [...filtered].sort((x, y) => (x.startISO || "").localeCompare(y.startISO || "")).forEach((g) => {
+              [...rest].sort((x, y) => (x.startISO || "").localeCompare(y.startISO || "")).forEach((g) => {
                 const dt = new Date(g.startISO);
                 const ok = !isNaN(dt.getTime());
                 const key = ok ? `${dt.toDateString()} ${dt.getHours()}:${dt.getMinutes()}` : "tbd";
@@ -1485,15 +1520,15 @@ function HomeContent() {
                 if (last && last.key === key) last.games.push(g);
                 else groups.push({ key, games: [g], label: ok ? `${dt.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })} · ${dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : "Time TBD" });
               });
-              return groups.map((grp) => (
+              return [yourTeam, ...groups.map((grp) => (
                 <section key={grp.key} aria-label={grp.label}>
                   <h3 className="flex items-baseline justify-between gap-2 px-1 mb-2 mt-1 text-xs font-bold text-zinc-300">
                     <span>{grp.label}</span>
                     <span className="text-[11px] font-semibold text-zinc-500 shrink-0">{grp.games.length} {grp.games.length === 1 ? "game" : "games"}</span>
                   </h3>
-                  {grp.games.map(card)}
+                  {grp.games.map((g) => card(g))}
                 </section>
-              ));
+              ))];
             })()}
           </div>
         )}
@@ -2005,7 +2040,7 @@ function HomeContent() {
                 </div>
                 {/* Name & handle */}
                 <div className="text-center mb-1">
-                  <div className="text-xl font-extrabold" style={{ color: nameColor(profile?.unlocked) || "#fafafa" }}>{profile?.display_name || user?.user_metadata?.full_name || "User"}</div>
+                  <div className="text-xl font-extrabold" style={{ color: "#fafafa" }}>{profile?.display_name || user?.user_metadata?.full_name || "User"}</div>
                   {profile?.handle ? (
                     <div className="text-sm text-red-400 mt-0.5">@{profile.handle}</div>
                   ) : (
@@ -2061,6 +2096,7 @@ function HomeContent() {
                     ✏️ Edit Profile
                   </button>
                 </div>
+                <GameAlerts user={user} />
                 <Link href="/about" className="block w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all text-center">ℹ️ How It Works</Link>
                 <button onClick={async () => { await signOut(); router.push("/login"); }} className="w-full mt-2 py-2 rounded-xl bg-zinc-950 text-zinc-500 text-xs font-semibold hover:bg-zinc-800 hover:text-zinc-300 transition-all">Sign Out</button>
               </div>
@@ -2153,104 +2189,6 @@ function HomeContent() {
                 ))}
               </div>
               <div className="text-[11px] text-zinc-600 mt-2">Earn Cred from rating games, writing reviews, and the likes your comments get.</div>
-            </div>
-
-            {/* 🩸 Drops — currency + emote store */}
-            <div className="rounded-2xl p-4 bg-gradient-to-br from-red-950/40 via-zinc-900 to-zinc-900 border border-zinc-800 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-base font-bold text-white">🩸 Drops</h3>
-                <div className="text-right">
-                  <div className="text-2xl font-extrabold text-white leading-none">{dropsBalance.toLocaleString()}</div>
-                  <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">Balance</div>
-                </div>
-              </div>
-              {/* Earning breakdown */}
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                {[
-                  { v: ratedLogs.length, l: "Ratings", sub: `+${DROPS.perRating} ea` },
-                  { v: reviewCount, l: "Reviews", sub: `+${DROPS.perReview} ea` },
-                  { v: likesReceived, l: "Likes", sub: `+${DROPS.perLike} ea` },
-                ].map((s) => (
-                  <div key={s.l} className="rounded-xl bg-zinc-950 p-2.5 text-center">
-                    <div className="text-lg font-extrabold text-white">{s.v}</div>
-                    <div className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase">{s.l}</div>
-                    <div className="text-[10px] text-red-400/80 font-semibold">{s.sub}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Emote Store</div>
-              <div className="space-y-2">
-                {EMOTE_PACKS.map((pack) => {
-                  const owned = dropsUnlocked.includes(pack.id);
-                  const affordable = dropsBalance >= pack.cost;
-                  return (
-                    <div key={pack.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-zinc-950">
-                      <div className="text-xl shrink-0">{pack.emoji}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-white">{pack.name}</div>
-                        <div className="text-sm tracking-wide">{pack.emotes.join(" ")}</div>
-                      </div>
-                      <button
-                        onClick={() => buyPack(pack)}
-                        disabled={owned || !dropsStoreReady || !affordable || buyingDrops === pack.id}
-                        className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${owned ? "bg-green-600/15 text-green-400" : affordable && dropsStoreReady ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-800 text-zinc-500"}`}
-                      >
-                        {owned ? "✓ Owned" : buyingDrops === pack.id ? "…" : `🩸 ${pack.cost}`}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="text-[11px] text-zinc-600 mt-2">Unlocked emotes become extra reactions on game comments.</div>
-
-              {/* Name flair */}
-              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Name Flair</div>
-              <div className="flex flex-wrap gap-2">
-                {NAME_FLAIR.map((f) => {
-                  const owned = dropsUnlocked.includes(f.id);
-                  const affordable = dropsBalance >= f.cost;
-                  return (
-                    <button
-                      key={f.id}
-                      onClick={() => buyPack(f)}
-                      disabled={owned || !dropsStoreReady || !affordable || buyingDrops === f.id}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${owned ? "border-current" : "border-zinc-800 bg-zinc-950"}`}
-                      style={{ color: f.color }}
-                    >
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: f.color }} />
-                      {f.name}
-                      <span className="text-[11px] text-zinc-500">{owned ? "✓" : `🩸${f.cost}`}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="text-[11px] text-zinc-600 mt-2">Your priciest unlocked flair colors your name everywhere.</div>
-
-              {/* Accent themes */}
-              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mt-4 mb-2">Accent Theme</div>
-              <div className="flex flex-wrap gap-2">
-                {THEMES.map((t) => {
-                  const owned = dropsUnlocked.includes(t.id);
-                  const affordable = dropsBalance >= t.cost;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => buyPack(t)}
-                      disabled={owned || !dropsStoreReady || !affordable || buyingDrops === t.id}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all border-zinc-800 bg-zinc-950"
-                      style={{ color: t.color }}
-                    >
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-                      {t.name}
-                      <span className="text-[11px] text-zinc-500">{owned ? "✓" : `🩸${t.cost}`}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="text-[11px] text-zinc-600 mt-2">Recolors the app&apos;s accent. Priciest unlocked theme wins.</div>
-              {!dropsStoreReady && (
-                <div className="text-[11px] text-orange-400/80 mt-1">Spending activates once the Drops migration is run.</div>
-              )}
             </div>
 
             {/* Pinned */}

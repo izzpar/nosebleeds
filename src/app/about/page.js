@@ -1,7 +1,6 @@
 "use client";
 import Link from "next/link";
 import Nav from "@/components/Nav";
-import { DROPS, EMOTE_PACKS, NAME_FLAIR } from "@/lib/drops";
 import { REP, REP_TIERS } from "@/lib/reputation";
 
 function Section({ emoji, title, children }) {
@@ -70,46 +69,11 @@ export default function AboutPage() {
           </p>
         </Section>
 
-        {/* Drops */}
-        <Section emoji="🩸" title="Drops — the currency">
-          <p>
-            <strong className="text-white">Drops</strong> are what you earn for being active. Spend them
-            in the store on your <Link href="/?tab=profile" className="text-red-400">profile</Link>.
-          </p>
-          <div className="grid grid-cols-3 gap-2 my-3">
-            {[
-              { n: `+${DROPS.perRating}`, l: "per rating" },
-              { n: `+${DROPS.perReview}`, l: "per review" },
-              { n: `+${DROPS.perLike}`, l: "per like received" },
-            ].map((x) => (
-              <div key={x.l} className="rounded-xl bg-zinc-950 p-3 text-center">
-                <div className="text-xl font-extrabold text-red-400">{x.n}</div>
-                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{x.l}</div>
-              </div>
-            ))}
-          </div>
-          <p className="font-bold text-white">Spend them on:</p>
-          <ul className="space-y-1">
-            {EMOTE_PACKS.map((p) => (
-              <li key={p.id} className="flex items-center justify-between">
-                <span>{p.emoji} {p.name} <span className="text-zinc-600">— extra comment reactions</span></span>
-                <span className="text-zinc-500 font-bold shrink-0">🩸{p.cost}</span>
-              </li>
-            ))}
-            {NAME_FLAIR.map((f) => (
-              <li key={f.id} className="flex items-center justify-between">
-                <span style={{ color: f.color }} className="font-bold">{f.name} name color</span>
-                <span className="text-zinc-500 font-bold shrink-0">🩸{f.cost}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-
         {/* Reputation */}
         <Section emoji="🏅" title="Reputation (Cred)">
           <p>
             <strong className="text-white">Cred</strong> is your permanent standing in the community.
-            Unlike Drops, you can't spend it — it just reflects how much you contribute and how much
+            It just reflects how much you contribute and how much
             people value your takes. Earn it from:
           </p>
           <div className="grid grid-cols-5 gap-1.5 my-3 text-center">

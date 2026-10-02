@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import Nav from "@/components/Nav";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
-import { nameColor } from "@/lib/drops";
 
 function rc(r) {
   if (r >= 9) return "#22c55e";
@@ -191,7 +190,7 @@ export default function PublicProfile({ params }) {
               {(profile.display_name || profile.handle || "?")[0].toUpperCase()}
             </div>
           )}
-          <div className="text-xl font-extrabold" style={{ color: nameColor(profile.unlocked) || "#fafafa" }}>{profile.display_name || profile.handle}</div>
+          <div className="text-xl font-extrabold" style={{ color: "#fafafa" }}>{profile.display_name || profile.handle}</div>
           <div className="text-sm text-red-400 mt-0.5">@{profile.handle}</div>
           <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 py-1 rounded-full" style={{ background: tier.color + "22", color: tier.color }}>
             {tier.emoji} {tier.name} · {repPts.toLocaleString()} Cred
