@@ -453,14 +453,14 @@ async function fetchGameForSport(id, sport) {
       week: d.header?.week || 0, season: d.header?.season?.year || new Date().getFullYear(),
       net: c.broadcasts?.[0]?.names?.[0] || "",
       home: {
-        name: ho.team?.displayName || "", abbr: ho.team?.abbreviation || "",
+        name: ho.team?.displayName || "", nick: ho.team?.name || "", abbr: ho.team?.abbreviation || "",
         color: "#" + (ho.team?.color || "333"), logo: ho.team?.logos?.[0]?.href || "",
         record: ho.record?.[0]?.displayValue || "", score: parseInt(ho.score) || 0,
         q: (ho.linescores || []).map((q) => q.displayValue),
         leaders: players.filter((p) => p.tm === ho.team?.abbreviation).slice(0, 3),
       },
       away: {
-        name: aw.team?.displayName || "", abbr: aw.team?.abbreviation || "",
+        name: aw.team?.displayName || "", nick: aw.team?.name || "", abbr: aw.team?.abbreviation || "",
         color: "#" + (aw.team?.color || "333"), logo: aw.team?.logos?.[0]?.href || "",
         record: aw.record?.[0]?.displayValue || "", score: parseInt(aw.score) || 0,
         q: (aw.linescores || []).map((q) => q.displayValue),
@@ -1130,7 +1130,12 @@ export default function GamePage({ params }) {
   const allAvg = allCommunityRatings.length > 0 ? allCommunityRatings.reduce((s, r) => s + parseFloat(r.rating), 0) / allCommunityRatings.length : null;
   const isHotTake = logged && allCommunityRatings.length >= 3 && allAvg != null && Math.abs(rating - allAvg) >= 3;
   const leagueLabel = { nfl: "NFL", mlb: "MLB", nba: "NBA", nhl: "NHL" }[sport] || "";
-  const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(sport === "nfl" ? `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL` : `${a.name} vs ${h.name} ${g.season} highlights ${leagueLabel}`)}`;
+  const highlightsHref = `/api/highlights?${new URLSearchParams({
+    sport,
+    q: sport === "nfl" ? `${a.name} vs ${h.name} Week ${g.week} ${g.season} highlights NFL` : `${a.name} vs ${h.name} ${g.season} highlights ${leagueLabel}`,
+    teams: `${a.nick},${h.nick}`,
+    start: g.date || "",
+  })}`;
   const steps = ["Rating", "Details", "MVP", "Extras"];
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/game/${id}` : "";
   const shareText = `I rated ${a.abbr} ${a.score} - ${h.abbr} ${h.score} ${logged ? `a ${rating}/10` : ""} on The Nosebleeds 🩸`;
@@ -2023,13 +2028,13 @@ export default function GamePage({ params }) {
         {phase === "post" && (
           <div>
             {g.isFinal && (
-              <div onClick={() => window.open(ytUrl, "_blank")} className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 hover:-translate-y-0.5 transition-transform cursor-pointer">
+              <a href={highlightsHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 hover:-translate-y-0.5 transition-transform">
                 <div className="w-12 h-9 rounded-lg bg-red-600 flex items-center justify-center text-xl shrink-0">▶</div>
                 <div>
                   <div className="text-sm font-bold text-white">Watch Highlights</div>
                   <div className="text-xs text-zinc-500">{a.abbr} vs {h.abbr}{sport === "nfl" ? ` Week ${g.week}` : ""} highlights on YouTube</div>
                 </div>
-              </div>
+              </a>
             )}
 
             {/* Box Score */}
