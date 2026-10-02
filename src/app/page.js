@@ -313,8 +313,11 @@ function HomeContent() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0); // bumped by pull-to-refresh to re-run the games load effect
   const [sport, setSportInternal] = useState("nfl"); // nfl | mlb | nba | nhl | tennis
-  const [week, setWeek] = useState(18);
-  const [year, setYear] = useState(2024);
+  // NFL week/season — synced to ESPN's live scoreboard by the effect below.
+  // Fallback guess until it answers: the season year rolls over in March.
+  const [week, setWeek] = useState(1);
+  const [year, setYear] = useState(() => { const d = new Date(); return d.getMonth() >= 2 ? d.getFullYear() : d.getFullYear() - 1; });
+  const [nflSynced, setNflSynced] = useState(false);
   // Date-based sports (MLB/NBA/NHL) use a date string YYYY-MM-DD instead of week/year
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
@@ -345,6 +348,25 @@ function HomeContent() {
         if (VALID_SPORTS.includes(saved)) { s = saved; setSportInternal(saved); setProfileSport(saved); }
       } catch (e) {}
     }
+  }, []);
+  // Point the NFL feed at the live season + week. ESPN's bare scoreboard
+  // reports both; outside the regular season, clamp into its nearest week.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.nfl}/scoreboard`);
+        const d = await r.json();
+        if (cancelled) return;
+        if (d?.season?.year) setYear(d.season.year);
+        const w = d?.week?.number;
+        if (d?.season?.type === 2 && w >= 1 && w <= 18) setWeek(w);
+        else if (d?.season?.type === 1) setWeek(1); // preseason → upcoming week 1
+        else setWeek(18); // post/offseason → final regular-season week
+      } catch (e) { /* keep the guessed defaults */ }
+      if (!cancelled) setNflSynced(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
@@ -461,14 +483,14 @@ function HomeContent() {
     }
   };
 
-  const weeks = [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-  const years = [2024, 2023, 2022, 2021, 2020];
+  const weeks = Array.from({ length: 18 }, (_, i) => i + 1); // current season only
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
       if (sport === "nfl") {
+        if (!nflSynced) return; // hold until the live-week sync answers (keeps the spinner up)
         const data = await fetchNflWeek(year, week);
         if (cancelled) return;
         setGames((prev) => [...prev.filter((g) => !(g.sport === "nfl" && g.week === week && g.season === year)), ...data]);
@@ -486,7 +508,7 @@ function HomeContent() {
     }
     load();
     return () => { cancelled = true; };
-  }, [sport, week, year, selectedDate, refreshKey]);
+  }, [sport, week, year, selectedDate, refreshKey, nflSynced]);
 
   useEffect(() => {
     const urlTab = searchParams.get("tab");
@@ -1377,14 +1399,8 @@ function HomeContent() {
 
             {sport === "nfl" && (
               <>
-                <div className="flex gap-2 mb-2">
-                  {years.map((y) => (
-                    <button key={y} onClick={() => setYear(y)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${year === y ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-500"}`}>{y}</button>
-                  ))}
-                </div>
-
-                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
+                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 items-center">
+                  <span className="px-3 py-1.5 rounded-full text-xs font-bold shrink-0 bg-zinc-900 text-zinc-400 border border-zinc-800">{year}</span>
                   {weeks.map((w) => (
                     <button key={w} onClick={() => setWeek(w)}
                       className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${week === w ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>{w}</button>
