@@ -201,7 +201,13 @@ export default function TennisMatchPage({ params }) {
   );
 
   const m = match;
-  const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(`${m.p1.name} vs ${m.p2.name} ${m.tournament} highlights tennis`)}`;
+  const lastName = (n) => n.trim().split(/\s+/).pop();
+  const highlightsHref = `/api/highlights?${new URLSearchParams({
+    sport: "tennis",
+    q: `${m.p1.name} vs ${m.p2.name} ${m.tournament} highlights tennis`,
+    teams: `${lastName(m.p1.name)},${lastName(m.p2.name)}`,
+    start: m.startISO || "",
+  })}`;
   const r1 = rootingCounts[m.p1.name] || 0;
   const r2 = rootingCounts[m.p2.name] || 0;
   const totalRoot = r1 + r2;
@@ -330,7 +336,7 @@ export default function TennisMatchPage({ params }) {
 
         {/* Highlights */}
         {m.isFinal && (
-          <a href={ytUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 hover:-translate-y-0.5 transition-transform">
+          <a href={highlightsHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 hover:-translate-y-0.5 transition-transform">
             <div className="w-12 h-9 rounded-lg bg-red-600 flex items-center justify-center text-xl shrink-0">▶</div>
             <div>
               <div className="text-sm font-bold text-white">Watch Highlights</div>

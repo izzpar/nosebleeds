@@ -31,6 +31,7 @@ function shapeMatch(comp, tournament, group, league, dateStr) {
     league,
     sport: "tennis",
     gameDate: dateStr,
+    startISO: comp.date || "",
     tournament,
     group,
     round: comp.round?.displayName || "",

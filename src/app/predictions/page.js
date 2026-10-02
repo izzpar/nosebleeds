@@ -54,7 +54,7 @@ export default function PredictionsPage() {
   // persist sport choice + view mode
   useEffect(() => {
     try {
-      const s = localStorage.getItem("nb_sport");
+      const s = sessionStorage.getItem("nb_sport");
       if (VALID_SPORTS.includes(s)) setSport(s);
       const vm = localStorage.getItem("nb_predict_view");
       if (vm === "fun" || vm === "units") setViewMode(vm);

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import GameCard from "@/components/GameCard";
@@ -335,21 +335,21 @@ function HomeContent() {
     setProfileSport(s);
     setMyTeams([]); // clear team filter - different teams per sport
     setGameStatus("all");
-    try { localStorage.setItem("nb_sport", s); } catch (e) {}
+    try { sessionStorage.setItem("nb_sport", s); } catch (e) {}
   };
   useEffect(() => {
-    let s = "nfl";
-    // An explicit ?sport= in the URL wins over the last-used sport saved in localStorage.
+    // Every fresh visit opens on NFL. An explicit ?sport= wins, and the sport
+    // picked during this visit survives trips into a game and back.
+    try { localStorage.removeItem("nb_sport"); } catch (e) {} // pre-sessionStorage leftover
     let fromUrl = null;
     try { fromUrl = new URLSearchParams(window.location.search).get("sport"); } catch (e) {}
     if (VALID_SPORTS.includes(fromUrl)) {
-      s = fromUrl;
       setSportInternal(fromUrl); setProfileSport(fromUrl);
-      try { localStorage.setItem("nb_sport", fromUrl); } catch (e) {}
+      try { sessionStorage.setItem("nb_sport", fromUrl); } catch (e) {}
     } else {
       try {
-        const saved = localStorage.getItem("nb_sport");
-        if (VALID_SPORTS.includes(saved)) { s = saved; setSportInternal(saved); setProfileSport(saved); }
+        const saved = sessionStorage.getItem("nb_sport");
+        if (VALID_SPORTS.includes(saved)) { setSportInternal(saved); setProfileSport(saved); }
       } catch (e) {}
     }
   }, []);
@@ -489,6 +489,16 @@ function HomeContent() {
   };
 
   const weeks = Array.from({ length: 18 }, (_, i) => i + 1);
+  // Keep the selected week centered in its scroll row — from ~Week 11 on it
+  // would otherwise sit off-screen on phones. Scrolls the row only, never the page.
+  const weekRowRef = useRef(null);
+  useEffect(() => {
+    const row = weekRowRef.current;
+    const btn = row?.querySelector('[data-active-week="true"]');
+    if (!row || !btn) return;
+    const left = btn.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - (row.clientWidth - btn.clientWidth) / 2;
+    row.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [week, year, sport, tab]);
   const nflSeasons = [liveSeason, liveSeason - 1]; // current + last season only
   // Last season opens on its final week; the current season on the live week.
   const pickSeason = (y) => { setYear(y); setWeek(y === liveSeason ? liveWeek : 18); };
@@ -1414,9 +1424,9 @@ function HomeContent() {
                   ))}
                 </div>
 
-                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
+                <div ref={weekRowRef} className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
                   {weeks.map((w) => (
-                    <button key={w} onClick={() => setWeek(w)}
+                    <button key={w} onClick={() => setWeek(w)} data-active-week={week === w}
                       className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${week === w ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>{w}</button>
                   ))}
                 </div>
