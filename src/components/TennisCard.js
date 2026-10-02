@@ -33,18 +33,18 @@ export default function TennisCard({ match: m, logged }) {
         <div className="p-3.5">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[10px] font-bold text-zinc-500 tracking-wide uppercase truncate">
+              <span className="text-[11px] font-bold text-zinc-500 tracking-wide uppercase truncate">
                 {m.tournament}{m.group ? ` · ${m.group}` : ""}{m.round ? ` · ${m.round}` : ""}
               </span>
             </div>
             <div className="flex gap-1 shrink-0">
-              {live && <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">🔴 {m.statusDetail || "LIVE"}</span>}
-              {logged && <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-bold">✓</span>}
+              {live && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">🔴 {m.statusDetail || "LIVE"}</span>}
+              {logged && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-bold">✓</span>}
             </div>
           </div>
           <Row p={m.p1} />
           <Row p={m.p2} />
-          <div className="text-[9px] text-zinc-600 mt-2">{m.isPre ? m.date : m.shortDate}{m.net ? ` · ${m.net}` : ""}</div>
+          <div className="text-[10px] text-zinc-600 mt-2">{m.isPre ? m.date : m.shortDate}{m.net ? ` · ${m.net}` : ""}</div>
         </div>
       </div>
     </Link>

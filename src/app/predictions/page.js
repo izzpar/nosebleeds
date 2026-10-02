@@ -418,16 +418,20 @@ export default function PredictionsPage() {
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link href="/?tab=games" className="text-zinc-400 hover:text-white text-sm font-medium">← Back</Link>
           <h1 className="text-sm font-bold text-white flex-1 flex items-center justify-center gap-1.5"><Icon name="target" className="w-4 h-4 text-red-500" /> Predictions</h1>
-          {/* Sport switcher */}
-          <div className="flex gap-0.5 p-0.5 rounded-full bg-zinc-900 border border-zinc-800">
-            {SPORTS.map((s) => (
-              <button key={s.id} onClick={() => setSport(s.id)} className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-500"}`}>{s.emoji}</button>
-            ))}
-          </div>
+          <span className="w-12" aria-hidden="true" />
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-4">
+      <div className="max-w-2xl mx-auto px-4 pt-3">
+        {/* Sport tabs — labelled, matching the home page */}
+        <div className="flex gap-1 p-1 mb-3 rounded-2xl bg-zinc-900 border border-zinc-800" role="tablist" aria-label="Sport">
+          {SPORTS.map((s) => (
+            <button key={s.id} role="tab" aria-selected={sport === s.id} onClick={() => setSport(s.id)}
+              className={`flex-1 min-w-0 h-10 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1 transition-all ${sport === s.id ? "bg-red-600 text-white" : "text-zinc-400 hover:text-white"}`}>
+              <span aria-hidden="true">{s.emoji}</span><span className="truncate">{s.label}</span>
+            </button>
+          ))}
+        </div>
         {/* Fun ⇄ Units toggle */}
         <div className="flex gap-1 p-1 rounded-full bg-zinc-900 border border-zinc-800 mb-3 w-fit mx-auto">
           <button
@@ -448,7 +452,7 @@ export default function PredictionsPage() {
         <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-red-900/40 via-zinc-900 to-zinc-900 border border-zinc-800 p-4 mb-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-[10px] font-bold text-red-400 tracking-widest uppercase">Your Pick'em Record</div>
+              <div className="text-[11px] font-bold text-red-400 tracking-widest uppercase">Your Pick'em Record</div>
               <div className="text-2xl font-extrabold text-white mt-0.5">
                 {wins}-{losses}{pushes > 0 && `-${pushes}`}
               </div>
@@ -457,22 +461,22 @@ export default function PredictionsPage() {
               {viewMode === "units" && (
                 <Link href="/predictions/breakdown" className="text-right hover:opacity-80 transition-opacity">
                   <div className="text-2xl font-extrabold" style={{ color: totalUnits > 0 ? "#22c55e" : totalUnits < 0 ? "#ef4444" : "#a1a1aa" }}>{unitsStr}u</div>
-                  <div className="text-[9px] text-zinc-500 font-bold tracking-wider">UNITS ›</div>
+                  <div className="text-[10px] text-zinc-500 font-bold tracking-wider">UNITS ›</div>
                 </Link>
               )}
               <div className="text-right">
                 <div className="text-2xl font-extrabold" style={{ color: winPct >= 50 ? "#22c55e" : "#ef4444" }}>{winPct}%</div>
-                <div className="text-[9px] text-zinc-500 font-bold tracking-wider">WIN RATE</div>
+                <div className="text-[10px] text-zinc-500 font-bold tracking-wider">WIN RATE</div>
               </div>
             </div>
           </div>
           {pendingPicks.length > 0 && (
             <div className="flex items-center justify-between mt-2">
-              <span className="text-[10px] text-zinc-500">{pendingPicks.length} pick{pendingPicks.length === 1 ? "" : "s"} awaiting results</span>
+              <span className="text-[11px] text-zinc-500">{pendingPicks.length} pick{pendingPicks.length === 1 ? "" : "s"} awaiting results</span>
               <button
                 onClick={handleCheckResults}
                 disabled={checking}
-                className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+                className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
               >
                 <Icon name="refresh" className={`w-3 h-3 ${checking ? "animate-spin" : ""}`} /> {checking ? "Checking…" : "Check results"}
               </button>
@@ -488,8 +492,8 @@ export default function PredictionsPage() {
           <div className="rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-orange-900/50 via-zinc-900 to-zinc-900 border border-orange-600/30 hover:border-orange-600 transition-all">
             <Icon name="flame" className="w-7 h-7 text-orange-500 shrink-0" />
             <div className="flex-1">
-              <div className="text-sm font-bold text-white">Beat the Streak <span className="text-[9px] font-bold text-orange-400/80">🏈⚾🏀🏒</span></div>
-              <div className="text-[10px] text-zinc-400">Pick a team to win (or an MLB hitter to get a hit). One pick a day — how long can you keep it alive?</div>
+              <div className="text-sm font-bold text-white">Beat the Streak <span className="text-[10px] font-bold text-orange-400/80">🏈⚾🏀🏒</span></div>
+              <div className="text-[11px] text-zinc-400">Pick a team to win (or an MLB hitter to get a hit). One pick a day — how long can you keep it alive?</div>
             </div>
             <span className="text-orange-400 text-sm font-bold">Play →</span>
           </div>
@@ -524,8 +528,8 @@ export default function PredictionsPage() {
                   <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${g.away.color} 50%, ${g.home.color} 50%)` }} />
                   <div className="p-3.5">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{fmtGameTime(g.date)}</span>
-                      {pick && <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-bold inline-flex items-center gap-0.5"><Icon name="check" className="w-2.5 h-2.5" strokeWidth={3} /> Your Pick</span>}
+                      <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">{fmtGameTime(g.date)}</span>
+                      {pick && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-bold inline-flex items-center gap-0.5"><Icon name="check" className="w-2.5 h-2.5" strokeWidth={3} /> Your Pick</span>}
                     </div>
 
                     {/* Teams — tap to open the game page */}
@@ -534,10 +538,10 @@ export default function PredictionsPage() {
                         <div key={i} className={`flex items-center gap-2 ${i === 0 ? "" : "flex-row-reverse"}`}>
                           {t.logo
                             ? <img src={t.logo} alt={t.abbr} className="w-8 h-8 object-contain" />
-                            : <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[9px] font-bold text-white" style={{ background: t.color }}>{t.abbr}</div>}
+                            : <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold text-white" style={{ background: t.color }}>{t.abbr}</div>}
                           <div className={i === 0 ? "" : "text-right"}>
                             <div className="text-sm font-bold text-white">{t.abbr}</div>
-                            <div className="text-[9px] text-zinc-500">{t.record}</div>
+                            <div className="text-[10px] text-zinc-500">{t.record}</div>
                           </div>
                         </div>
                       ))}
@@ -545,7 +549,7 @@ export default function PredictionsPage() {
 
                     {/* Winner pick */}
                     <div className="mb-2">
-                      <div className="text-[9px] font-bold text-zinc-600 tracking-widest uppercase mb-1">Pick the winner</div>
+                      <div className="text-[10px] font-bold text-zinc-600 tracking-widest uppercase mb-1">Pick the winner</div>
                       <div className="flex gap-2">
                         {[g.away, g.home].map((t, i) => {
                           const selected = pick?.pick_type === "winner" && pick?.pick_value === t.abbr;
@@ -558,7 +562,7 @@ export default function PredictionsPage() {
                               className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition-all ${selected ? "bg-green-500/15 text-green-400 border-green-500/50" : "bg-zinc-950 text-zinc-400 border-transparent hover:border-zinc-700"}`}
                             >
                               {t.abbr}
-                              {ml != null && <span className="block text-[10px] font-semibold opacity-70 mt-0.5">ML {fmtML(ml)}</span>}
+                              {ml != null && <span className="block text-[11px] font-semibold opacity-70 mt-0.5">ML {fmtML(ml)}</span>}
                             </button>
                           );
                         })}
@@ -568,7 +572,7 @@ export default function PredictionsPage() {
                     {/* ATS pick — only if a spread is available */}
                     {viewMode === "units" && g.spread != null && g.favAbbr && (
                       <div>
-                        <div className="text-[9px] font-bold text-zinc-600 tracking-widest uppercase mb-1">
+                        <div className="text-[10px] font-bold text-zinc-600 tracking-widest uppercase mb-1">
                           Against the spread
                         </div>
                         <div className="flex gap-2">
@@ -586,7 +590,7 @@ export default function PredictionsPage() {
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition-all ${selected ? "bg-green-500/15 text-green-400 border-green-500/50" : "bg-zinc-950 text-zinc-400 border-transparent hover:border-zinc-700"}`}
                               >
                                 {t.abbr} {lineLabel}
-                                <span className="block text-[10px] font-semibold opacity-70 mt-0.5">{so != null ? fmtML(so) : "-110"}</span>
+                                <span className="block text-[11px] font-semibold opacity-70 mt-0.5">{so != null ? fmtML(so) : "-110"}</span>
                               </button>
                             );
                           })}
@@ -595,7 +599,7 @@ export default function PredictionsPage() {
                     )}
 
                     {pick && (
-                      <div className="text-[10px] text-zinc-500 mt-2 text-center">
+                      <div className="text-[11px] text-zinc-500 mt-2 text-center">
                         Your pick: <span className="text-green-400 font-bold">{pick.pick_label}</span> · locks at {startTerm(g.sport)}
                       </div>
                     )}
@@ -621,19 +625,19 @@ export default function PredictionsPage() {
 
             {!picksLoading && pendingPicks.length > 0 && (
               <>
-                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">⏳ Pending ({pendingPicks.length})</div>
+                <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2">⏳ Pending ({pendingPicks.length})</div>
                 {pendingPicks.map(p => {
                   const href = gameHref(p.game_id, p.sport);
                   return (
                     <Link key={p.id} href={href} className="flex items-center gap-3 p-3 rounded-xl mb-2 bg-zinc-900 border border-zinc-800 hover:border-red-600/40 transition-colors">
                       <div className="flex-1">
                         <div className="text-sm font-bold text-white">{p.pick_label}</div>
-                        <div className="text-[10px] text-zinc-500">
+                        <div className="text-[11px] text-zinc-500">
                           {sportEmoji(p.sport)} {p.pick_type === "ats" ? "Against the spread" : "Moneyline"}
                           {p.locks_at && ` · locks ${fmtGameTime(p.locks_at)}`}
                         </div>
                       </div>
-                      <span className="text-[9px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-400 font-bold">PENDING</span>
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-400 font-bold">PENDING</span>
                     </Link>
                   );
                 })}
@@ -642,7 +646,7 @@ export default function PredictionsPage() {
 
             {!picksLoading && settledPicks.length > 0 && (
               <>
-                <div className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2 mt-4 flex items-center gap-1.5"><Icon name="list" className="w-3 h-3" /> Settled ({settledPicks.length})</div>
+                <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase mb-2 mt-4 flex items-center gap-1.5"><Icon name="list" className="w-3 h-3" /> Settled ({settledPicks.length})</div>
                 {settledPicks.map(p => {
                   const c = p.status === "won" ? { bg: "bg-green-500/15", tx: "text-green-400", lbl: "WON", icon: "check" }
                     : p.status === "lost" ? { bg: "bg-red-500/15", tx: "text-red-400", lbl: "LOST", icon: "x" }
@@ -654,7 +658,7 @@ export default function PredictionsPage() {
                       <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm font-extrabold shrink-0 ${c.bg} ${c.tx}`}>{c.icon ? <Icon name={c.icon} className="w-4 h-4" strokeWidth={3} /> : "–"}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-bold text-white truncate">{p.pick_label}</div>
-                        <div className="text-[10px] text-zinc-500">
+                        <div className="text-[11px] text-zinc-500">
                           {score
                             ? <span className="text-zinc-400 font-semibold">Final: {score}</span>
                             : <>{sportEmoji(p.sport)} {p.pick_type === "ats" ? "Against the spread" : "Moneyline"}</>}
