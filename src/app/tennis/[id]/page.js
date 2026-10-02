@@ -267,7 +267,7 @@ export default function TennisMatchPage({ params }) {
         {rootingReady && (
           <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4">
             <div className="flex items-center justify-between mb-2.5">
-              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {m.isFinal ? "Who fans backed" : "Who are you rooting for?"}</div>
+              <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {!m.isFinal ? "Who are you rooting for?" : rootingFor ? "Who fans backed" : "Who did you root for?"}</div>
               <div className="text-[11px] text-zinc-600">{totalRoot} {totalRoot === 1 ? "fan" : "fans"}</div>
             </div>
             <div className="flex h-2.5 rounded-full overflow-hidden bg-zinc-950 mb-2">
@@ -278,8 +278,8 @@ export default function TennisMatchPage({ params }) {
                 const mine = rootingFor === p.name;
                 const pct = totalRoot > 0 ? Math.round((count / totalRoot) * 100) : 0;
                 return (
-                  <button key={p.name} onClick={() => !m.isFinal && pickRooting(p.name)} disabled={m.isFinal}
-                    className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 transition-all ${mine ? "border-red-600 bg-red-600/10" : "border-zinc-800 bg-zinc-950"} ${m.isFinal ? "cursor-default" : "hover:border-zinc-600"}`}>
+                  <button key={p.name} onClick={() => pickRooting(p.name)} aria-pressed={mine}
+                    className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 transition-all hover:border-zinc-600 ${mine ? "border-red-600 bg-red-600/10" : "border-zinc-800 bg-zinc-950"}`}>
                     <span className="text-xs font-bold text-white truncate">{p.short}{mine && <span className="ml-1 text-[11px] text-red-400">✓</span>}</span>
                     <span className="text-xs font-extrabold shrink-0" style={{ color: c }}>{totalRoot > 0 ? `${pct}%` : "—"}</span>
                   </button>

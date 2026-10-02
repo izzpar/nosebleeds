@@ -1576,19 +1576,18 @@ export default function GamePage({ params }) {
         </div>
         )}
 
-        {/* Rooting poll — who's pulling for who */}
+        {/* Rooting poll — who's pulling for who. Stays open after the final, so fans can say who they backed. */}
         {rootingReady && (() => {
           const awayRoot = rootingCounts[a.abbr] || 0;
           const homeRoot = rootingCounts[h.abbr] || 0;
           const totalRoot = awayRoot + homeRoot;
           const awayPct = totalRoot > 0 ? Math.round((awayRoot / totalRoot) * 100) : 50;
           const homePct = 100 - awayPct;
-          const canPick = !g.isFinal;
-          if (!canPick && totalRoot === 0) return null; // nothing to show once it's over
+          const title = !g.isFinal ? "Who are you rooting for?" : rootingFor ? "Who fans rooted for" : "Who did you root for?";
           return (
             <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3 mb-4">
               <div className="flex items-center justify-between mb-2.5">
-                <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {g.isFinal ? "Who fans rooted for" : "Who are you rooting for?"}</div>
+                <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">🙌 {title}</div>
                 <div className="text-[11px] text-zinc-500">{totalRoot} {totalRoot === 1 ? "fan" : "fans"}</div>
               </div>
               {/* Split bar */}
@@ -1606,9 +1605,9 @@ export default function GamePage({ params }) {
                   return (
                     <button
                       key={team.abbr}
-                      onClick={() => canPick && requireAuth() && pickRooting(team.abbr)}
-                      disabled={!canPick}
-                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 transition-all ${mine ? "border-red-600 bg-red-600/10" : "border-zinc-800 bg-zinc-950"} ${canPick ? "hover:border-zinc-600" : "cursor-default"}`}
+                      onClick={() => requireAuth() && pickRooting(team.abbr)}
+                      aria-pressed={mine}
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 transition-all hover:border-zinc-600 ${mine ? "border-red-600 bg-red-600/10" : "border-zinc-800 bg-zinc-950"}`}
                     >
                       <span className="flex items-center gap-1.5 min-w-0">
                         {team.logo && <img src={team.logo} alt="" className="w-5 h-5 object-contain shrink-0" />}
