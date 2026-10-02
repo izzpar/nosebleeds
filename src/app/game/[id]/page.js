@@ -4,6 +4,8 @@ import Link from "next/link";
 import HighlightsCard from "@/components/HighlightsCard";
 import PlayerGrades from "@/components/PlayerGrades";
 import PlayByPlay from "@/components/PlayByPlay";
+import GameCenter from "@/components/GameCenter";
+import GroupRatings from "@/components/GroupRatings";
 import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/components/AuthProvider";
@@ -708,6 +710,8 @@ export default function GamePage({ params }) {
   const [letdown, setLetdown] = useState("");
   const [mvpSearch, setMvpSearch] = useState("");
   const [pickTeam, setPickTeam] = useState({ mvp: "all", letdown: "all" }); // player picker team tab
+  const [reveal, setReveal] = useState(null); // after saving: { mine, crowd, n } — you vs. everyone else
+  const buzz = (ms) => { try { navigator.vibrate?.(ms); } catch (e) {} };
   const [letdownSearch, setLetdownSearch] = useState("");
   const [watchHow, setWatchHow] = useState("");
   const [worthIt, setWorthIt] = useState("");
@@ -771,6 +775,17 @@ export default function GamePage({ params }) {
     }
     load();
   }, [id, sport]);
+
+  // Live games: refresh the score, stats and status every 30s (quietly — no spinner, no tab jump)
+  const isLiveNow = !!game?.isLive;
+  useEffect(() => {
+    if (!isLiveNow) return;
+    const t = setInterval(async () => {
+      const data = await fetchGame(id, sport);
+      if (data) setGame(data);
+    }, 30000);
+    return () => clearInterval(t);
+  }, [isLiveNow, id, sport]);
 
   // Load user rating + lists + selected lists
   useEffect(() => {
@@ -1320,6 +1335,11 @@ export default function GamePage({ params }) {
       setLogged(true);
       setShowWiz(false);
       setStep(0);
+      buzz(20);
+      {
+        const others = allCommunityRatings.filter((r) => r.user_id !== user.id).map((r) => parseFloat(r.rating)).filter((x) => !isNaN(x));
+        setReveal({ mine: rating, crowd: others.length ? others.reduce((x, y) => x + y, 0) / others.length : null, n: others.length });
+      }
       // Refresh community via direct fetch
       try {
         const cRes = await sbFetch(`ratings?game_id=eq.${id}&public=eq.true&rating=not.is.null&select=rating,user_id`);
@@ -1484,6 +1504,22 @@ export default function GamePage({ params }) {
           </div>
         )}
 
+        {/* Just rated: you vs. the crowd */}
+        {reveal && !showWiz && (
+          <div className="nb-pop rounded-2xl p-3 mb-3 bg-gradient-to-r from-zinc-900 to-zinc-950 border border-zinc-700 flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-extrabold text-white shrink-0" style={{ backgroundColor: rc(reveal.mine) }}>{reveal.mine}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-white">Rating saved</div>
+              <div className="text-xs text-zinc-400">
+                {reveal.crowd == null ? "You're the first to rate this one 🩸"
+                  : Math.abs(reveal.mine - reveal.crowd) < 0.5 ? `Right with the crowd (${reveal.crowd.toFixed(1)} from ${reveal.n})`
+                  : `${Math.abs(reveal.mine - reveal.crowd).toFixed(1)} ${reveal.mine > reveal.crowd ? "higher" : "lower"} than the crowd (${reveal.crowd.toFixed(1)} from ${reveal.n})${Math.abs(reveal.mine - reveal.crowd) >= 3 ? " — hot take 🌶️" : ""}`}
+              </div>
+            </div>
+            <button onClick={() => setReveal(null)} aria-label="Dismiss" className="w-8 h-8 rounded-full text-zinc-500 hover:text-white shrink-0">×</button>
+          </div>
+        )}
+
         {/* The page's one sign-in prompt: rating, hype, rooting, moods and chat all need an account */}
         {!user && (
           <Link href="/login" className="flex items-center justify-between gap-3 rounded-xl bg-zinc-900/60 border border-zinc-800 px-3 py-2.5 mb-3 hover:border-red-600/40 transition-all">
@@ -1623,6 +1659,11 @@ export default function GamePage({ params }) {
             </div>
           );
         })()}
+
+        {!g.isPre && <GroupRatings gameId={id} user={user} />}
+
+        {/* Game center: live situation + win probability (started games) */}
+        {!g.isPre && <GameCenter gameId={id} sport={sport} live={!!g.isLive} home={h} away={a} />}
 
         {/* Phase tabs */}
         <div className="flex gap-1 mb-4 bg-zinc-900 p-1 rounded-full">
@@ -2331,11 +2372,27 @@ export default function GamePage({ params }) {
       {/* ===== RATING MODAL ===== */}
       {showWiz && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
-          <div className="w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[90vh] overflow-y-auto">
+          <div className="nb-sheet w-full max-w-md bg-zinc-950 rounded-t-3xl sm:rounded-3xl border border-zinc-800 max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 z-10 bg-zinc-950 px-5 pt-4 pb-3 border-b border-zinc-800 flex items-center justify-between">
-              <div>
-                <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">Rating</div>
-                <div className="text-sm font-bold text-white">{a.abbr} vs {h.abbr}{sport === "nfl" ? ` · Wk ${g.week}` : ""}</div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">
+                  Rating · {g.isFinal ? "Final" : g.isLive ? "Live" : "Upcoming"}{sport === "nfl" ? ` · Wk ${g.week}` : ""}
+                </div>
+                {/* Which game you're rating: logos + score, winner bright */}
+                <div className="flex items-center gap-2 mt-1">
+                  {[a, h].map((t, i) => {
+                    const other = i === 0 ? h : a;
+                    const won = !g.isPre && t.score > other.score;
+                    return (
+                      <span key={t.abbr} className="flex items-center gap-1.5">
+                        {i === 1 && <span className="text-zinc-600 text-sm">–</span>}
+                        {t.logo && <img src={t.logo} alt="" className="w-6 h-6 object-contain" />}
+                        <span className={`text-sm font-extrabold ${won ? "text-white" : "text-zinc-400"}`}>{t.abbr}</span>
+                        {!g.isPre && <span className={`text-lg font-extrabold tabular-nums ${won ? "text-white" : "text-zinc-500"}`}>{t.score}</span>}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
               <button onClick={() => { setShowWiz(false); setStep(0); }} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-lg font-bold">×</button>
             </div>
@@ -2355,8 +2412,9 @@ export default function GamePage({ params }) {
                     <div className="text-6xl font-extrabold" style={{ color: rc(rating) }}>{rating}</div>
                     <div className="text-sm font-bold mt-1" style={{ color: rc(rating) }}>{ratingLabel(rating)}</div>
                   </div>
-                  <input type="range" min="1" max="10" step="0.5" value={rating} onChange={(e) => setRating(parseFloat(e.target.value))}
-                    className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(rating)} ${((rating - 1) / 9) * 100}%, #27272a ${((rating - 1) / 9) * 100}%)` }} />
+                  <input type="range" min="1" max="10" step="0.5" value={rating} aria-label="Your rating"
+                    onChange={(e) => { const v = parseFloat(e.target.value); if (Math.floor(v) !== Math.floor(rating)) buzz(6); setRating(v); }}
+                    className="nb-big-range w-full h-3 rounded-full appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, ${rc(rating)} ${((rating - 1) / 9) * 100}%, #27272a ${((rating - 1) / 9) * 100}%)` }} />
                   <div className="flex justify-between mt-1"><span className="text-xs text-zinc-600">1</span><span className="text-xs text-zinc-600">10</span></div>
                   <div className="mt-5">
                     <div className="text-sm font-semibold text-white text-center mb-3">Was it worth watching?</div>
