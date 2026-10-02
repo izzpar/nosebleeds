@@ -10,6 +10,9 @@ import { useAuth } from "@/components/AuthProvider";
 import { repScore, repTier, nextTier, tierProgress } from "@/lib/reputation";
 import Link from "next/link";
 import GameAlerts from "@/components/GameAlerts";
+import MyTeamsBar from "@/components/MyTeamsBar";
+import RecapStories from "@/components/RecapStories";
+import GroupsPanel from "@/components/GroupsPanel";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_PATHS = {
@@ -376,6 +379,9 @@ function HomeContent() {
   }, []);
   const [search, setSearch] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [pickTeams, setPickTeams] = useState({}); // onboarding team picks, sport -> abbr
+  const [savingTeams, setSavingTeams] = useState(false);
+  const [showStories, setShowStories] = useState(false); // weekly recap stories
   const [sort, setSort] = useState("date");
   // Onboarding: prompt new users (no favorite teams) to set up their profile
   const [onboardDismissed, setOnboardDismissed] = useState(true);
@@ -1277,6 +1283,10 @@ function HomeContent() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-3">
+        {/* Your teams' live / latest / next games, every sport */}
+        {tab === "games" && user && profile && (
+          <MyTeamsBar favorites={FAV_SPORTS.map((s) => ({ sport: s.id, abbr: profile[favKey(s.id)] })).filter((f) => f.abbr)} />
+        )}
         {/* Sport tabs — labelled at every width. Hidden on Diary/Profile, which have their own toggle. */}
         {tab !== "diary" && tab !== "profile" && (
           <div className="flex gap-1 p-1 mb-3 rounded-2xl bg-zinc-900 border border-zinc-800" role="tablist" aria-label="Sport">
@@ -1298,19 +1308,34 @@ function HomeContent() {
             <button onClick={() => router.push("/login")} className="shrink-0 bg-white text-red-700 font-extrabold px-4 h-10 rounded-xl text-sm">Join free</button>
           </div>
         )}
-        {/* Onboarding — nudge new users to pick favorite teams */}
+        {/* Onboarding — pick your teams right here (their games then show first + in the scores bar) */}
         {tab === "games" && user && profile && !onboardDismissed && !FAV_SPORTS.some((s) => profile[favKey(s.id)]) && (
           <div className="rounded-2xl p-4 mb-3 bg-gradient-to-br from-red-900/50 via-zinc-900 to-zinc-900 border border-red-600/30">
-            <div className="flex items-start gap-3">
-              <div className="text-2xl">👋</div>
-              <div className="flex-1">
-                <div className="text-sm font-bold text-white">Welcome to The Nosebleeds!</div>
-                <div className="text-[11px] text-zinc-400 mt-0.5">Pick your teams and their games will show up first, plus fandom filters on every game.</div>
-                <div className="flex gap-2 mt-2.5">
-                  <button onClick={() => { setTab("profile"); setShowEditProfile(true); }} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold">Set up profile →</button>
-                  <button onClick={dismissOnboard} className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold">Maybe later</button>
-                </div>
-              </div>
+            <div className="text-sm font-bold text-white">👋 Pick your teams</div>
+            <div className="text-xs text-zinc-400 mt-0.5 mb-3">Their games show up first, with live scores up top.</div>
+            <div className="grid grid-cols-2 gap-2">
+              {FAV_SPORTS.map((sp) => (
+                <label key={sp.id} className="relative">
+                  <span className="sr-only">{sp.label} team</span>
+                  <select value={pickTeams[sp.id] || ""} onChange={(e) => setPickTeams((t) => ({ ...t, [sp.id]: e.target.value }))}
+                    className="w-full h-10 pl-3 pr-7 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-white appearance-none outline-none focus:border-red-600">
+                    <option value="">{sp.emoji} {sp.label} — none</option>
+                    {(TEAMS_BY_SPORT[sp.id] || []).map((t) => <option key={t} value={t}>{sp.emoji} {teamName(sp.id, t)}</option>)}
+                  </select>
+                  <span aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">▼</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button disabled={savingTeams || !Object.values(pickTeams).some(Boolean)} onClick={async () => {
+                setSavingTeams(true);
+                try {
+                  const updates = Object.fromEntries(FAV_SPORTS.filter((sp) => pickTeams[sp.id]).map((sp) => [favKey(sp.id), pickTeams[sp.id]]));
+                  const res = await sbFetch(`profiles?user_id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify(updates) });
+                  if (res.ok) { await refreshProfile(); dismissOnboard(); }
+                } catch (e) {} finally { setSavingTeams(false); }
+              }} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-bold disabled:opacity-40">{savingTeams ? "Saving…" : "Save my teams"}</button>
+              <button onClick={dismissOnboard} className="h-10 px-4 rounded-xl bg-zinc-800 text-zinc-400 text-sm font-bold">Later</button>
             </div>
           </div>
         )}
@@ -1472,6 +1497,22 @@ function HomeContent() {
             )}
             {!loading && filtered.length === 0 && <div className="text-center py-16"><div className="text-5xl mb-3">🔍</div><div className="text-zinc-500">No games found</div></div>}
             <GameAlerts user={user} variant="card" />
+            {/* Your week in ratings — stories */}
+            {user && (() => {
+              const weekAgo = Date.now() - 7 * 86400000;
+              const weekLogs = logs.filter((l) => l.rating > 0 && l.createdAt && new Date(l.createdAt).getTime() >= weekAgo);
+              if (weekLogs.length === 0) return null;
+              return (
+                <>
+                  <button onClick={() => setShowStories(true)} className="w-full mb-3 rounded-2xl p-3 bg-gradient-to-r from-red-700/70 via-red-900/50 to-zinc-900 border border-red-600/40 flex items-center gap-3 text-left">
+                    <span className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr from-orange-400 to-red-600 shrink-0"><span className="w-full h-full rounded-full bg-zinc-950 flex items-center justify-center text-lg">📖</span></span>
+                    <span className="flex-1 min-w-0"><span className="block text-sm font-bold text-white">Your week in ratings</span><span className="block text-xs text-red-100/70">{weekLogs.length} {weekLogs.length === 1 ? "game" : "games"} · tap to play</span></span>
+                    <span className="text-white text-xl">›</span>
+                  </button>
+                  {showStories && <RecapStories logs={weekLogs} name={(profile?.display_name || "").split(" ")[0]} sbFetch={sbFetch} sbJson={sbJson} onClose={() => setShowStories(false)} />}
+                </>
+              );
+            })()}
             {/* Nudge: games you hyped or rooted in have finished — rate them while they're fresh */}
             {user && !loading && (() => {
               const toRate = games.filter(inCurrentScope).filter((g) => g.isFinal && (() => { const l = gl(g.id); return l && !(l.rating > 0) && (l.anticipation > 0 || l.rootingFor); })());
@@ -1809,6 +1850,7 @@ function HomeContent() {
           <div>
             <h2 className="text-xl font-extrabold text-white mb-1">Friends</h2>
             <p className="text-sm text-zinc-500 mb-4">See what your crew is watching</p>
+            <GroupsPanel user={user} />
 
             {!user && (
               <div className="text-center py-12">

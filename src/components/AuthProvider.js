@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const AuthContext = createContext({});
@@ -68,6 +69,16 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  // Finish a group invite that started signed out (see /groups/join/[code]).
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const code = localStorage.getItem("nb_pending_group");
+      if (code) { localStorage.removeItem("nb_pending_group"); router.replace(`/groups/join/${code}`); }
+    } catch (e) {}
+  }, [user, router]);
 
   useEffect(() => {
     // Get initial session
