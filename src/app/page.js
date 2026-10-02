@@ -318,6 +318,10 @@ function HomeContent() {
   const [week, setWeek] = useState(1);
   const [year, setYear] = useState(() => { const d = new Date(); return d.getMonth() >= 2 ? d.getFullYear() : d.getFullYear() - 1; });
   const [nflSynced, setNflSynced] = useState(false);
+  // The live season/week as ESPN reports them — remembered so switching back
+  // from last season returns to the current week.
+  const [liveSeason, setLiveSeason] = useState(year);
+  const [liveWeek, setLiveWeek] = useState(1);
   // Date-based sports (MLB/NBA/NHL) use a date string YYYY-MM-DD instead of week/year
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
@@ -358,11 +362,12 @@ function HomeContent() {
         const r = await fetch(`${ESPN_BASE}/${SPORT_PATHS.nfl}/scoreboard`);
         const d = await r.json();
         if (cancelled) return;
-        if (d?.season?.year) setYear(d.season.year);
+        if (d?.season?.year) { setYear(d.season.year); setLiveSeason(d.season.year); }
         const w = d?.week?.number;
-        if (d?.season?.type === 2 && w >= 1 && w <= 18) setWeek(w);
-        else if (d?.season?.type === 1) setWeek(1); // preseason → upcoming week 1
-        else setWeek(18); // post/offseason → final regular-season week
+        const lw = d?.season?.type === 2 && w >= 1 && w <= 18 ? w
+          : d?.season?.type === 1 ? 1 // preseason → upcoming week 1
+          : 18; // post/offseason → final regular-season week
+        setWeek(lw); setLiveWeek(lw);
       } catch (e) { /* keep the guessed defaults */ }
       if (!cancelled) setNflSynced(true);
     })();
@@ -483,7 +488,10 @@ function HomeContent() {
     }
   };
 
-  const weeks = Array.from({ length: 18 }, (_, i) => i + 1); // current season only
+  const weeks = Array.from({ length: 18 }, (_, i) => i + 1);
+  const nflSeasons = [liveSeason, liveSeason - 1]; // current + last season only
+  // Last season opens on its final week; the current season on the live week.
+  const pickSeason = (y) => { setYear(y); setWeek(y === liveSeason ? liveWeek : 18); };
 
   useEffect(() => {
     let cancelled = false;
@@ -1399,8 +1407,14 @@ function HomeContent() {
 
             {sport === "nfl" && (
               <>
-                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 items-center">
-                  <span className="px-3 py-1.5 rounded-full text-xs font-bold shrink-0 bg-zinc-900 text-zinc-400 border border-zinc-800">{year}</span>
+                <div className="flex gap-2 mb-2">
+                  {nflSeasons.map((y) => (
+                    <button key={y} onClick={() => pickSeason(y)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${year === y ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-500"}`}>{y}</button>
+                  ))}
+                </div>
+
+                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
                   {weeks.map((w) => (
                     <button key={w} onClick={() => setWeek(w)}
                       className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${week === w ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-500"}`}>{w}</button>
